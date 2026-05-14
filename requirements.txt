@@ -1,0 +1,25 @@
+# ReconMaster v3 Python Requirements
+# Core dependencies for the reconnaissance framework
+
+# HTTP and networking
+requests>=2.25.1
+urllib3>=1.26.5
+
+# DNS operations
+dnspython>=2.1.0
+
+# Domain parsing
+tldextract>=3.1.0
+
+# Enhanced terminal output (optional but recommended)
+rich>=13.0.0
+
+# Config file support (optional but recommended)
+pyyaml>=6.0
+
+# Development dependencies (uncomment for development)
+# pytest>=6.2.4
+# pytest-cov>=2.12.1
+# black>=21.6b0
+# flake8>=3.9.2
+# mypy>=0.910

@@ -1,0 +1,43 @@
+# Oculus v3 Configuration File
+# Copy to ~/.config/oculus/config.yaml
+
+# General settings
+threads: 50
+timeout: 300
+rate_limit: 150
+retry_count: 2
+retry_delay: 5
+parallel: true        # Run independent tools concurrently
+auto_confirm: false   # Skip confirmation prompts (useful for automation)
+jitter: false         # Add random delays between tool calls for stealth
+
+# Wordlist paths
+wordlists:
+  dns: /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+  dirs: /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt
+  dirs_fallback: /usr/share/wordlists/dirb/common.txt
+  resolvers: /opt/recontools/massdns/resolvers.txt
+
+# API Keys (optional — enables passive recon)
+api_keys:
+  shodan: ""
+  github: ""
+  chaos: ""
+
+# Nuclei configuration
+nuclei:
+  severity: low,medium,high,critical
+  rate_limit: 150
+  concurrency: 25
+  templates: ""   # Custom template path (leave empty for defaults)
+
+# Naabu port scanner
+naabu:
+  ports: "1-65535"
+  rate: 2000
+
+# FFUF directory fuzzing
+ffuf:
+  extensions: php,html,js,json,txt,bak,old
+  status_filter: "200,204,301,302,307,401,403"
+  recursion_depth: 2
