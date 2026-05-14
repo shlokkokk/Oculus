@@ -1,5 +1,5 @@
-# ReconMaster v3 Python Requirements
-# Core dependencies for the reconnaissance framework
+# Oculus v3 Python requirements
+# Core dependencies for Oculus
 
 # HTTP and networking
 requests>=2.25.1

@@ -1,385 +1,309 @@
-# ReconMaster Installation Guide
+# Oculus v3 — Installation Guide
 
-## 🚀 Quick Installation
+Oculus is a Python recon orchestrator for **Kali / Debian-style** Linux. The supported path is **`./install.sh`** from your clone; use **Docker** if you are on macOS or do not want a full native toolchain.
 
-### Automated Installation (Recommended)
+For command-line flags, module list, and YAML reference, see **[README.md](README.md)**.
+
+---
+
+## Requirements
+
+| Item | Notes |
+|:---|:---|
+| **OS** | **Kali** or **Debian / Ubuntu** (glibc Linux). Not tested on Windows native; use **WSL2** or **Docker**. |
+| **Python** | **3.8+** (`install.sh` checks this). |
+| **Go** | **1.20+** on `PATH` (`go version`). Used for `go install` binaries. |
+| **Privileges** | `sudo` for `apt-get` and `/opt/recontools` setup. |
+| **Disk** | Plan for **SecLists**, Go build cache, nuclei templates, and scan output (**10 GB+** comfortable). |
+| **Network** | Internet to clone repos and download tools/templates. |
+
+---
+
+## Quick install (recommended)
+
+From your machine:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/reconmaster.git
-cd reconmaster
-
-# Make installation script executable
-sudo chmod +x install.sh
-
-# Run installation
-sudo ./install.sh
+git clone https://github.com/<your-org>/Oculus.git
+cd Oculus
+chmod +x install.sh
+./install.sh
 ```
 
-### Manual Installation
+Use **`./install.sh --update`** later to refresh Go tools and `/opt/recontools` clones (same as `python3 oculus.py --update` from the repo, which runs `git pull` and this script).
 
-If you prefer manual installation or encounter issues with the automated script:
+### What `install.sh` does
 
-#### 1. System Dependencies
+1. Verifies **Python ≥ 3.8** and **`go`** in `PATH`.
+2. **`apt-get install`**: `python3-pip`, `git`, `wget`, `curl`, `unzip`, `nmap`, `massdns`, `wafw00f`, `whatweb`, `sqlmap`, `jq`.
+3. **`pip3 install -r requirements.txt --break-system-packages`** (needed on newer Debian/Ubuntu PEP 668 environments).
+4. **`go install`** (see script for exact modules): subfinder, assetfinder, dnsx, httpx, naabu, katana, gau, waybackurls, nuclei, hakrawler, ffuf, dalfox, asnmap, gowitness, gf, amass, kr, subzy.
+5. Creates **`/opt/recontools`** and clones: **ParamSpider**, **Arjun**, **XSStrike**, **smuggler**, **LinkFinder**, **theHarvester** (with `pip install -r requirements.txt` per repo where present).
+6. Sets up **`~/.gf`** pattern JSONs (best-effort copy from `gf` examples + **Gf-Patterns**).
+7. If **`~/.config/oculus/config.yaml`** does not exist yet, copies **`config.yaml.example`** from the same directory as **`install.sh`** (the repo root).
+
+### After `install.sh`
+
+If no config was created (e.g. you already had `~/.config/oculus/config.yaml`), ensure it exists and paths match your machine:
 
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
+# Go binaries live here by default
+echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.bashrc
+source ~/.bashrc
 
-# Install essential packages
-sudo apt install -y git wget curl build-essential python3 python3-pip \
-    python3-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev \
-    libjpeg62-turbo-dev zlib1g-dev libpcap-dev nmap masscan wafw00f \
-    amass jq ruby ruby-dev golang-go snapd
+mkdir -p ~/.config/oculus
+cp /path/to/your/Oculus/config.yaml.example ~/.config/oculus/config.yaml
+# Edit paths: wordlists (SecLists), massdns resolvers, optional api_keys
 ```
 
-#### 2. Install Go Tools
+If **`install.sh`** just created **`~/.config/oculus/config.yaml`**, only add **`PATH`** and edit YAML as needed:
 
 ```bash
-# Set Go environment
-export GOPATH=$HOME/go
-export PATH=$PATH:$GOPATH/bin
-mkdir -p $GOPATH/bin
+echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
 
-# Install security tools
+**Wordlists:** Defaults in `config.yaml.example` assume **SecLists** and **dirb** paths under `/usr/share/wordlists/`. Install or adjust YAML to match your system:
+
+```bash
+sudo apt install -y seclists dirb   # package names may vary by distro
+```
+
+**`dig`:** Used for CDN checks and CNAME work. If missing: `sudo apt install -y dnsutils` (Debian/Ubuntu) or equivalent.
+
+---
+
+## Verify installation
+
+```bash
+cd /path/to/Oculus
+python3 oculus.py --version
+python3 oculus.py
+# In the menu: I = tool check, C = set domain, then try 1 (subdomain enum)
+```
+
+Sanity-check common externals:
+
+```bash
+which subfinder httpx naabu nuclei ffuf dalfox dnsx massdns
+ls /opt/recontools/ParamSpider/paramspider.py
+```
+
+---
+
+## Docker (alternative)
+
+From the repo root:
+
+```bash
+docker build -t oculus .
+docker run --rm -it -v "$(pwd):/app" oculus -d example.com --module subdomain --no-confirm
+```
+
+See **README.md** for bind mounts, API keys, and wordlist paths inside the image.
+
+---
+
+## Manual installation
+
+Use this only if `install.sh` fails or you need a minimal custom layout. Mirror the versions in **`install.sh`** when possible.
+
+### 1. System packages (Debian / Ubuntu)
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 python3-pip git wget curl unzip build-essential \
+  nmap massdns wafw00f whatweb sqlmap jq dnsutils libpcap-dev
+```
+
+Install **Go** from [go.dev](https://go.dev/dl/) if your distro ships an old version; Oculus expects **Go ≥ 1.20**.
+
+### 2. Python dependencies
+
+```bash
+cd /path/to/Oculus
+pip3 install -r requirements.txt --break-system-packages
+```
+
+Packages: `requests`, `urllib3`, `dnspython`, `tldextract`, `rich` (recommended), `pyyaml` (recommended).
+
+### 3. Go tools
+
+```bash
+export PATH="$PATH:$HOME/go/bin"
 go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
-go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
-go install github.com/projectdiscovery/katana/cmd/katana@latest
-go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 go install github.com/tomnomnom/assetfinder@latest
+go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+go install github.com/projectdiscovery/katana/cmd/katana@latest
+go install github.com/lc/gau/v2/cmd/gau@latest
 go install github.com/tomnomnom/waybackurls@latest
-go install github.com/lc/gau@latest
-
-# Make Go tools available system-wide
-sudo cp ~/go/bin/* /usr/local/bin/
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+go install github.com/hakluke/hakrawler@latest
+go install github.com/ffuf/ffuf/v2@latest
+go install github.com/hahwul/dalfox/v2@latest
+go install github.com/projectdiscovery/asnmap/cmd/asnmap@latest
+go install github.com/sensepost/gowitness@latest
+go install github.com/tomnomnom/gf@latest
+go install github.com/owasp-amass/amass/v4/...@master
+go install github.com/assetnote/kiterunner/cmd/kr@latest
+go install github.com/LukaSikic/subzy@latest
 ```
 
-#### 3. Python Environment
+### 4. `/opt/recontools` Python tools
 
 ```bash
-# Install Python packages
-pip3 install --upgrade pip
-pip3 install -r requirements.txt
+sudo mkdir -p /opt/recontools
+sudo chown -R "$USER:$USER" /opt/recontools
+cd /opt/recontools
+git clone https://github.com/devanshbatham/ParamSpider.git
+git clone https://github.com/s0md3v/Arjun.git
+git clone https://github.com/s0md3v/XSStrike.git
+git clone https://github.com/defparam/smuggler.git
+git clone https://github.com/GerbenJavado/LinkFinder.git
+git clone https://github.com/laramies/theHarvester.git
+for d in ParamSpider Arjun XSStrike smuggler LinkFinder theHarvester; do
+  [ -f "$d/requirements.txt" ] && pip3 install -r "$d/requirements.txt" --break-system-packages || true
+done
 ```
 
-#### 4. Install ReconMaster
+### 5. GF patterns
 
 ```bash
-# Copy to system location
-sudo cp reconmaster.py /usr/local/bin/reconmaster
-sudo chmod +x /usr/local/bin/reconmaster
-
-# Create wordlists directory
-sudo mkdir -p /usr/share/wordlists/reconmaster
+mkdir -p ~/.gf
+git clone https://github.com/1ndianl33t/Gf-Patterns.git /tmp/Gf-Patterns 2>/dev/null || true
+cp /tmp/Gf-Patterns/*.json ~/.gf/ 2>/dev/null || true
 ```
 
-#### 5. Verify Installation
+### 6. Optional: `oculus` on PATH
 
 ```bash
-# Test ReconMaster
-reconmaster
-
-# Check tool availability
-which subfinder httpx naabu nuclei
+sudo ln -sf /path/to/Oculus/oculus.py /usr/local/bin/oculus
+sudo chmod +x /usr/local/bin/oculus
+# shebang already invokes python3
 ```
 
 ---
 
-## 📋 System Requirements
+## Other platforms
 
-### Minimum Requirements
+### Kali Linux
 
-- **Operating System**: Kali Linux 2020.1 or later
-- **Python**: 3.6 or higher
-- **RAM**: 4GB minimum
-- **Storage**: 2GB free space
-- **Network**: Internet connection for tool downloads
+Primary target. **`./install.sh`** matches typical Kali package names. Enable **`~/go/bin`** on `PATH` after install.
 
-### Recommended Requirements
+### Ubuntu / Debian
 
-- **Operating System**: Kali Linux 2023.3 or later
-- **Python**: 3.9 or higher
-- **RAM**: 8GB or more
-- **Storage**: 10GB free space
-- **Network**: High-speed internet connection
-
----
-
-## 🛠️ Platform-Specific Instructions
-
-### Kali Linux (Primary)
-
-ReconMaster is optimized for Kali Linux. The automated installation script handles all dependencies.
-
-```bash
-# Standard installation
-sudo ./install.sh
-```
-
-### Ubuntu/Debian
-
-```bash
-# Install dependencies manually
-sudo apt update
-sudo apt install -y git golang-go python3-pip
-
-# Follow manual installation steps
-# Note: Some tools may not be available in default repositories
-```
+Same as Kali; ensure **Go** is recent enough. Some optional packages differ; adjust `apt` names if a package is missing.
 
 ### Arch Linux
 
-```bash
-# Install dependencies
-sudo pacman -S git go python-pip
-
-# Install tools from AUR (use yay or similar)
-yay -S subfinder httpx naabu nuclei
-
-# Follow manual installation steps
-```
+Install `go`, `python`, `nmap`, `massdns`, etc. from Arch/AUR; run the **Manual installation** Go and pip sections. There is no Arch-specific script in this repo.
 
 ### macOS
 
-```bash
-# Install Homebrew if not already installed
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install dependencies
-brew install git go python3
-
-# Install tools
-brew install projectdiscovery/tap/subfinder
-brew install projectdiscovery/tap/httpx
-brew install projectdiscovery/tap/naabu
-brew install projectdiscovery/tap/nuclei
-
-# Follow manual installation steps
-```
+Oculus expects Linux-style paths and tools (`/opt/recontools`, GNU assumptions in places). Prefer **Docker** or a **Linux VM** rather than native macOS for full parity.
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
-### Common Issues
-
-#### 1. "Command not found" errors
+### `command not found` for Go tools
 
 ```bash
-# Check if reconmaster is in PATH
-which reconmaster
-
-# If not found, create symlink
-sudo ln -s /path/to/reconmaster.py /usr/local/bin/reconmaster
-
-# Or run directly
-python3 /path/to/reconmaster.py
+export GOPATH="${GOPATH:-$HOME/go}"
+export PATH="$PATH:$GOPATH/bin"
+hash -r
 ```
 
-#### 2. Missing Go tools
+### `pip` refuses system install (externally-managed-environment)
+
+Use the same flag as `install.sh`:
 
 ```bash
-# Check GOPATH
-echo $GOPATH
-
-# Set GOPATH if empty
-export GOPATH=$HOME/go
-export PATH=$PATH:$GOPATH/bin
-
-# Reinstall tools
-go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-# ... repeat for other tools
+pip3 install -r requirements.txt --break-system-packages
 ```
 
-#### 3. Permission errors
+Or use a **venv** and run `oculus.py` with that interpreter (you must install CLI tools into `PATH` separately; venv does not replace `subfinder`, `nuclei`, etc.).
+
+### Missing wordlists or resolvers
+
+Edit **`~/.config/oculus/config.yaml`** (`wordlists.*`, `resolvers`). Defaults point at SecLists and `/opt/recontools/massdns/resolvers.txt` if you add massdns resolvers there.
+
+### `massdns` / `dig` not found
 
 ```bash
-# Fix file permissions
-sudo chmod +x /usr/local/bin/reconmaster
-sudo chmod 755 /usr/local/bin/reconmaster
-
-# Fix directory permissions
-sudo chmod 755 /usr/local/bin/
+sudo apt-get install -y massdns dnsutils
 ```
 
-#### 4. Python module errors
+### Nuclei templates empty or old
 
 ```bash
-# Install missing Python packages
-pip3 install colorama termcolor pyfiglet requests
-
-# Or install all requirements
-pip3 install -r requirements.txt
-```
-
-#### 5. Network connectivity issues
-
-```bash
-# Test internet connectivity
-ping 8.8.8.8
-nslookup github.com
-
-# Check proxy settings
-env | grep -i proxy
-```
-
----
-
-## 🐛 Advanced Troubleshooting
-
-### Debug Mode
-
-```bash
-# Run with debug output
-python3 -u /usr/local/bin/reconmaster 2>&1 | tee debug.log
-
-# Check for specific errors
-grep -i error debug.log
-grep -i "failed\|error\|exception" debug.log
-```
-
-### Tool Verification
-
-```bash
-# Verify each tool is working
-subfinder --version
-httpx --version
-naabu --version
-nuclei --version
-
-# Test basic functionality
-subfinder -d example.com -silent | head -5
-httpx -l <(echo "example.com") -silent
-```
-
-### Environment Issues
-
-```bash
-# Check environment variables
-env | grep -E "(PATH|GOPATH|PYTHON)"
-
-# Reset environment if needed
-unset GOPATH
-export GOPATH=$HOME/go
-export PATH=/usr/local/bin:/usr/bin:/bin:$GOPATH/bin
-```
-
----
-
-## 🔄 Updating ReconMaster
-
-### Update to Latest Version
-
-```bash
-# Pull latest changes
-git pull origin main
-
-# Re-run installation
-sudo ./install.sh
-
-# Or manually update
-sudo cp reconmaster.py /usr/local/bin/reconmaster
-```
-
-### Update Tools
-
-```bash
-# Update Go tools
-go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-# ... repeat for other tools
-
-# Update Nuclei templates
 nuclei -ut
 ```
 
----
-
-## 🧪 Testing Installation
-
-### Basic Test
+### Permission errors under `/opt/recontools`
 
 ```bash
-# Start ReconMaster
-reconmaster
-
-# Should show main menu with ASCII banner
+sudo chown -R "$USER:$USER" /opt/recontools
 ```
 
-### Comprehensive Test
+### Oculus says a tool is missing
+
+Run **menu `I`** (initialize tools) or compare with **`install.sh`** list. Install the suggested `go install …` or apt package.
+
+---
+
+## Updating Oculus
 
 ```bash
-# Create test directory
-mkdir -p /tmp/reconmaster-test
-cd /tmp/reconmaster-test
-
-# Test with example domain
-reconmaster
-# Select 'C' and enter: example.com
-# Select '1' for subdomain enumeration
-# Check if results are generated
-
-# Verify output
-ls -la output-example.com/
-cat output-example.com/summary.txt
+cd /path/to/Oculus
+git pull
+./install.sh --update
 ```
 
----
-
-## 🛡️ Security Considerations
-
-### Legal Usage
-
-- **Only scan targets you own or have explicit permission to test**
-- **Respect rate limits and robots.txt files**
-- **Follow responsible disclosure practices**
-- **Comply with all applicable laws and regulations**
-
-### Best Practices
-
-- **Target Validation**: Verify domain ownership before scanning
-- **Rate Control**: Use appropriate timeouts for target infrastructure
-- **Data Protection**: Secure storage of scan results
-- **Privacy**: No data transmitted to external services
+Refresh Nuclei templates periodically: `nuclei -ut`.
 
 ---
 
-## 📞 Getting Help
+## Testing a minimal flow
 
-### Self-Help Resources
+```bash
+cd /path/to/Oculus
+python3 oculus.py
+# C → enter a domain you are allowed to test (e.g. your own)
+# 1 → subdomain enumeration
+ls -la "output-<domain>/"
+```
 
-1. **Check logs**: Review execution logs in `logs/` directory
-2. **Read documentation**: Comprehensive README and help system
-3. **Test tools individually**: Verify each tool works standalone
-4. **Check permissions**: Ensure proper file and directory permissions
+CLI smoke test:
 
-### Community Support
+```bash
+python3 oculus.py -d example.com --module subdomain --no-confirm
+```
 
-- **GitHub Issues**: Report bugs and feature requests
-- **Documentation**: Wiki and usage guides
-- **Community**: Security and bug bounty forums
-
-### Professional Support
-
-For enterprise deployments or custom integrations, consider professional support options.
-
----
-
-## 📋 Post-Installation Checklist
-
-- [ ] ReconMaster starts without errors
-- [ ] All tools are detected as installed
-- [ ] Can set target domain successfully
-- [ ] Subdomain enumeration works
-- [ ] Results are saved to output directory
-- [ ] Summary report is generated
-- [ ] Can access help system
-- [ ] Can exit cleanly
+Only use domains you are authorized to assess.
 
 ---
 
-**Congratulations!** 🎉 You now have ReconMaster installed and ready for professional reconnaissance operations.
+## Security and legal use
 
-Happy hunting! 🎯
+- Run Oculus **only** against assets you **own** or have **written permission** to test.
+- Respect rate limits, scope rules, and local laws.
+- API keys (GitHub, Shodan) send queries to third parties; handle keys as secrets.
+
+---
+
+## Post-install checklist
+
+- [ ] `python3 oculus.py --version` prints **3.0**
+- [ ] `which subfinder httpx naabu nuclei` succeeds (after `PATH` includes `~/go/bin`)
+- [ ] `/opt/recontools/ParamSpider/paramspider.py` exists
+- [ ] `~/.config/oculus/config.yaml` exists and paths match your machine
+- [ ] SecLists (or custom) wordlists exist where YAML points
+- [ ] Menu **I** shows critical tools installed
+- [ ] Menu **C** + **1** produces `output-<domain>/subdomains.txt` for a permitted target
+
+---
+
+When this checklist passes, the native toolchain is ready. Use **[README.md](README.md)** for workflows, **Deep** vs **Full** recon, and reporting.

@@ -15,6 +15,8 @@ if [ "$1" == "--update" ]; then
     echo -e "${YELLOW}[*] Update mode enabled. Will upgrade existing tools.${RESET}"
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo -e "${CYAN}[*] Starting Oculus Environment Setup...${RESET}"
 
 # 1. System Requirements Check
@@ -115,9 +117,12 @@ cp -r /root/go/pkg/mod/github.com/tomnomnom/gf*/examples/*.json ~/.gf/ 2>/dev/nu
 git clone https://github.com/1ndianl33t/Gf-Patterns 2>/dev/null || true
 cp Gf-Patterns/*.json ~/.gf/ 2>/dev/null || true
 
-# Download config.yaml.example to config
-mkdir -p ~/.config/oculus
-cp ../config.yaml.example ~/.config/oculus/config.yaml 2>/dev/null || true
+# Default config (only if user has none — do not overwrite existing)
+if [ ! -f "$HOME/.config/oculus/config.yaml" ] && [ -f "$SCRIPT_DIR/config.yaml.example" ]; then
+    mkdir -p "$HOME/.config/oculus"
+    cp "$SCRIPT_DIR/config.yaml.example" "$HOME/.config/oculus/config.yaml"
+    echo -e "${GREEN}[✔] Installed default config to ~/.config/oculus/config.yaml${RESET}"
+fi
 
 echo -e "${GREEN}[✔] Oculus professional installation complete!${RESET}"
 echo -e "${YELLOW}[!] Make sure ~/go/bin is in your PATH.${RESET}"
