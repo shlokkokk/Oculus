@@ -646,18 +646,48 @@ class Oculus:
             # path is whatever find_tool returned (could be None, a file path, or a command name)
             exists = False
             resolved = None
-            
+
             if isinstance(path, str) and path:
-                # Check if it's a file path
+                # 1) If it's a direct file path
                 if os.path.exists(path):
                     resolved = path
                     exists = True
-                # Check if it's a command in PATH (no separators = command name)
-                elif os.path.sep not in path and not path.startswith('.'):
-                    if shutil.which(path):  # shutil.which finds commands in PATH
-                        resolved = path
+                else:
+                    # 2) If it's a bare command name, try resolving via shutil.which
+                    # try the returned value, then the normalized names
+                    candidates = [path, name, name.lower()]
+                    for cand in candidates:
+                        try_path = shutil.which(cand)
+                        if try_path:
+                            resolved = try_path
+                            exists = True
+                            break
+
+                    # 3) fallback: check common install locations for CLI tools
+                    if not exists:
+                        common_bins = [
+                            f"/usr/local/bin/{name}",
+                            f"/usr/local/bin/{name.lower()}",
+                            f"/usr/bin/{name}",
+                            f"/usr/bin/{name.lower()}",
+                            os.path.expanduser(f"~/.local/bin/{name}"),
+                            os.path.expanduser(f"~/.local/bin/{name.lower()}"),
+                        ]
+                        for cb in common_bins:
+                            if os.path.exists(cb):
+                                resolved = cb
+                                exists = True
+                                break
+
+            # If find_tool returned None, still attempt a PATH lookup by name
+            if not exists:
+                for cand in (name, name.lower()):
+                    try_path = shutil.which(cand)
+                    if try_path:
+                        resolved = try_path
                         exists = True
-            
+                        break
+
             self.tools_status[name] = {
                 'installed': exists,
                 'path': resolved or '',
