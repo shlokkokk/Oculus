@@ -288,7 +288,6 @@ GO_TOOLS = [
     ("gowitness",   "github.com/sensepost/gowitness@latest"),
     ("gf",          "github.com/tomnomnom/gf@latest"),
     ("amass",       "github.com/owasp-amass/amass/v4/...@master"),
-    ("kr",          "github.com/assetnote/kiterunner/v2/cmd/kr@latest"),
     ("subzy",       "github.com/PentestPad/subzy@latest"),
 ]
 
@@ -299,6 +298,7 @@ RECON_TOOLS = [
     ("smuggler",     "https://github.com/defparam/smuggler"),
     ("LinkFinder",   "https://github.com/GerbenJavado/LinkFinder"),
     ("theHarvester", "https://github.com/laramies/theHarvester"),
+    ("kiterunner",   "https://github.com/assetnote/kiterunner"),
 ]
 
 results = {}  # name -> (status, detail)
@@ -373,10 +373,30 @@ def install_recon_tool(name, repo, progress, tid):
                 results[name] = ("failed", "git clone failed")
                 return
 
+        # Install requirements for Python tools
         req = os.path.join(opt, "requirements.txt")
         if os.path.exists(req):
             if not pip_install_req(req):
                 log_failure(name, "pip requirements had errors (tool may still work)")
+        
+        # Specialized build for Go-based git tools (like Kiterunner)
+        makefile = os.path.join(opt, "Makefile")
+        if name.lower() == "kiterunner" and os.path.exists(makefile):
+            progress.update(tid, description=f"[bold cyan]⚒ {name}[/] (Building...)")
+            # Kiterunner specific build
+            r = subprocess.run(["make", "build"], cwd=opt, capture_output=True, text=True, timeout=300)
+            dist_bin = os.path.join(opt, "dist", "kr")
+            if os.path.exists(dist_bin):
+                os.system(f"sudo cp {dist_bin} /usr/local/bin/kr")
+                os.system(f"sudo chmod +x /usr/local/bin/kr")
+                log_success(f"Built and installed {name} as 'kr'")
+                progress.update(tid, description=f"[bold green]✔ {name}[/] (Built)", completed=100)
+                results[name] = ("installed", "Source build successful")
+            else:
+                progress.update(tid, description=f"[bold red]✘ {name}[/] (Build failed)", completed=100)
+                log_failure(name, r.stderr if r.stderr else "Binary not found after build")
+                results[name] = ("failed", "Build produced no binary")
+            return
 
         progress.update(tid, description=f"[bold green]✔ {name}[/] (Ready)", completed=100)
         results[name] = ("success", "Installed" if not UPDATE_MODE else "Updated")
