@@ -2373,51 +2373,188 @@ function sortTable(n) {
         if RICH_AVAILABLE:
             from rich.table import Table
             from rich.panel import Panel
+            from rich.console import Group
             from rich import print as rprint
-            
-            table = Table(show_header=False, box=None, padding=(0, 2))
-            table.add_column(justify="left")
-            table.add_column(justify="left")
-            
-            table.add_row("[bold white][1][/]  Subdomain Enumeration", "[bold white][2][/]  DNS Resolution")
-            table.add_row("[bold white][3][/]  Alive Hosts Check", "[bold white][4][/]  Fast Port Scan")
-            table.add_row("[bold white][5][/]  Full Port Scan", "[bold white][6][/]  URL Collection")
-            table.add_row("[bold white][7][/]  WAF Detection", "[bold white][8][/]  Vulnerability Scan (Nuclei)")
-            table.add_row("[bold white][9][/]  [bold bright_green]FULL AUTOMATED RECON[/]", "[bold white][10][/] Parameter Discovery")
-            table.add_row("[bold white][11][/] JS Endpoint Extraction", "[bold white][12][/] Directory Fuzzing")
-            table.add_row("[bold white][13][/] API Fuzzing", "[bold white][14][/] Subdomain Takeover")
-            table.add_row("[bold white][15][/] Advanced URL Enum", "[bold white][16][/] Screenshot Capture")
-            table.add_row("[bold white][17][/] DNS Bruteforce", "[bold white][18][/] GF Filters")
-            table.add_row("[bold white][19][/] Tech Scan", "[bold white][20][/] SQLi Scan")
-            table.add_row("[bold white][21][/] XSS Scan (Dalfox)", "[bold white][22][/] CORS Scanner")
-            table.add_row("[bold white][23][/] HTTP Smuggling", "[bold white][24][/] ASN Discovery")
-            table.add_row("[bold white][25][/] Cloud Assets", "[bold white][26][/] GitHub Dorking")
-            table.add_row("[bold white][27][/] OSINT Harvesting", "[bold white][28][/] Shodan Recon")
-            table.add_row("[bold white][29][/] Open Redirect Scan", "")
-            table.add_row("", "")
-            table.add_row("[bold white][D][/]  [bold bright_magenta]Deep Recon Mode[/]", "[bold white][R][/]  Generate Reports (HTML/JSON/MD)")
-            table.add_row("[bold white][C][/]  Change Domain", "[bold white][I][/]  Initialize Tools")
-            table.add_row("[bold white][H][/]  Help", "[bold white][Q][/]  Quit")
-            
+            from rich.text import Text
+
+            def get_status(key, name):
+                if key in self.results:
+                    val = self.results[key]
+                    if isinstance(val, int) and val == 0:
+                        return f"[bold dim]✔[/] {name} [dim]({val})[/]"
+                    return f"[bold green]✔[/] {name} [bold green]({val})[/]"
+                return f"  {name}"
+
+            table = Table(show_header=False, box=None, padding=(0, 2, 1, 2))
+            table.add_column(justify="right", style="bold cyan")
+            table.add_column(justify="left", ratio=1)
+            table.add_column(justify="right", style="bold cyan")
+            table.add_column(justify="left", ratio=1)
+
+            # Core Reconnaissance
+            table.add_row(
+                "", "[bold yellow]CORE RECONNAISSANCE WORKFLOW[/]",
+                "", ""
+            )
+            table.add_row(
+                "[1]", get_status("subdomains", "Subdomain Enumeration"),
+                "[2]", get_status("dns_resolved", "DNS Resolution")
+            )
+            table.add_row(
+                "[3]", get_status("alive_hosts", "Alive Hosts Check"),
+                "[4]", get_status("fast_ports", "Fast Port Scan")
+            )
+            table.add_row(
+                "[5]", get_status("full_ports", "Full Port Scan"),
+                "[6]", get_status("urls", "URL Collection")
+            )
+            table.add_row(
+                "[7]", get_status("waf_detected", "WAF Detection"),
+                "[8]", get_status("vulnerabilities", "Vulnerability Scan")
+            )
+
+            table.add_row("", "", "", "")
+
+            # Advanced Modules
+            table.add_row(
+                "", "[bold yellow]ADVANCED MODULES[/]",
+                "", ""
+            )
+            table.add_row(
+                "[10]", get_status("parameters", "Parameter Discovery"),
+                "[11]", get_status("js_endpoints", "JS Endpoint Extraction")
+            )
+            table.add_row(
+                "[12]", "Directory Fuzzing",
+                "[13]", "API Fuzzing"
+            )
+            table.add_row(
+                "[14]", "Subdomain Takeover",
+                "[15]", get_status("urls_final", "Advanced URL Enum")
+            )
+            table.add_row(
+                "[16]", "Screenshot Capture",
+                "[17]", "DNS Bruteforce"
+            )
+            table.add_row(
+                "[18]", get_status("gf_filters", "GF Filters"),
+                "[19]", "Tech Scan"
+            )
+            table.add_row(
+                "[20]", "SQLi Scan",
+                "[21]", get_status("xss_findings", "XSS Scan (Dalfox)")
+            )
+            table.add_row(
+                "[22]", get_status("cors_findings", "CORS Scanner"),
+                "[23]", "HTTP Smuggling"
+            )
+            table.add_row(
+                "[24]", "ASN Discovery",
+                "[25]", "Cloud Assets"
+            )
+            table.add_row(
+                "[26]", "GitHub Dorking",
+                "[27]", "OSINT Harvesting"
+            )
+            table.add_row(
+                "[28]", "Shodan Recon",
+                "[29]", "Open Redirect Scan"
+            )
+
+            table.add_row("", "", "", "")
+
+            # Core Automation
+            table.add_row(
+                "", "[bold yellow]CORE AUTOMATION & SYSTEM[/]",
+                "", ""
+            )
+            table.add_row(
+                "[9]", "[bold bright_green]FULL AUTOMATED RECON[/]",
+                "[D]", "[bold bright_magenta]Deep Recon Mode[/]"
+            )
+            table.add_row(
+                "[R]", "Generate Reports",
+                "[I]", "Initialize Tools"
+            )
+            table.add_row(
+                "[C]", "Change Domain",
+                "[H]", "Help  [bold white]|[/]  [bold cyan]Q[/] Quit"
+            )
+
+            # Stats Header inside panel
+            stats_text = Text()
+            if self.domain:
+                stats_text.append(f"TARGET: {self.domain} ", style="bold green")
+                stats_text.append(f"| OUT: {self.output_dir}/ ", style="dim")
+                
+                # Active Metrics
+                metrics = []
+                if "subdomains" in self.results: metrics.append(f"Subs: {self.results['subdomains']}")
+                if "alive_hosts" in self.results: metrics.append(f"Alive: {self.results['alive_hosts']}")
+                if "urls" in self.results: metrics.append(f"URLs: {self.results['urls']}")
+                if "vulnerabilities" in self.results: metrics.append(f"Vulns: {self.results['vulnerabilities']}")
+                
+                if metrics:
+                    stats_text.append(" | STATS: " + " - ".join(metrics), style="bold cyan")
+                
+                # Suggest Next Step logic
+                suggestion = "[1] Subdomain Enumeration OR [9] Full Automated Recon"
+                
+                # Core Recon checks
+                if "subdomains" in self.results:
+                    suggestion = "[2] DNS Resolution OR [3] Alive Hosts Check"
+                if "dns_resolved" in self.results:
+                    suggestion = "[3] Alive Hosts Check"
+                if "alive_hosts" in self.results:
+                    suggestion = "[4] Fast Port Scan OR [6] URL Collection"
+                if "fast_ports" in self.results or "full_ports" in self.results:
+                    suggestion = "[6] URL Collection"
+                if "urls" in self.results:
+                    suggestion = "[7] WAF Detection OR [8] Vulnerability Scan"
+                if "waf_detected" in self.results:
+                    suggestion = "[8] Vulnerability Scan"
+                if "vulnerabilities" in self.results:
+                    suggestion = "[D] Deep Recon Mode OR begin Advanced Modules (10-29)"
+                    
+                # Advanced Module Overrides
+                if "parameters" in self.results or "js_endpoints" in self.results:
+                    suggestion = "[12] Directory Fuzzing OR [13] API Fuzzing"
+                if "urls_final" in self.results:
+                    suggestion = "[16] Screenshot Capture OR [18] GF Filters"
+                if "gf_filters" in self.results:
+                    suggestion = "[20] SQLi Scan OR [21] XSS Scan (Dalfox)"
+                if "xss_findings" in self.results:
+                    suggestion = "[22] CORS Scanner OR [26] GitHub Dorking"
+                
+                stats_text.append("\nSUGGESTED NEXT STEP: ", style="bold yellow")
+                stats_text.append(suggestion, style="bold white")
+            else:
+                stats_text.append("NO DOMAIN SELECTED. CHOOSE OPTION C FIRST.", style="bold yellow")
+                
             panel = Panel(
-                table,
+                Group(stats_text, Text(""), table),
                 title=f"[bold cyan]OCULUS v{VERSION} MAIN MENU[/]",
                 border_style="cyan",
                 padding=(1, 2)
             )
             rprint(panel)
+            print("")
         else:
             print(f"\n{Colors.CYAN}--- OCULUS MENU ---{Colors.RESET}")
-            print("[1-8] Core Recon  |  [9] Full Auto Recon")
-            print("[10-29] Advanced  |  [D] Deep Recon")
-            print("[C] Change Domain |  [I] Install Tools")
-            print("[R] Generate Reps |  [Q] Quit")
+            print(f"{Colors.YELLOW}[ PHASE 1: RECON ]{Colors.RESET}")
+            print("1. Subdomains  | 2. DNS Resolv  | 3. Alive Hosts | 4. Fast Ports  | 5. Full Ports")
+            print(f"{Colors.YELLOW}[ PHASE 2: DISCOVERY ]{Colors.RESET}")
+            print("6. URLs        | 10. Parameters | 11. JS Endpoints| 12. Dir Fuzz  | 13. API Fuzz")
+            print(f"{Colors.YELLOW}[ PHASE 3: VULNERABILITY ]{Colors.RESET}")
+            print("7. WAF Detect  | 8. Vuln Scan   | 20. SQLi Scan  | 21. XSS Scan   | 22. CORS")
+            print(f"{Colors.YELLOW}[ CORE AUTOMATION ]{Colors.RESET}")
+            print("9. Full Recon  | D. Deep Recon  | C. Domain      | I. Init Tools  | Q. Quit")
             print(f"{Colors.CYAN}-------------------{Colors.RESET}\n")
             
-        if self.domain:
-            print(f"{Colors.GREEN}[+] Domain: {self.domain}  |  Output: {self.output_dir}/{Colors.RESET}\n")
-        else:
-            print(f"{Colors.YELLOW}[!] No domain selected. Choose option C first.{Colors.RESET}\n")
+            if self.domain:
+                print(f"{Colors.GREEN}[+] Domain: {self.domain}  |  Output: {self.output_dir}/{Colors.RESET}\n")
+            else:
+                print(f"{Colors.YELLOW}[!] No domain selected. Choose option C first.{Colors.RESET}\n")
 
     def show_help(self):
         """Display help"""
