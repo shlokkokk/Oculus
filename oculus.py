@@ -209,15 +209,44 @@ class Oculus:
         # 1. Prioritize specialized Opt-based Python scripts first
         special_paths = []
         if name_lower == 'paramspider':
-            special_paths.append("/opt/recontools/ParamSpider/paramspider.py")
+            special_paths.extend([
+                "/opt/recontools/ParamSpider/paramspider.py",
+                "/opt/recontools/paramspider/paramspider.py",
+            ])
         elif name_lower == 'arjun':
-            special_paths.append("/opt/recontools/Arjun/arjun.py")
+            special_paths.extend([
+                "/opt/recontools/Arjun/arjun.py",
+                "/opt/recontools/arjun/arjun.py",
+            ])
         elif name_lower == 'xsstrike':
-            special_paths.append("/opt/recontools/XSStrike/xsstrike.py")
+            special_paths.extend([
+                "/opt/recontools/XSStrike/xsstrike.py",
+                "/opt/recontools/xsstrike/xsstrike.py",
+            ])
         elif name_lower == 'linkfinder':
-            special_paths.append("/opt/recontools/LinkFinder/linkfinder.py")
+            special_paths.extend([
+                "/opt/recontools/LinkFinder/linkfinder.py",
+                "/opt/recontools/linkfinder/linkfinder.py",
+            ])
         elif name_lower == 'theharvester':
-            special_paths.append("/opt/recontools/theHarvester/theHarvester.py")
+            special_paths.extend([
+                "/opt/recontools/theHarvester/theHarvester.py",
+                "/opt/recontools/theharvester/theHarvester.py",
+            ])
+        elif name_lower == 'smuggler':
+            special_paths.extend([
+                "/opt/recontools/smuggler/smuggler.py",
+                "/opt/recontools/Smuggler/smuggler.py",
+            ])
+        elif name_lower == 'kr':
+            special_paths.extend([
+                "/opt/recontools/kiterunner/kr",
+                "/opt/recontools/kr/kr",
+            ])
+        elif name_lower == 'subzy':
+            special_paths.extend([
+                "/opt/recontools/subzy/subzy",
+            ])
         
         for p in special_paths:
             if os.path.exists(p) and not os.path.isdir(p):
@@ -235,25 +264,43 @@ class Oculus:
                 "/usr/local/bin/httpx-toolkit",
             ])
 
-        # Add system PATH version
+        # Add system PATH version (try both original case and lowercase)
         sys_path = shutil.which(name)
         if sys_path:
             paths.append(sys_path)
+        if name != name_lower:
+            sys_path_lower = shutil.which(name_lower)
+            if sys_path_lower:
+                paths.append(sys_path_lower)
             
+        # Add pip-installed / user-local locations
+        paths.extend([
+            os.path.expanduser(f"~/.local/bin/{name}"),
+            os.path.expanduser(f"~/.local/bin/{name_lower}"),
+        ])
+
         # Add standard Recon/Go locations
         paths.extend([
             os.path.expanduser(f"~/go/bin/{name}"),
+            os.path.expanduser(f"~/go/bin/{name_lower}"),
             f"/home/kali/go/bin/{name}",
+            f"/home/kali/go/bin/{name_lower}",
             f"/usr/local/bin/{name}",
+            f"/usr/local/bin/{name_lower}",
             f"/usr/bin/{name}",
+            f"/usr/bin/{name_lower}",
             f"/root/go/bin/{name}",
+            f"/root/go/bin/{name_lower}",
             f"/opt/recontools/{name}/{name}",
             f"/opt/recontools/{name_lower}/{name_lower}",
         ])
 
+        seen = set()
         for p in paths:
-            if p and os.path.exists(p) and not os.path.isdir(p):
-                return p
+            if p and p not in seen:
+                seen.add(p)
+                if os.path.exists(p) and not os.path.isdir(p):
+                    return p
         return None
 
     def get_tool(self, name, fallback=None):
@@ -556,15 +603,13 @@ class Oculus:
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Python/Opt-based Tools...{Colors.RESET}\n")
 
         for name, path in special_tools.items():
-            # Check if hardcoded path exists OR if it's available in system PATH
-            path_exists = os.path.exists(path) if isinstance(path, str) and path and os.path.isabs(path) else False
-            in_path = self.find_tool(name)
-            
-            exists = path_exists or bool(in_path)
+            # path is whatever find_tool returned (could be None or a valid path)
+            resolved = path if (isinstance(path, str) and path and os.path.exists(path)) else None
+            exists = resolved is not None
             
             self.tools_status[name] = {
                 'installed': exists,
-                'path': path if path_exists else (in_path if in_path else ''),
+                'path': resolved or '',
                 'install_command': 'Installed via install.sh or pip'
             }
             status = "✔" if exists else "✘"
@@ -805,7 +850,7 @@ class Oculus:
         httpx_bin = self.get_tool('httpx')
         threads = self.config.get('threads', 50)
         rl = self.config.get('rate_limit', 150)
-        cmd = (f"{httpx_bin} -list {subs_file} -sc -title -ip -cdn -json "
+        cmd = (f"{httpx_bin} -l {subs_file} -sc -title -ip -cdn -json "
                f"-threads {threads} -rl {rl} -timeout 10 -o {raw_output}")
         if not self.run_command_with_retry(cmd, timeout=600, label="httpx"):
             print(f"{Colors.RED}[!] HTTPx scan failed{Colors.RESET}")
@@ -900,8 +945,8 @@ class Oculus:
             naabu_bin = self.get_tool('naabu')
             ports = self.config.get('naabu', {}).get('ports', '1-65535')
             rate = self.config.get('naabu', {}).get('rate', 2000)
-            cmd = (f"{naabu_bin} -l {final_input} -p {ports} -rate {rate} "
-                   f"-scan-all-ips -no-color -o {output_file}")
+            cmd = (f"{naabu_bin} -list {final_input} -p {ports} -rate {rate} "
+                   f"-scan-all-ips -nc -o {output_file}")
             timeout = 300
         else:
             nmap_bin = self.get_tool('nmap')
@@ -1231,10 +1276,18 @@ class Oculus:
 
         if self.tools_status.get('paramspider', {}).get('installed'):
             print(f"{Colors.YELLOW}[*] Running ParamSpider...{Colors.RESET}")
-            ps_bin = self.get_tool('paramspider', "/opt/recontools/ParamSpider/paramspider.py")
-            cmd = f"python3 {ps_bin} -d {sd} --subs --exclude woff,css,png,jpg,gif,svg --level high -o {param_dir}"
+            ps_bin = self.get_tool('paramspider', 'paramspider')
+            # Detect if it's a .py script or pip-installed binary
+            if isinstance(ps_bin, str) and ps_bin.endswith('.py'):
+                cmd = f"python3 {ps_bin} -d {sd} -e woff,css,png,jpg,gif,svg -o {param_dir}/paramspider.txt"
+            else:
+                cmd = f"{ps_bin} -d {sd} -e woff,css,png,jpg,gif,svg -o {param_dir}/paramspider.txt"
             if self.run_command(cmd, timeout=500, label="paramspider"):
                 print(f"{Colors.GREEN}[✔] ParamSpider completed{Colors.RESET}")
+                # ParamSpider may output to results/ dir instead of -o path
+                ps_default = f"results/{self.domain}.txt"
+                if os.path.exists(ps_default) and not os.path.exists(f"{param_dir}/paramspider.txt"):
+                    shutil.move(ps_default, f"{param_dir}/paramspider.txt")
             else:
                 print(f"{Colors.RED}[!] ParamSpider failed{Colors.RESET}")
 
@@ -1242,9 +1295,14 @@ class Oculus:
             urls_file = f"{self.output_dir}/urls.txt"
             if os.path.exists(urls_file):
                 print(f"{Colors.YELLOW}[*] Running Arjun...{Colors.RESET}")
-                arjun_bin = self.get_tool('arjun', "arjun")
+                arjun_bin = self.get_tool('arjun', 'arjun')
                 output_arjun = f"{param_dir}/arjun.json"
-                cmd = f"{arjun_bin} -i {urls_file} -t 20 --json -o {output_arjun}"
+                # Detect if it's a .py script or pip-installed binary
+                if isinstance(arjun_bin, str) and arjun_bin.endswith('.py'):
+                    arjun_prefix = f"python3 {arjun_bin}"
+                else:
+                    arjun_prefix = arjun_bin
+                cmd = f"{arjun_prefix} -i {urls_file} -t 20 -oJ {output_arjun}"
                 if self.run_command(cmd, timeout=1200, label="arjun"):
                     print(f"{Colors.GREEN}[✔] Arjun completed{Colors.RESET}")
 
@@ -1423,7 +1481,15 @@ class Oculus:
         Path(api_dir).mkdir(exist_ok=True)
         kr_bin = self.get_tool('kr')
         output = f"{api_dir}/kr_results.txt"
-        cmd = f"{kr_bin} scan -i {alive_file} -A routes-large.kite -o text"
+        # Kiterunner: target file is positional, wordlist via -w or Assetnote alias via -A
+        kite_wordlist = "/opt/recontools/kiterunner/routes-large.kite"
+        if not os.path.exists(kite_wordlist):
+            kite_wordlist = "/opt/recontools/routes-large.kite"
+        if os.path.exists(kite_wordlist):
+            cmd = f"{kr_bin} scan {alive_file} -w {kite_wordlist} -x 5 -j 50 --fail-status-codes 400,401,404,403,501,502,503"
+        else:
+            # Fall back to Assetnote built-in alias
+            cmd = f"{kr_bin} scan {alive_file} -A=apiroutes-210228 -x 5 -j 50 --fail-status-codes 400,401,404,403,501,502,503"
         if self.run_command(cmd, output_file=output, timeout=1200, label="kr"):
             print(f"{Colors.GREEN}[✔] API fuzzing completed{Colors.RESET}")
         else:
@@ -1499,7 +1565,8 @@ class Oculus:
             return
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Advanced URL Enum (Hakrawler)...{Colors.RESET}\n")
         out_file = f"{self.output_dir}/hakrawler.txt"
-        cmd = f"{self.get_tool('hakrawler')} -list {alive_file} -depth 2 -plain"
+        hakrawler_bin = self.get_tool('hakrawler')
+        cmd = f"cat {alive_file} | {hakrawler_bin} -d 2 -subs"
         if self.run_command(cmd, output_file=out_file, timeout=600, stream=False, label="hakrawler"):
             print(f"{Colors.GREEN}[✔] Hakrawler completed: {self.count_file_lines(out_file)} URLs{Colors.RESET}")
             self.merge_all_urls()
@@ -1531,7 +1598,7 @@ class Oculus:
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Capturing Screenshots...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/screenshots"
         Path(out_dir).mkdir(exist_ok=True)
-        cmd = f"{self.get_tool('gowitness')} file -f {alive_file} -P {out_dir} --timeout 15"
+        cmd = f"{self.get_tool('gowitness')} file -f {alive_file} --screenshot-path {out_dir} --timeout 15"
         if self.run_command(cmd, timeout=600, label="gowitness"):
             imgs = len(list(Path(out_dir).glob("*.png")))
             print(f"{Colors.GREEN}[✔] Captured {imgs} screenshots in {out_dir}{Colors.RESET}")
