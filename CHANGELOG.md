@@ -2,6 +2,22 @@
 
 All notable changes to the **Oculus** project will be documented in this file.
 
+## [3.1.0] - 2026-05-15
+### 🚀 Added
+- **Full Spectrum Scan (`[U]`):** A new 5-phase orchestration pipeline running all 29 modules concurrently with intelligent dependency gating.
+- **Smart Resume Logic:** Deep session integration allowing Full Spectrum Scan to instantly skip previously completed tasks on resume.
+- **Graceful Abort Handling:** Safe `Ctrl+C` interrupt handling that halts pipelines, saves progress, and generates partial reports without losing data.
+- **Data Protection:** Added pre-scan warnings to Full Auto (`[9]`) and Deep Recon (`[D]`) to prevent accidental overwrites of existing session data.
+- **Suggested Next Steps:** Intelligent dashboard prompts that analyze the current scan state and recommend the optimal next action.
+
+### ✨ Improved
+- **Premium TUI Experience:** Redesigned the main menu using `rich` with aligned columns, dynamic real-time scan statistics, and color-coded progress indicators.
+- **Visual Branding:** Updated the ASCII banner tagline to accurately reflect the tool's capabilities ("Full-Spectrum Attack Surface Intelligence").
+- **Graceful Fallbacks:** Enhanced the standard plain-text menu to ensure 100% feature parity for terminals lacking `rich` support.
+
+### 🐛 Fixed
+- **Suggestion Engine Bug:** Fixed an issue where advanced module results would incorrectly override core phase suggestions in the dashboard logic.
+
 ## [3.0.0] - 2026-05-14
 ### 🚀 Added
 - **Initial Release:** Complete rewrite of the framework architecture.
