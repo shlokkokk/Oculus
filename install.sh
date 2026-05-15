@@ -15,6 +15,7 @@ set -o pipefail
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
 RED="\033[1;31m"
+BLUE="\033[1;34m"
 CYAN="\033[1;36m"
 MAGENTA="\033[1;35m"
 DIM="\033[2m"
@@ -870,7 +871,7 @@ echo -e "  ${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━�
 echo -e "  ${YELLOW}  Installation updated your PATH. Run the line below in this${RESET}"
 echo -e "  ${YELLOW}  terminal (type it and press Enter):${RESET}"
 echo ""
-echo -e "  ${DIM}${USER}@${HOSTNAME}:~$ source ${SHELL_RC}${RESET}"
+echo -e "  ${CYAN}${USER}@${HOSTNAME}${RESET}:${BLUE}~${RESET}\$ source ${SHELL_RC}${RESET}"
 echo ""
 echo -e "  ${DIM}  Or close this terminal and open a new one.${RESET}"
 if [ "$SHELL_NAME" = "zsh" ]; then
