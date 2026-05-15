@@ -154,6 +154,66 @@ class Oculus:
         self.config = config or load_config()
         self.logger = None
         self.session_file = ""
+        self._path_augmented = False
+        self._augment_path()
+
+    def _augment_path(self, force=False):
+        """Ensure common tool install locations are on PATH (pip --user, Go, etc.)."""
+        if self._path_augmented and not force:
+            return
+        home = os.path.expanduser('~')
+        gopath = os.environ.get('GOPATH', os.path.join(home, 'go'))
+        extra = [
+            os.path.join(home, '.local', 'bin'),
+            '/usr/local/bin',
+            os.path.join(gopath, 'bin'),
+            os.path.join(home, 'go', 'bin'),
+            '/usr/local/go/bin',
+        ]
+        parts = [p for p in os.environ.get('PATH', '').split(os.pathsep) if p]
+        for p in extra:
+            if p and p not in parts:
+                parts.insert(0, p)
+        os.environ['PATH'] = os.pathsep.join(parts)
+        self._path_augmented = True
+
+    def _local_bin_path(self, name):
+        """Absolute path to ~/.local/bin/<name> when pip --user installed the CLI."""
+        p = os.path.join(os.path.expanduser('~'), '.local', 'bin', name)
+        return p if os.path.isfile(p) else None
+
+    def _which_tool(self, name):
+        self._augment_path()
+        return shutil.which(name) or self._local_bin_path(name)
+
+    def _resolve_cli_tool(self, name):
+        """Find pip/Go CLI: PATH, ~/.local/bin, /usr/local/bin (no shell reload needed)."""
+        self._augment_path()
+        cli = 'kr' if name.lower() == 'kr' else name.lower()
+        for candidate in (
+            self._which_tool(cli),
+            self._local_bin_path(cli),
+            f'/usr/local/bin/{cli}',
+        ):
+            if candidate and (os.path.isfile(candidate) or shutil.which(candidate)):
+                return candidate
+        return None
+
+    def _pip_package_installed(self, name):
+        try:
+            r = subprocess.run(
+                [sys.executable, '-m', 'pip', 'show', name],
+                capture_output=True, text=True, timeout=5,
+            )
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    def _first_existing_file(self, candidates):
+        for p in candidates:
+            if p and os.path.isfile(p):
+                return p
+        return None
 
     def perform_health_check(self):
         """Pre-flight check for disk space and internet"""
@@ -205,22 +265,46 @@ class Oculus:
     def find_tool(self, name):
         """Unified cross-platform path detection with intelligent priority"""
         name_lower = name.lower()
-        
-        # 1. Prioritize specialized Opt-based Python scripts first
-        special_paths = []
+        self._augment_path()
+
+        if name_lower in ('paramspider', 'arjun', 'kr'):
+            found = self._resolve_cli_tool(name_lower)
+            if found:
+                return found
+
         if name_lower == 'paramspider':
-            # ParamSpider is installed via pip and becomes a CLI tool
-            special_paths.extend([
+            script = self._first_existing_file([
+                "/opt/recontools/ParamSpider/paramspider/main.py",
+                "/opt/recontools/paramspider/paramspider/main.py",
                 "/opt/recontools/ParamSpider/paramspider.py",
-                "/opt/recontools/paramspider/paramspider.py",
             ])
+            if script:
+                return script
+            if self._pip_package_installed('paramspider'):
+                return self._which_tool('paramspider') or 'paramspider'
+
         elif name_lower == 'arjun':
-            # Arjun is installed via pip and becomes a CLI tool
-            special_paths.extend([
+            script = self._first_existing_file([
                 "/opt/recontools/Arjun/arjun.py",
                 "/opt/recontools/arjun/arjun.py",
             ])
-        elif name_lower == 'xsstrike':
+            if script:
+                return script
+            if self._pip_package_installed('arjun'):
+                return self._which_tool('arjun') or 'arjun'
+
+        elif name_lower == 'kr':
+            kr_bin = self._first_existing_file([
+                "/usr/local/bin/kr",
+                "/opt/recontools/kiterunner/dist/kr",
+                "/opt/recontools/Kiterunner/dist/kr",
+            ])
+            if kr_bin:
+                return kr_bin
+
+        # Legacy /opt script paths for other Python recon tools
+        special_paths = []
+        if name_lower == 'xsstrike':
             special_paths.extend([
                 "/opt/recontools/XSStrike/xsstrike.py",
                 "/opt/recontools/xsstrike/xsstrike.py",
@@ -240,55 +324,17 @@ class Oculus:
                 "/opt/recontools/smuggler/smuggler.py",
                 "/opt/recontools/Smuggler/smuggler.py",
             ])
-        elif name_lower == 'kr':
-            # Kiterunner gets built and installed to /usr/local/bin/kr
-            special_paths.extend([
-                "/usr/local/bin/kr",
-                "/opt/recontools/kiterunner/dist/kr",
-                "/opt/recontools/kiterunner/kr",
-                "/opt/recontools/kr/kr",
-            ])
         elif name_lower == 'subzy':
             special_paths.extend([
                 "/opt/recontools/subzy/subzy",
             ])
-        
-        for p in special_paths:
-            if os.path.exists(p) and not os.path.isdir(p):
-                return p
 
-        # 2. Build ordered list of binary paths
+        found = self._first_existing_file(special_paths)
+        if found:
+            return found
+
+        # Build ordered list of binary paths
         paths = []
-        
-        # Special handling for pip-installed Python tools (paramspider, arjun, etc)
-        if name_lower in ('paramspider', 'arjun'):
-            # These tools can be invoked as commands after pip install
-            # Check system PATH first
-            sys_path = shutil.which(name_lower)
-            if sys_path:
-                return sys_path
-            
-            # Also check if the package is installed in site-packages and can be run via python -m
-            try:
-                result = subprocess.run(
-                    [sys.executable, '-m', 'pip', 'show', name_lower],
-                    capture_output=True, text=True, timeout=5
-                )
-                if result.returncode == 0:
-                    # Package is installed, return it as a python module reference
-                    return name_lower
-            except:
-                pass
-            
-            # Fall back to checking /opt/recontools paths and .py files
-            opt_paths = [
-                f"/opt/recontools/{name_lower.capitalize()}/{name_lower}.py",
-                f"/opt/recontools/{name_lower}/{name_lower}.py",
-                f"/opt/recontools/{name_lower}/main.py",
-            ]
-            for p in opt_paths:
-                if os.path.exists(p):
-                    return p
         
         # Special case for HTTPx to avoid Conda collision
         if name_lower == 'httpx':
@@ -344,13 +390,13 @@ class Oculus:
         if isinstance(info, dict):
             path = info.get('path')
             if path:
-                # If it's just a command name (no path separators), it's a tool in PATH
+                if os.path.isfile(path):
+                    return path
                 if os.path.sep not in path and not path.startswith('.'):
-                    return path
-                # Otherwise it's a file path, check if it exists
-                if os.path.exists(path):
-                    return path
-        return fallback or name
+                    resolved = self._which_tool(path) or self._which_tool(name)
+                    return resolved or path
+        resolved = self._which_tool(fallback or name)
+        return resolved or fallback or name
 
     def run_command(self, command, output_file=None, timeout=None, stream=True, label=None, get_code=False):
         """Execute a shell command with optional real-time streaming and output redirection"""
@@ -595,6 +641,9 @@ class Oculus:
 
     def initialize_tools(self):
         """Initialize and check all required tools"""
+        self._path_augmented = False
+        self._augment_path(force=True)
+
         tools_to_check = [
             ('subfinder', 'go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest'),
             ('amass', 'sudo apt install amass'),
@@ -629,69 +678,26 @@ class Oculus:
                 installed_count += 1
             print(f"  {color}[{status}] {tool.capitalize()}{Colors.RESET}")
 
-        special_tools = {
-            'paramspider': self.find_tool('paramspider'),
-            'arjun': self.find_tool('arjun'),
-            'xsstrike': self.find_tool('xsstrike'),
-            'smuggler': self.find_tool('smuggler'),
-            'linkfinder': self.find_tool('linkfinder'),
-            'theharvester': self.find_tool('theHarvester'),
-            'subzy': self.find_tool('subzy'),
-            'kr': self.find_tool('kr'),
-        }
+        special_tools = [
+            'paramspider', 'arjun', 'xsstrike', 'smuggler',
+            'linkfinder', 'theharvester', 'subzy', 'kr',
+        ]
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Python/Opt-based Tools...{Colors.RESET}\n")
 
-        for name, path in special_tools.items():
-            # path is whatever find_tool returned (could be None, a file path, or a command name)
-            exists = False
-            resolved = None
-
-            if isinstance(path, str) and path:
-                # 1) If it's a direct file path
-                if os.path.exists(path):
-                    resolved = path
-                    exists = True
-                else:
-                    # 2) If it's a bare command name, try resolving via shutil.which
-                    # try the returned value, then the normalized names
-                    candidates = [path, name, name.lower()]
-                    for cand in candidates:
-                        try_path = shutil.which(cand)
-                        if try_path:
-                            resolved = try_path
-                            exists = True
-                            break
-
-                    # 3) fallback: check common install locations for CLI tools
-                    if not exists:
-                        common_bins = [
-                            f"/usr/local/bin/{name}",
-                            f"/usr/local/bin/{name.lower()}",
-                            f"/usr/bin/{name}",
-                            f"/usr/bin/{name.lower()}",
-                            os.path.expanduser(f"~/.local/bin/{name}"),
-                            os.path.expanduser(f"~/.local/bin/{name.lower()}"),
-                        ]
-                        for cb in common_bins:
-                            if os.path.exists(cb):
-                                resolved = cb
-                                exists = True
-                                break
-
-            # If find_tool returned None, still attempt a PATH lookup by name
-            if not exists:
-                for cand in (name, name.lower()):
-                    try_path = shutil.which(cand)
-                    if try_path:
-                        resolved = try_path
-                        exists = True
-                        break
+        pip_cli_tools = {'paramspider', 'arjun', 'kr'}
+        for name in special_tools:
+            lookup = 'theHarvester' if name == 'theharvester' else name
+            if name in pip_cli_tools:
+                resolved = self._resolve_cli_tool(name) or self.find_tool(lookup)
+            else:
+                resolved = self.find_tool(lookup)
+            exists = bool(resolved)
 
             self.tools_status[name] = {
                 'installed': exists,
                 'path': resolved or '',
-                'install_command': 'Installed via install.sh or pip'
+                'install_command': 'Run ./install.sh --update (see INSTALLATION.md)',
             }
             status = "✔" if exists else "✘"
             color = Colors.GREEN if exists else Colors.RED
@@ -702,7 +708,9 @@ class Oculus:
         total = len(tools_to_check) + len(special_tools)
         print(f"\n{Colors.GREEN}[✔] {installed_count}/{total} tools available{Colors.RESET}")
         if installed_count < total:
-            print(f"{Colors.YELLOW}[!] Install missing tools using the suggested commands{Colors.RESET}\n")
+            print(f"{Colors.YELLOW}[!] Missing tools detected. Run: ./install.sh --update{Colors.RESET}")
+            print(f"{Colors.DIM}    See INSTALLATION.md for manual recovery steps.{Colors.RESET}")
+            print(f"{Colors.DIM}    Ensure $HOME/.local/bin is on PATH: export PATH=\"$HOME/.local/bin:$PATH\"{Colors.RESET}\n")
 
     def setup_domain(self):
         """Setup domain and create output directory"""

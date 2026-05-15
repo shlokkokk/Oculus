@@ -271,6 +271,95 @@ def log_failure(name, text):
     with open(INSTALL_LOG, "a") as f:
         f.write(f"\n--- {name} [{datetime.datetime.now().strftime('%H:%M:%S')}] ---\n{text}\n")
 
+def augment_path_env():
+    home = os.path.expanduser("~")
+    gopath = os.environ.get("GOPATH", os.path.join(home, "go"))
+    extra = [
+        os.path.join(home, ".local", "bin"),
+        "/usr/local/bin",
+        os.path.join(gopath, "bin"),
+        "/usr/local/go/bin",
+    ]
+    parts = [p for p in os.environ.get("PATH", "").split(":") if p]
+    for p in extra:
+        if os.path.isdir(p) and p not in parts:
+            parts.insert(0, p)
+    os.environ["PATH"] = ":".join(parts)
+
+def cli_available(name):
+    augment_path_env()
+    return shutil.which(name) is not None
+
+def py_log(msg):
+    with open(INSTALL_LOG, "a") as f:
+        f.write(msg + "\n")
+
+def ensure_cli_on_path(cli_name):
+    """Symlink CLI into /usr/local/bin so it is visible without reloading shell."""
+    augment_path_env()
+    src = shutil.which(cli_name)
+    if not src:
+        local = os.path.join(os.path.expanduser("~"), ".local", "bin", cli_name)
+        if os.path.isfile(local):
+            src = local
+    if not src:
+        return False
+    dst = f"/usr/local/bin/{cli_name}"
+    if os.path.isfile(dst):
+        return True
+    subprocess.run(["sudo", "ln", "-sf", src, dst], capture_output=True, timeout=30)
+    return os.path.isfile(dst)
+
+def pip_install_package_dir(opt):
+    if shutil.which("pipx"):
+        r = subprocess.run(["pipx", "install", "--force", opt],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode == 0:
+            return True
+        py_log(f"pipx install failed: {r.stderr or r.stdout}")
+    for flags in (["--break-system-packages"], []):
+        cmd = [sys.executable, "-m", "pip", "install", "--user", opt] + flags
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if r.returncode == 0:
+            return True
+        py_log(f"pip install failed: {r.stderr or r.stdout}")
+    return False
+
+def install_kiterunner(opt, progress, tid):
+    dist_bin = os.path.join(opt, "dist", "kr")
+    has_makefile = any(
+        os.path.exists(os.path.join(opt, mf)) for mf in ("makefile", "Makefile")
+    )
+    if has_makefile:
+        progress.update(tid, description="[bold cyan]⚒ kiterunner[/] (Building...)")
+        r = subprocess.run(["make", "build"], cwd=opt, capture_output=True, text=True, timeout=300)
+        if not os.path.isfile(dist_bin):
+            py_log(f"kiterunner make build failed: {r.stderr or r.stdout}")
+    if not os.path.isfile(dist_bin):
+        progress.update(tid, description="[bold cyan]➤ kiterunner[/] (Downloading release...)")
+        arch = "amd64"
+        url = f"https://github.com/assetnote/kiterunner/releases/download/v1.0.2/kiterunner_1.0.2_linux_{arch}.tar.gz"
+        tmp = os.path.join("/tmp", "kiterunner_release.tar.gz")
+        try:
+            extract_dir = os.path.join("/tmp", "kiterunner_extract")
+            shutil.rmtree(extract_dir, ignore_errors=True)
+            os.makedirs(extract_dir, exist_ok=True)
+            subprocess.run(["wget", "-q", url, "-O", tmp], check=True, timeout=120)
+            subprocess.run(["tar", "-xzf", tmp, "-C", extract_dir], check=True, timeout=60)
+            for root, _, files in os.walk(extract_dir):
+                if "kr" in files:
+                    os.makedirs(os.path.dirname(dist_bin), exist_ok=True)
+                    shutil.copy2(os.path.join(root, "kr"), dist_bin)
+                    os.chmod(dist_bin, 0o755)
+                    break
+        except Exception as e:
+            py_log(f"kiterunner release download failed: {e}")
+    if os.path.isfile(dist_bin):
+        subprocess.run(["sudo", "cp", dist_bin, "/usr/local/bin/kr"], timeout=30)
+        subprocess.run(["sudo", "chmod", "+x", "/usr/local/bin/kr"], timeout=30)
+        return cli_available("kr")
+    return False
+
 GO_TOOLS = [
     ("subfinder",   "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"),
     ("assetfinder", "github.com/tomnomnom/assetfinder@latest"),
@@ -349,20 +438,25 @@ def install_go_tool(name, repo, progress, tid):
 def install_recon_tool(name, repo, progress, tid):
     try:
         opt = f"/opt/recontools/{name}"
+        name_lower = name.lower()
+        cli_name = "kr" if name_lower == "kiterunner" else name_lower
+
+        augment_path_env()
+        if os.path.exists(opt) and not UPDATE_MODE and cli_available(cli_name):
+            progress.update(tid, description=f"[bold green]✔ {name}[/] (Present)", completed=100)
+            results[name] = ("skipped", "CLI already on PATH")
+            return
 
         if os.path.exists(opt):
-            if not UPDATE_MODE:
-                progress.update(tid, description=f"[bold green]✔ {name}[/] (Exists)", completed=100)
-                results[name] = ("skipped", "Already cloned")
-                return
-            progress.update(tid, description=f"[bold blue]⟳ {name}[/] (Pulling...)")
-            r = subprocess.run(["git", "-C", opt, "pull", "-q"],
-                               capture_output=True, text=True, timeout=120)
-            if r.returncode != 0:
-                progress.update(tid, description=f"[bold red]✘ {name}[/] (Pull failed)", completed=100)
-                log_failure(name, r.stderr)
-                results[name] = ("failed", "git pull failed")
-                return
+            if UPDATE_MODE:
+                progress.update(tid, description=f"[bold blue]⟳ {name}[/] (Pulling...)")
+                r = subprocess.run(["git", "-C", opt, "pull", "-q"],
+                                   capture_output=True, text=True, timeout=120)
+                if r.returncode != 0:
+                    progress.update(tid, description=f"[bold red]✘ {name}[/] (Pull failed)", completed=100)
+                    log_failure(name, r.stderr)
+                    results[name] = ("failed", "git pull failed")
+                    return
         else:
             progress.update(tid, description=f"[bold yellow]➤ {name}[/] (Cloning...)")
             r = subprocess.run(["git", "clone", "-q", "--depth=1", repo, opt],
@@ -373,91 +467,48 @@ def install_recon_tool(name, repo, progress, tid):
                 results[name] = ("failed", "git clone failed")
                 return
 
-        # Special-case: for some Python tools available on PyPI (e.g., ParamSpider, Arjun),
-        # prefer installing the PyPI package as a CLI shim so it's available on PATH.
-        name_lower = name.lower()
-        if name_lower in ("paramspider", "arjun"):
-            try:
-                progress.update(tid, description=f"[bold cyan]➤ {name}[/] (Installing PyPI package...)")
-                # Prefer pipx if available
-                pip_cmd = None
-                if shutil.which("pipx"):
-                    pip_cmd = ["pipx", "install", name_lower]
-                else:
-                    pip_cmd = [sys.executable, "-m", "pip", "install", "--user", name_lower]
-                r = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=300)
-                if r.returncode == 0:
-                    progress.update(tid, description=f"[bold green]✔ {name}[/] (PyPI installed)", completed=100)
-                    results[name] = ("success", "Installed from PyPI")
-                    return
-                else:
-                    # Log warning and continue to fallback installation steps
-                    log_failure(name, r.stderr if r.stderr else r.stdout)
-                    progress.update(tid, description=f"[bold yellow]➤ {name}[/] (PyPI install failed, falling back)")
-            except Exception as e:
-                log_failure(name, str(e))
+        if name_lower == "arjun" and not cli_available("arjun"):
+            progress.update(tid, description=f"[bold cyan]➤ {name}[/] (PyPI install...)")
+            if shutil.which("pipx"):
+                pip_cmd = ["pipx", "install", "arjun"]
+            else:
+                pip_cmd = [sys.executable, "-m", "pip", "install", "--user", "arjun", "--break-system-packages"]
+            r = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=300)
+            if r.returncode != 0:
+                subprocess.run([sys.executable, "-m", "pip", "install", "--user", "arjun"],
+                                 capture_output=True, text=True, timeout=300)
+            ensure_cli_on_path("arjun")
 
-        # Install requirements for Python tools
+        if name_lower == "kiterunner":
+            if install_kiterunner(opt, progress, tid):
+                progress.update(tid, description=f"[bold green]✔ {name}[/] (kr installed)", completed=100)
+                results[name] = ("success", "kr on PATH")
+            else:
+                progress.update(tid, description=f"[bold red]✘ {name}[/] (Build failed)", completed=100)
+                results[name] = ("failed", "kr binary not found")
+            return
+
         req = os.path.join(opt, "requirements.txt")
         if os.path.exists(req):
             if not pip_install_req(req):
                 log_failure(name, "pip requirements had errors (tool may still work)")
-        
-        # If the cloned repo is a Python package, attempt to install a CLI shim.
-        # Prefer pipx for isolated CLI installs, fall back to pip --user.
+
         setup_py = os.path.join(opt, "setup.py")
         pyproject = os.path.join(opt, "pyproject.toml")
-        if os.path.exists(setup_py) or os.path.exists(pyproject):
-            try:
-                log_info(f"Installing python package for {name} (pipx preferred)...")
-                # Prefer pipx if available
-                if shutil.which("pipx"):
-                    r = subprocess.run(["pipx", "install", "--force", opt],
-                                       capture_output=True, text=True, timeout=300)
-                    if r.returncode == 0:
-                        log_success(f"Installed {name} via pipx")
-                    else:
-                        log_warn(f"pipx install {name} returned warnings/errors, falling back to pip --user")
-                        log_failure(name, r.stderr if r.stderr else r.stdout)
-                        r2 = subprocess.run([sys.executable, "-m", "pip", "install", "--user", opt],
-                                            capture_output=True, text=True, timeout=300)
-                        if r2.returncode == 0:
-                            log_success(f"Installed {name} via pip --user (fallback)")
-                        else:
-                            log_failure(name, r2.stderr if r2.stderr else r2.stdout)
-                else:
-                    # Ensure pip is available and install to user site-packages
-                    r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", opt],
-                                       capture_output=True, text=True, timeout=300)
-                    if r.returncode == 0:
-                        log_success(f"Installed {name} via pip --user")
-                    else:
-                        log_warn(f"pip install --user {name} had warnings/errors")
-                        log_failure(name, r.stderr if r.stderr else r.stdout)
-            except Exception as e:
-                log_failure(name, str(e))
-        
-        # Specialized build for Go-based git tools (like Kiterunner)
-        makefile = os.path.join(opt, "Makefile")
-        if name.lower() == "kiterunner" and os.path.exists(makefile):
-            progress.update(tid, description=f"[bold cyan]⚒ {name}[/] (Building...)")
-            # Kiterunner specific build
-            r = subprocess.run(["make", "build"], cwd=opt, capture_output=True, text=True, timeout=300)
-            dist_bin = os.path.join(opt, "dist", "kr")
-            if os.path.exists(dist_bin):
-                os.system(f"sudo cp {dist_bin} /usr/local/bin/kr")
-                os.system(f"sudo chmod +x /usr/local/bin/kr")
-                log_success(f"Built and installed {name} as 'kr'")
-                progress.update(tid, description=f"[bold green]✔ {name}[/] (Built)", completed=100)
-                results[name] = ("installed", "Source build successful")
+        if (os.path.exists(setup_py) or os.path.exists(pyproject)) and not cli_available(cli_name):
+            progress.update(tid, description=f"[bold cyan]➤ {name}[/] (pip install from source...)")
+            if pip_install_package_dir(opt):
+                ensure_cli_on_path(cli_name)
+                py_log(f"Installed {name} from {opt}")
             else:
-                progress.update(tid, description=f"[bold red]✘ {name}[/] (Build failed)", completed=100)
-                log_failure(name, r.stderr if r.stderr else "Binary not found after build")
-                results[name] = ("failed", "Build produced no binary")
-            return
+                log_failure(name, "pip install from clone failed")
 
-        progress.update(tid, description=f"[bold green]✔ {name}[/] (Ready)", completed=100)
-        results[name] = ("success", "Installed" if not UPDATE_MODE else "Updated")
+        if cli_available(cli_name):
+            progress.update(tid, description=f"[bold green]✔ {name}[/] (Ready)", completed=100)
+            results[name] = ("success", f"{cli_name} on PATH")
+        else:
+            progress.update(tid, description=f"[bold red]✘ {name}[/] (CLI missing)", completed=100)
+            results[name] = ("failed", f"{cli_name} not on PATH after install")
 
     except subprocess.TimeoutExpired:
         progress.update(tid, description=f"[bold red]✘ {name}[/] (Timeout)", completed=100)
@@ -519,7 +570,7 @@ if HAS_RICH:
     ok = skip = fail = 0
     for name in [t[0] for t in GO_TOOLS] + [t[0] for t in RECON_TOOLS]:
         status, detail = results.get(name, ("failed", "Unknown"))
-        if status == "success":
+        if status in ("success", "installed"):
             table.add_row(name, "[bold green]✔ OK[/]", detail); ok += 1
         elif status == "skipped":
             table.add_row(name, "[bold blue]● Skip[/]", detail); skip += 1
@@ -578,6 +629,87 @@ if [ $PYTHON_EXIT -ne 0 ]; then
     log_warn "Continuing post-install phases, but Oculus may not work correctly."
 fi
 INSTALL_FAILED=$PYTHON_EXIT
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 5b: Python CLIs (paramspider, arjun, kr) — pip install + system symlinks
+# ══════════════════════════════════════════════════════════════
+log_step "Phase 5b · Python CLI Tools"
+
+export PATH="$HOME/.local/bin:/usr/local/bin:$GOPATH/bin:$PATH"
+
+link_cli_to_system() {
+    local tool="$1"
+    local src=""
+    src="$(command -v "$tool" 2>/dev/null || true)"
+    if [ -z "$src" ] && [ -x "$HOME/.local/bin/$tool" ]; then
+        src="$HOME/.local/bin/$tool"
+    fi
+    if [ -n "$src" ]; then
+        sudo ln -sf "$src" "/usr/local/bin/$tool" 2>/dev/null || true
+        log_success "$tool → /usr/local/bin/$tool"
+        return 0
+    fi
+    log_warn "$tool not found after install attempt"
+    return 1
+}
+
+# Arjun — PyPI package
+if ! command -v arjun &>/dev/null; then
+    log_info "Installing arjun via pip..."
+    pip3 install --user arjun --break-system-packages -q 2>/dev/null \
+        || pip3 install --user arjun -q 2>/dev/null \
+        || log_warn "pip install arjun failed"
+fi
+link_cli_to_system arjun || true
+
+# ParamSpider — NOT on PyPI; install from cloned repo
+PS_DIR="/opt/recontools/ParamSpider"
+if [ -d "$PS_DIR" ] && ! command -v paramspider &>/dev/null; then
+    log_info "Installing paramspider from $PS_DIR..."
+    pip3 install --user "$PS_DIR" --break-system-packages -q 2>/dev/null \
+        || pip3 install --user "$PS_DIR" -q 2>/dev/null \
+        || log_warn "pip install ParamSpider failed"
+fi
+link_cli_to_system paramspider || true
+
+# Kiterunner — ensure kr binary exists
+if ! command -v kr &>/dev/null; then
+    KR_DIR="/opt/recontools/kiterunner"
+    if [ -d "$KR_DIR" ]; then
+        if [ -f "$KR_DIR/makefile" ] || [ -f "$KR_DIR/Makefile" ]; then
+            log_info "Building kiterunner (kr)..."
+            (cd "$KR_DIR" && make build) 2>/dev/null || log_warn "make build failed"
+        fi
+        if [ -f "$KR_DIR/dist/kr" ]; then
+            sudo cp "$KR_DIR/dist/kr" /usr/local/bin/kr 2>/dev/null
+            sudo chmod +x /usr/local/bin/kr 2>/dev/null
+        fi
+    fi
+    if ! command -v kr &>/dev/null; then
+        log_info "Downloading kiterunner release binary..."
+        KR_TMP="/tmp/kiterunner_linux_amd64.tar.gz"
+        if wget -q "https://github.com/assetnote/kiterunner/releases/download/v1.0.2/kiterunner_1.0.2_linux_amd64.tar.gz" \
+            -O "$KR_TMP" 2>/dev/null; then
+            mkdir -p /tmp/kiterunner_extract
+            tar -xzf "$KR_TMP" -C /tmp/kiterunner_extract 2>/dev/null
+            KR_BIN="$(find /tmp/kiterunner_extract -name kr -type f 2>/dev/null | head -1)"
+            if [ -n "$KR_BIN" ]; then
+                sudo cp "$KR_BIN" /usr/local/bin/kr
+                sudo chmod +x /usr/local/bin/kr
+            fi
+        fi
+    fi
+fi
+link_cli_to_system kr || true
+
+log_info "CLI verification:"
+for t in arjun paramspider kr; do
+    if command -v "$t" &>/dev/null; then
+        log_success "  $t → $(command -v "$t")"
+    else
+        log_warn "  $t — not on PATH (run: export PATH=\"\$HOME/.local/bin:\$PATH\")"
+    fi
+done
 
 # ══════════════════════════════════════════════════════════════
 # PHASE 6: GF Patterns
