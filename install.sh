@@ -288,7 +288,7 @@ GO_TOOLS = [
     ("gowitness",   "github.com/sensepost/gowitness@latest"),
     ("gf",          "github.com/tomnomnom/gf@latest"),
     ("amass",       "github.com/owasp-amass/amass/v4/...@master"),
-    ("kr",          "github.com/assetnote/kiterunner/cmd/kr@latest"),
+    ("kr",          "github.com/assetnote/kiterunner/v2/cmd/kr@latest"),
     ("subzy",       "github.com/PentestPad/subzy@latest"),
 ]
 

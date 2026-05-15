@@ -206,8 +206,12 @@ class Oculus:
             shutil.which(name),
             f"/usr/local/bin/{name}",
             f"/usr/bin/{name}",
+            os.path.expanduser(f"~/go/bin/{name}"),
+            f"/home/kali/go/bin/{name}",
             f"/root/go/bin/{name}",
             f"/opt/recontools/{name}/{name}",
+            f"/opt/recontools/{name.lower()}/{name.lower()}",
+            f"/opt/recontools/{name.capitalize()}/{name.lower()}.py",
         ]
         for p in paths:
             if p and os.path.exists(p):
@@ -506,6 +510,7 @@ class Oculus:
             'xsstrike': '/opt/recontools/XSStrike/xsstrike.py',
             'smuggler': '/opt/recontools/smuggler/smuggler.py',
             'linkfinder': '/opt/recontools/LinkFinder/linkfinder.py',
+            'theharvester': '/opt/recontools/theHarvester/theHarvester.py',
             'subzy': self.find_tool('subzy'),
             'kr': self.find_tool('kr'),
         }
@@ -513,11 +518,16 @@ class Oculus:
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Python/Opt-based Tools...{Colors.RESET}\n")
 
         for name, path in special_tools.items():
-            exists = os.path.exists(path) if isinstance(path, str) and path else bool(path)
+            # Check if hardcoded path exists OR if it's available in system PATH
+            path_exists = os.path.exists(path) if isinstance(path, str) and path and os.path.isabs(path) else False
+            in_path = self.find_tool(name)
+            
+            exists = path_exists or bool(in_path)
+            
             self.tools_status[name] = {
                 'installed': exists,
-                'path': path if path else '',
-                'install_command': 'Installed via install.sh in /opt/recontools'
+                'path': path if path_exists else (in_path if in_path else ''),
+                'install_command': 'Installed via install.sh or pip'
             }
             status = "✔" if exists else "✘"
             color = Colors.GREEN if exists else Colors.RED
