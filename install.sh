@@ -373,25 +373,67 @@ def install_recon_tool(name, repo, progress, tid):
                 results[name] = ("failed", "git clone failed")
                 return
 
+        # Special-case: for some Python tools available on PyPI (e.g., ParamSpider, Arjun),
+        # prefer installing the PyPI package as a CLI shim so it's available on PATH.
+        name_lower = name.lower()
+        if name_lower in ("paramspider", "arjun"):
+            try:
+                progress.update(tid, description=f"[bold cyan]➤ {name}[/] (Installing PyPI package...)")
+                # Prefer pipx if available
+                pip_cmd = None
+                if shutil.which("pipx"):
+                    pip_cmd = ["pipx", "install", name_lower]
+                else:
+                    pip_cmd = [sys.executable, "-m", "pip", "install", "--user", name_lower]
+                r = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=300)
+                if r.returncode == 0:
+                    progress.update(tid, description=f"[bold green]✔ {name}[/] (PyPI installed)", completed=100)
+                    results[name] = ("success", "Installed from PyPI")
+                    return
+                else:
+                    # Log warning and continue to fallback installation steps
+                    log_failure(name, r.stderr if r.stderr else r.stdout)
+                    progress.update(tid, description=f"[bold yellow]➤ {name}[/] (PyPI install failed, falling back)")
+            except Exception as e:
+                log_failure(name, str(e))
+
         # Install requirements for Python tools
         req = os.path.join(opt, "requirements.txt")
         if os.path.exists(req):
             if not pip_install_req(req):
                 log_failure(name, "pip requirements had errors (tool may still work)")
         
-        # If the cloned repo is a Python package, attempt a user-local pip install
+        # If the cloned repo is a Python package, attempt to install a CLI shim.
+        # Prefer pipx for isolated CLI installs, fall back to pip --user.
         setup_py = os.path.join(opt, "setup.py")
         pyproject = os.path.join(opt, "pyproject.toml")
         if os.path.exists(setup_py) or os.path.exists(pyproject):
             try:
-                log_info(f"Installing python package for {name} into user site-packages...")
-                r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", opt],
-                                   capture_output=True, text=True, timeout=300)
-                if r.returncode == 0:
-                    log_success(f"Installed {name} via pip --user")
+                log_info(f"Installing python package for {name} (pipx preferred)...")
+                # Prefer pipx if available
+                if shutil.which("pipx"):
+                    r = subprocess.run(["pipx", "install", "--force", opt],
+                                       capture_output=True, text=True, timeout=300)
+                    if r.returncode == 0:
+                        log_success(f"Installed {name} via pipx")
+                    else:
+                        log_warn(f"pipx install {name} returned warnings/errors, falling back to pip --user")
+                        log_failure(name, r.stderr if r.stderr else r.stdout)
+                        r2 = subprocess.run([sys.executable, "-m", "pip", "install", "--user", opt],
+                                            capture_output=True, text=True, timeout=300)
+                        if r2.returncode == 0:
+                            log_success(f"Installed {name} via pip --user (fallback)")
+                        else:
+                            log_failure(name, r2.stderr if r2.stderr else r2.stdout)
                 else:
-                    log_warn(f"pip install --user {name} had warnings/errors")
-                    log_failure(name, r.stderr if r.stderr else r.stdout)
+                    # Ensure pip is available and install to user site-packages
+                    r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", opt],
+                                       capture_output=True, text=True, timeout=300)
+                    if r.returncode == 0:
+                        log_success(f"Installed {name} via pip --user")
+                    else:
+                        log_warn(f"pip install --user {name} had warnings/errors")
+                        log_failure(name, r.stderr if r.stderr else r.stdout)
             except Exception as e:
                 log_failure(name, str(e))
         
