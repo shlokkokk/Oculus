@@ -2014,10 +2014,37 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] Open Redirect Scan completed — {len(found)} vulnerabilities found{Colors.RESET}")
         self.save_session()
 
+    def _detect_existing_data(self, key_map):
+        """Check self.results for existing scan data. Returns dict of label->value for keys found."""
+        return {label: self.results[key] for key, label in key_map.items() if key in self.results}
+
+    def _warn_existing_data(self, existing, mode_name):
+        """Show existing data warning and ask y/n. Returns True if user wants to continue."""
+        if not existing:
+            return True
+        if self.config.get('auto_confirm', False):
+            return True
+        print(f"\n{Colors.YELLOW}[!] Existing scan data detected:{Colors.RESET}")
+        parts = " | ".join(f"{k}: {v}" for k, v in existing.items())
+        print(f"    {Colors.WHITE}{parts}{Colors.RESET}")
+        print(f"    {Colors.YELLOW}{mode_name} will re-run all steps and overwrite this data.{Colors.RESET}")
+        yn = input(f"{Colors.YELLOW}[?] Continue and overwrite? (y/n): {Colors.RESET}")
+        return yn.lower().strip() == 'y'
+
     def run_full_automated_recon(self):
         """Run the core Oculus chain"""
         if not self._require_setup():
             return
+
+        core_keys = {
+            'subdomains': 'Subs', 'dns_resolved': 'DNS', 'alive_hosts': 'Alive',
+            'fast_ports': 'Ports', 'urls': 'URLs', 'waf_detected': 'WAF',
+            'vulnerabilities': 'Vulns'
+        }
+        existing = self._detect_existing_data(core_keys)
+        if not self._warn_existing_data(existing, "Full Auto Recon"):
+            return
+
         print(f"\n{Colors.MAGENTA}{Colors.BOLD}╔══════════════════════════════════════════════════════╗")
         print(f"║          STARTING FULL AUTOMATED RECON (CORE)        ║")
         print(f"╚══════════════════════════════════════════════════════╝{Colors.RESET}\n")
@@ -2039,20 +2066,36 @@ class Oculus:
         self.generate_summary()
         self.generate_html_report()
         self.generate_json_report()
-        print(f"\n{Colors.GREEN}{Colors.BOLD}[✔] FULL AUTOMATED RECON COMPLETED!{Colors.RESET}\n")
+        print(f"\n{Colors.GREEN}{Colors.BOLD}[+] FULL AUTOMATED RECON COMPLETED!{Colors.RESET}\n")
 
     def run_deep_recon_mode(self):
         """Run all advanced modules"""
         if not self._require_setup():
             return
+
+        deep_keys = {
+            'parameters': 'Params', 'js_endpoints': 'JS', 'urls_final': 'URLs Final',
+            'gf_filters': 'GF', 'xss_findings': 'XSS', 'cors_findings': 'CORS'
+        }
+        existing = self._detect_existing_data(deep_keys)
+
+        confirm = self.config.get('auto_confirm', False)
+        if not confirm:
+            print(f"\n{Colors.MAGENTA}{Colors.BOLD}╔══════════════════════════════════════════════════════╗")
+            print(f"║               STARTING DEEP RECON MODE               ║")
+            print(f"╚══════════════════════════════════════════════════════╝{Colors.RESET}\n")
+            if existing:
+                print(f"{Colors.YELLOW}[!] Existing advanced scan data detected:{Colors.RESET}")
+                parts = " | ".join(f"{k}: {v}" for k, v in existing.items())
+                print(f"    {Colors.WHITE}{parts}{Colors.RESET}")
+                print(f"    {Colors.YELLOW}Deep Recon will re-run all 14 steps and overwrite this data.{Colors.RESET}")
+            yn = input(f"{Colors.YELLOW}[!] Launch Deep Recon on {self.domain}? (y/n): {Colors.RESET}")
+            if yn.lower().strip() != 'y':
+                return
+
         print(f"\n{Colors.MAGENTA}{Colors.BOLD}╔══════════════════════════════════════════════════════╗")
         print(f"║               STARTING DEEP RECON MODE               ║")
         print(f"╚══════════════════════════════════════════════════════╝{Colors.RESET}\n")
-        confirm = self.config.get('auto_confirm', False)
-        if not confirm:
-            yn = input(f"{Colors.YELLOW}[!] Deep Recon will run 10+ advanced tools and take a very long time. Continue? (y/n): {Colors.RESET}")
-            if yn.lower() != 'y':
-                return
         steps = [
             self.run_asn_discovery,
             self.run_parameter_discovery,
@@ -2080,63 +2123,77 @@ class Oculus:
 
     def run_full_spectrum_scan(self):
         """Run every single Oculus module in perfect dependency order with concurrency where safe.
-        
-        Pipeline Architecture:
-        
-        PHASE 1 - DISCOVERY (Foundation)
-            [Sequential] Subdomain Enum -> DNS Bruteforce (merges back) -> DNS Resolution -> Alive Hosts
-            [Concurrent]  ASN Discovery + Cloud Assets + OSINT + Shodan + GitHub Dorking (independent, domain-only)
-        
-        PHASE 2 - INFRASTRUCTURE ANALYSIS
-            [Concurrent]  Fast Port Scan + Full Port Scan + Tech Scan + WAF Detection + Screenshots
-            (all need alive.txt, none depend on each other)
-        
-        PHASE 3 - CONTENT DISCOVERY
-            [Sequential]  URL Collection -> Advanced URL Enum (produces urls_final.txt)
-            [Concurrent]  Parameter Discovery + JS Endpoint Extraction (need urls.txt)
-            [Sequential]  Subdomain Takeover Check (needs subdomains.txt)
-        
-        PHASE 4 - VULNERABILITY ANALYSIS
-            [Sequential]  Nuclei Vulnerability Scan (needs alive.txt)
-            [Sequential]  GF Filters (needs urls_final.txt, gates Phase 5)
-            [Concurrent]  Directory Fuzzing + API Fuzzing (need alive.txt, independent)
-        
-        PHASE 5 - TARGETED EXPLOITATION
-            [Concurrent]  SQLi Scan + XSS Scan + Open Redirect Scan (all need gf/*.txt)
-            [Concurrent]  CORS Scanner + HTTP Smuggling (need alive.txt, independent)
+        Supports smart resume: if previous data exists, user can skip completed steps.
         """
         if not self._require_setup():
             return
-        
-        confirm = self.config.get('auto_confirm', False)
-        if not confirm:
-            print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
-            print(f"  FULL SPECTRUM SCAN will run ALL 29 modules across 5 phases.")
-            print(f"  This covers Recon, Infrastructure, Discovery, Vulnerability, and Exploitation.")
-            print(f"  Estimated runtime: 2-6 hours depending on target size and tool availability.")
-            print(f"{Colors.RESET}")
-            yn = input(f"{Colors.YELLOW}[!] Launch Full Spectrum Scan on {self.domain}? (y/n): {Colors.RESET}")
-            if yn.lower().strip() != 'y':
-                return
-        
+
+        # ── Detect existing scan data ────────────────────────────────
+        scan_keys = {
+            'subdomains': 'Subs', 'dns_resolved': 'DNS', 'alive_hosts': 'Alive',
+            'fast_ports': 'Fast Ports', 'full_ports': 'Full Ports',
+            'urls': 'URLs', 'urls_final': 'URLs Final', 'waf_detected': 'WAF',
+            'vulnerabilities': 'Vulns', 'parameters': 'Params',
+            'js_endpoints': 'JS', 'gf_filters': 'GF',
+            'xss_findings': 'XSS', 'cors_findings': 'CORS'
+        }
+        existing = self._detect_existing_data(scan_keys)
+        skip_completed = False
+
+        if existing:
+            if self.config.get('auto_confirm', False):
+                skip_completed = True  # CI mode: default to resume
+            else:
+                parts = " | ".join(f"{k}: {v}" for k, v in existing.items())
+                print(f"\n{Colors.YELLOW}[!] Existing scan data detected for {self.domain}:{Colors.RESET}")
+                print(f"    {Colors.WHITE}{parts}{Colors.RESET}")
+                print(f"\n    {Colors.CYAN}[1]{Colors.RESET} Resume  -- skip completed steps, continue from where it stopped")
+                print(f"    {Colors.CYAN}[2]{Colors.RESET} Fresh   -- re-run everything from scratch (overwrites data)")
+                print(f"    {Colors.CYAN}[3]{Colors.RESET} Cancel")
+                choice = input(f"\n{Colors.YELLOW}[?] Choose (1/2/3): {Colors.RESET}").strip()
+                if choice == '1':
+                    skip_completed = True
+                elif choice == '2':
+                    skip_completed = False
+                else:
+                    return
+        else:
+            if not self.config.get('auto_confirm', False):
+                print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
+                print(f"  FULL SPECTRUM SCAN will run ALL 29 modules across 5 phases.")
+                print(f"  Estimated runtime: 2-6 hours depending on target size.")
+                print(f"{Colors.RESET}")
+                yn = input(f"{Colors.YELLOW}[!] Launch Full Spectrum Scan on {self.domain}? (y/n): {Colors.RESET}")
+                if yn.lower().strip() != 'y':
+                    return
+
         start_time = time.time()
-        
+        mode_label = "RESUME" if skip_completed else "FULL"
+
         print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
         print(f"======================================================================")
-        print(f"   FULL SPECTRUM SCAN -- {self.domain}")
+        print(f"   FULL SPECTRUM SCAN [{mode_label}] -- {self.domain}")
         print(f"======================================================================")
         print(f"{Colors.RESET}\n")
-        
+
         # Thread-safe tracking lists
         _lock = threading.Lock()
         failed_steps = []
         completed_steps = []
+        skipped_steps = []
         aborted = False
-        
-        def _run_step(name, func):
-            """Run a single step with error handling and thread-safe tracking"""
+
+        def _run_step(name, func, result_key=None):
+            """Run a single step with skip-check, error handling, and thread-safe tracking."""
             nonlocal aborted
             if aborted:
+                return
+            # Skip logic: if resuming and this step's result key already exists
+            if skip_completed and result_key and result_key in self.results:
+                val = self.results[result_key]
+                print(f"\n{Colors.BLUE}[SKIP] {name} -- already completed ({val}){Colors.RESET}")
+                with _lock:
+                    skipped_steps.append(name)
                 return
             try:
                 print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*60}")
@@ -2153,40 +2210,42 @@ class Oculus:
                     failed_steps.append((name, str(e)))
                 self.logger.error(f"Full Spectrum step failed [{name}]: {e}")
                 print(f"{Colors.RED}[!] STEP FAILED: {name} -- {e}{Colors.RESET}")
-        
+
         def _run_concurrent(step_list):
-            """Run multiple steps concurrently using threads"""
+            """Run multiple steps concurrently. Items are (name, func) or (name, func, result_key)."""
             nonlocal aborted
             if aborted:
                 return
             if not self.config.get('parallel', True) or len(step_list) <= 1:
-                for name, func in step_list:
+                for item in step_list:
                     if aborted:
                         break
-                    _run_step(name, func)
+                    rk = item[2] if len(item) > 2 else None
+                    _run_step(item[0], item[1], rk)
                 return
-            
-            names = ', '.join(n for n, _ in step_list)
+
+            names = ', '.join(item[0] for item in step_list)
             print(f"\n{Colors.CYAN}[*] Running {len(step_list)} tasks concurrently: {names}{Colors.RESET}")
             with ThreadPoolExecutor(max_workers=len(step_list)) as executor:
-                futures = {executor.submit(_run_step, name, func): name for name, func in step_list}
+                futures = {}
+                for item in step_list:
+                    rk = item[2] if len(item) > 2 else None
+                    futures[executor.submit(_run_step, item[0], item[1], rk)] = item[0]
                 for future in as_completed(futures):
                     try:
                         future.result()
                     except Exception:
                         pass  # Already handled inside _run_step
-        
+
         try:
-            # ── PHASE 1: DISCOVERY (Foundation) ──────────────────────────
+            # ── PHASE 1: DISCOVERY ───────────────────────────────────
             print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 1/5: DISCOVERY ---{Colors.RESET}")
-            
-            # Sequential: subdomain pipeline (each feeds the next)
-            _run_step("Subdomain Enumeration", self.run_subdomain_enumeration)
+
+            _run_step("Subdomain Enumeration", self.run_subdomain_enumeration, "subdomains")
             _run_step("DNS Bruteforce", self.run_dns_bruteforce)
-            _run_step("DNS Resolution", self.run_dns_resolution)
-            _run_step("Alive Hosts Check", self.run_alive_hosts_check)
-            
-            # Concurrent: independent domain-only tasks
+            _run_step("DNS Resolution", self.run_dns_resolution, "dns_resolved")
+            _run_step("Alive Hosts Check", self.run_alive_hosts_check, "alive_hosts")
+
             _run_concurrent([
                 ("ASN Discovery", self.run_asn_discovery),
                 ("Cloud Asset Discovery", self.run_cloud_asset_discovery),
@@ -2194,90 +2253,80 @@ class Oculus:
                 ("Shodan Recon", self.run_shodan_integration),
                 ("GitHub Dorking", self.run_github_dorking),
             ])
-            
+
             self.save_session()
-            
-            # ── PHASE 2: INFRASTRUCTURE ANALYSIS ─────────────────────────
+
+            # ── PHASE 2: INFRASTRUCTURE ──────────────────────────────
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
-                
-                # Concurrent: all need alive.txt but are independent of each other
+
                 _run_concurrent([
-                    ("Fast Port Scan", self.run_fast_port_scan),
-                    ("Full Port Scan", self.run_full_port_scan),
+                    ("Fast Port Scan", self.run_fast_port_scan, "fast_ports"),
+                    ("Full Port Scan", self.run_full_port_scan, "full_ports"),
                     ("Tech Scan", self.run_tech_scan),
-                    ("WAF Detection", self.run_waf_detection),
+                    ("WAF Detection", self.run_waf_detection, "waf_detected"),
                     ("Screenshot Capture", self.run_screenshot_capture),
                 ])
-                
+
                 self.save_session()
-            
-            # ── PHASE 3: CONTENT DISCOVERY ───────────────────────────────
+
+            # ── PHASE 3: CONTENT DISCOVERY ───────────────────────────
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 3/5: CONTENT DISCOVERY ---{Colors.RESET}")
-                
-                # URL Collection first (produces urls.txt needed by params/JS)
-                _run_step("URL Collection", self.run_url_collection)
-                _run_step("Advanced URL Enum", self.run_advanced_url_enum)
-                
-                # Concurrent: both need urls.txt, independent of each other
+
+                _run_step("URL Collection", self.run_url_collection, "urls")
+                _run_step("Advanced URL Enum", self.run_advanced_url_enum, "urls_final")
+
                 _run_concurrent([
-                    ("Parameter Discovery", self.run_parameter_discovery),
-                    ("JS Endpoint Extraction", self.run_js_endpoint_extraction),
+                    ("Parameter Discovery", self.run_parameter_discovery, "parameters"),
+                    ("JS Endpoint Extraction", self.run_js_endpoint_extraction, "js_endpoints"),
                 ])
-                
-                # Subdomain takeover only needs subdomains.txt (already available)
+
                 _run_step("Subdomain Takeover Check", self.run_subdomain_takeover_check)
-                
+
                 self.save_session()
-            
-            # ── PHASE 4: VULNERABILITY ANALYSIS ──────────────────────────
+
+            # ── PHASE 4: VULNERABILITY ANALYSIS ──────────────────────
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 4/5: VULNERABILITY ANALYSIS ---{Colors.RESET}")
-                
-                # Nuclei (needs alive.txt)
-                _run_step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan)
-                
-                # GF Filters (needs urls_final.txt, gates SQLi/XSS/Redirect scans)
-                _run_step("GF Filters", self.run_gf_filters)
-                
-                # Concurrent: fuzzing tasks (both need alive.txt, independent)
+
+                _run_step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, "vulnerabilities")
+                _run_step("GF Filters", self.run_gf_filters, "gf_filters")
+
                 _run_concurrent([
                     ("Directory Fuzzing", self.run_directory_fuzzing),
                     ("API Fuzzing", self.run_api_fuzzing),
                 ])
-                
+
                 self.save_session()
-            
-            # ── PHASE 5: TARGETED EXPLOITATION ───────────────────────────
+
+            # ── PHASE 5: TARGETED EXPLOITATION ───────────────────────
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 5/5: TARGETED EXPLOITATION ---{Colors.RESET}")
-                
-                # Concurrent: all GF-dependent scans (need gf/*.txt)
+
                 _run_concurrent([
                     ("SQLi Scan", self.run_sqlmap_scan),
-                    ("XSS Scan (Dalfox)", self.run_xss_scan),
+                    ("XSS Scan (Dalfox)", self.run_xss_scan, "xss_findings"),
                     ("Open Redirect Scan", self.run_open_redirect_scan),
                 ])
-                
-                # Concurrent: network-level vuln scans (need alive.txt)
+
                 _run_concurrent([
-                    ("CORS Scanner", self.run_cors_scan),
+                    ("CORS Scanner", self.run_cors_scan, "cors_findings"),
                     ("HTTP Smuggling", self.run_http_smuggling),
                 ])
-                
+
                 self.save_session()
-                
+
         except KeyboardInterrupt:
             aborted = True
             print(f"\n{Colors.YELLOW}[!] Scan aborted by user (Ctrl+C){Colors.RESET}")
-        
+
         # ── FINAL: REPORTING (always runs, even on abort) ────────────
         duration = int(time.time() - start_time)
         hours, remainder = divmod(duration, 3600)
         minutes, seconds = divmod(remainder, 60)
         duration_str = f"{hours}h {minutes}m {seconds}s"
-        
+
         self.show_diff()
         try:
             self.generate_summary(duration=duration)
@@ -2286,7 +2335,7 @@ class Oculus:
             self.generate_markdown_report()
         except Exception as e:
             self.logger.error(f"Report generation failed: {e}")
-        
+
         # Final Summary
         status = "ABORTED" if aborted else "COMPLETED"
         color = Colors.YELLOW if aborted else Colors.GREEN
@@ -2296,6 +2345,8 @@ class Oculus:
         print(f"======================================================================{Colors.RESET}")
         print(f"\n  {Colors.WHITE}Duration    : {duration_str}{Colors.RESET}")
         print(f"  {Colors.GREEN}Completed   : {len(completed_steps)} steps{Colors.RESET}")
+        if skipped_steps:
+            print(f"  {Colors.BLUE}Resumed     : {len(skipped_steps)} steps skipped (data kept){Colors.RESET}")
         if failed_steps:
             print(f"  {Colors.RED}Failed      : {len(failed_steps)} steps{Colors.RESET}")
             for name, err in failed_steps:
