@@ -405,7 +405,10 @@ All scan data goes under **`output-<domain>/`** (created when you set the domain
 
 Subfolders (created as needed): `parameters/`, `js_endpoints/`, `fuzzing/`, `api_fuzzing/`, `takeover/`, `screenshots/`, `gf/`, `tech_scan/`, `sqlmap/`, `xss_findings/`, `cors_findings/`, `smuggling/`, `asn/`, `cloud/`, `github/`, `osint/`, `shodan/`, `redirects/`, etc.
 
-**Session resume:** If `session.json` exists and you re-enter the same domain (**C**), Oculus offers to restore prior `results` and skip redundant work when you confirm (unless `auto_confirm` / `--no-confirm` forces auto-yes).
+**Session resume:** If `session.json` exists and you re-enter the same domain (**C**), Oculus restores prior `results`.
+- **Full Spectrum (`U`)** offers a smart **Resume** mode: it skips already-completed steps (printing `[SKIP]`) to safely pick up where a long scan dropped off.
+- **Full Auto (`9`)** and **Deep Recon (`D`)** will warn you about existing data and ask for confirmation before overwriting it.
+- If `--no-confirm` / `auto_confirm` is set, `[U]` automatically resumes, while `[9]` and `[D]` automatically overwrite.
 
 </details>
 
