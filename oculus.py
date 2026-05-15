@@ -203,29 +203,53 @@ class Oculus:
         self.logger.addHandler(eh)
 
     def find_tool(self, name):
-        """Unified cross-platform path detection for all Oculus tools"""
-        paths = [
+        """Unified cross-platform path detection with intelligent priority"""
+        name_lower = name.lower()
+        
+        # 1. Prioritize specialized Opt-based Python scripts first
+        special_paths = []
+        if name_lower == 'paramspider':
+            special_paths.append("/opt/recontools/ParamSpider/paramspider.py")
+        elif name_lower == 'arjun':
+            special_paths.append("/opt/recontools/Arjun/arjun.py")
+        elif name_lower == 'xsstrike':
+            special_paths.append("/opt/recontools/XSStrike/xsstrike.py")
+        elif name_lower == 'linkfinder':
+            special_paths.append("/opt/recontools/LinkFinder/linkfinder.py")
+        elif name_lower == 'theharvester':
+            special_paths.append("/opt/recontools/theHarvester/theHarvester.py")
+        
+        for p in special_paths:
+            if os.path.exists(p) and not os.path.isdir(p):
+                return p
+
+        # 2. Build ordered list of binary paths
+        paths = []
+        
+        # Special case for HTTPx to avoid Conda collision
+        if name_lower == 'httpx':
+            paths.extend([
+                os.path.expanduser("~/go/bin/httpx"),
+                "/home/kali/go/bin/httpx",
+                "/usr/bin/httpx-toolkit",
+                "/usr/local/bin/httpx-toolkit",
+            ])
+
+        # Add system PATH version
+        sys_path = shutil.which(name)
+        if sys_path:
+            paths.append(sys_path)
+            
+        # Add standard Recon/Go locations
+        paths.extend([
             os.path.expanduser(f"~/go/bin/{name}"),
             f"/home/kali/go/bin/{name}",
             f"/usr/local/bin/{name}",
             f"/usr/bin/{name}",
             f"/root/go/bin/{name}",
             f"/opt/recontools/{name}/{name}",
-            f"/opt/recontools/{name.lower()}/{name.lower()}",
-            shutil.which(name),
-        ]
-        
-        # Add tool-specific exact python script paths
-        if name.lower() == 'paramspider':
-            paths.append("/opt/recontools/ParamSpider/paramspider.py")
-        elif name.lower() == 'arjun':
-            paths.append("/opt/recontools/Arjun/arjun.py")
-        elif name.lower() == 'xsstrike':
-            paths.append("/opt/recontools/XSStrike/xsstrike.py")
-        elif name.lower() == 'linkfinder':
-            paths.append("/opt/recontools/LinkFinder/linkfinder.py")
-        elif name.lower() == 'theharvester':
-            paths.append("/opt/recontools/theHarvester/theHarvester.py")
+            f"/opt/recontools/{name_lower}/{name_lower}",
+        ])
 
         for p in paths:
             if p and os.path.exists(p) and not os.path.isdir(p):
@@ -876,7 +900,7 @@ class Oculus:
             naabu_bin = self.get_tool('naabu')
             ports = self.config.get('naabu', {}).get('ports', '1-65535')
             rate = self.config.get('naabu', {}).get('rate', 2000)
-            cmd = (f"{naabu_bin} -list {final_input} -p {ports} -rate {rate} "
+            cmd = (f"{naabu_bin} -l {final_input} -p {ports} -rate {rate} "
                    f"-scan-all-ips -no-color -o {output_file}")
             timeout = 300
         else:
@@ -2310,8 +2334,10 @@ class Oculus:
                 _run_step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, "vulnerabilities")
                 _run_step("GF Filters", self.run_gf_filters, "gf_filters")
 
-                _run_step("Directory Fuzzing", self.run_directory_fuzzing)
-                _run_step("API Fuzzing", self.run_api_fuzzing)
+                _run_concurrent([
+                    ("Directory Fuzzing", self.run_directory_fuzzing),
+                    ("API Fuzzing", self.run_api_fuzzing),
+                ])
 
                 self.save_session()
 
