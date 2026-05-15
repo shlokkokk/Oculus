@@ -161,7 +161,7 @@ if ! cmd_exists go; then
 
     if [ "$INSTALL_GO" = true ]; then
         log_info "Fetching latest Go version..."
-        LATEST_GO=$(curl -fsSL https://go.dev/VERSION?m=text 2>/dev/null | head -n 1)
+        LATEST_GO=$(curl -fsSL 'https://go.dev/VERSION?m=text' 2>/dev/null | head -n 1)
 
         if [ -z "$LATEST_GO" ]; then
             log_error "Failed to fetch Go version. Check internet connection."
@@ -174,9 +174,13 @@ if ! cmd_exists go; then
         if wget -q "https://dl.google.com/go/${GO_TARBALL}" -O "/tmp/${GO_TARBALL}"; then
             CLEANUP_PATHS+=("/tmp/${GO_TARBALL}")
             sudo rm -rf /usr/local/go
-            sudo tar -C /usr/local -xzf "/tmp/${GO_TARBALL}"
-            export PATH="$PATH:/usr/local/go/bin"
-            log_success "${LATEST_GO} installed"
+            if sudo tar -C /usr/local -xzf "/tmp/${GO_TARBALL}"; then
+                export PATH="$PATH:/usr/local/go/bin"
+                log_success "${LATEST_GO} installed"
+            else
+                log_error "Failed to extract Go tarball. Installation is incomplete."
+                exit 1
+            fi
         else
             log_error "Failed to download Go."
             exit 1
@@ -196,11 +200,14 @@ log_step "Phase 4 · Python Dependencies"
 
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
     log_info "Installing Oculus Python requirements..."
-    safe_pip_install -r "$SCRIPT_DIR/requirements.txt" -q
-    log_success "Python requirements installed"
+    if safe_pip_install -r "$SCRIPT_DIR/requirements.txt" -q; then
+        log_success "Python requirements installed"
+    else
+        log_warn "Some Python requirements failed — Oculus may have limited functionality"
+    fi
 else
     log_warn "requirements.txt not found — installing rich only"
-    safe_pip_install rich -q
+    safe_pip_install rich -q || log_warn "Could not install rich"
 fi
 
 # ══════════════════════════════════════════════════════════════
@@ -474,7 +481,7 @@ else:
             print("OK" if r.returncode == 0 else "FAIL")
             results[name] = ("success","") if r.returncode == 0 else ("failed","")
         except Exception as e:
-            print(f"ERROR"); results[name] = ("failed","")
+            print("ERROR"); results[name] = ("failed","")
 
 # Exit code for critical failures
 CRITICAL = {"subfinder", "httpx", "nuclei", "naabu", "dnsx", "ffuf"}
@@ -489,9 +496,10 @@ INSTALLER_EOF
 
 PYTHON_EXIT=$?
 if [ $PYTHON_EXIT -ne 0 ]; then
-    log_error "Dashboard exited with errors (code $PYTHON_EXIT)"
-    log_warn "Check install.log for details. Continuing post-install..."
+    log_error "Dashboard exited with errors (critical tools failed — see install.log)"
+    log_warn "Continuing post-install phases, but Oculus may not work correctly."
 fi
+INSTALL_FAILED=$PYTHON_EXIT
 
 # ══════════════════════════════════════════════════════════════
 # PHASE 6: GF Patterns
@@ -501,7 +509,7 @@ log_step "Phase 6 · GF Patterns"
 mkdir -p "$HOME/.gf"
 
 # Copy built-in gf examples
-GF_MOD=$(find "$GOPATH/pkg/mod/github.com/tomnomnom" -maxdepth 1 -name "gf*" -type d 2>/dev/null | sort -V | tail -1)
+GF_MOD=$(find "$GOPATH/pkg/mod/github.com/tomnomnom" -maxdepth 1 -name "gf*" -type d 2>/dev/null | sort | tail -1)
 if [ -n "$GF_MOD" ] && [ -d "$GF_MOD/examples" ]; then
     cp "$GF_MOD/examples/"*.json "$HOME/.gf/" 2>/dev/null || true
     log_success "Copied built-in gf patterns"
@@ -548,7 +556,7 @@ else
 fi
 
 # Persist Go PATH in shell rc files
-if ! grep -q 'GOPATH' "$HOME/.bashrc" 2>/dev/null; then
+if ! grep -q 'GOPATH' "$HOME/.bashrc" 2>/dev/null || [ ! -f "$HOME/.bashrc" ]; then
     {
         echo ''
         echo '# Oculus — Go binaries'
@@ -572,9 +580,18 @@ fi
 # Done!
 # ══════════════════════════════════════════════════════════════
 echo ""
-echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════╗${RESET}"
-echo -e "${GREEN}${BOLD}║       Oculus v3 — Installation Complete!              ║${RESET}"
-echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
+if [ "${INSTALL_FAILED:-0}" -ne 0 ]; then
+    echo -e "${YELLOW}${BOLD}╔═══════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${YELLOW}${BOLD}║  Oculus v3 — Installed (with critical tool failures)  ║${RESET}"
+    echo -e "${YELLOW}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
+    echo ""
+    echo -e "  ${RED}Some critical tools failed to install.${RESET}"
+    echo -e "  ${DIM}Review install.log and re-run with:  ${YELLOW}./install.sh --update${RESET}"
+else
+    echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${GREEN}${BOLD}║       Oculus v3 — Installation Complete! ✔            ║${RESET}"
+    echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
+fi
 echo ""
 echo -e "  ${CYAN}Next steps:${RESET}"
 echo -e "    ${DIM}1.${RESET} Reload shell:    ${YELLOW}source ~/.bashrc${RESET}"
@@ -582,3 +599,6 @@ echo -e "    ${DIM}2.${RESET} Verify install:  ${YELLOW}python3 oculus.py --vers
 echo -e "    ${DIM}3.${RESET} Tool check:      ${YELLOW}python3 oculus.py${RESET}  →  press ${CYAN}I${RESET}"
 echo -e "    ${DIM}4.${RESET} Edit config:     ${YELLOW}nano ~/.config/oculus/config.yaml${RESET}"
 echo ""
+
+# Propagate failure exit code so CI/Docker can detect broken installs
+exit "${INSTALL_FAILED:-0}"
