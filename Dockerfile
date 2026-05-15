@@ -40,6 +40,6 @@ COPY . /app
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
 # Make install script executable and run it to get Go tools and custom tools
-RUN chmod +x install.sh && ./install.sh --update
+RUN chmod +x install.sh && ./install.sh --update --non-interactive
 
 ENTRYPOINT ["python3", "oculus.py"]
