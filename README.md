@@ -39,8 +39,9 @@
 **1.** Clone and install toolchains (Debian/Kali; needs **Go**, **Python 3.8+**, `sudo` for apt):
 
 ```bash
-git clone <your-fork-url> oculus && cd oculus
+git clone https://github.com/shlokkokk/Oculus.git oculus && cd oculus
 chmod +x install.sh && ./install.sh
+# If Go is missing, the script will offer to install it for you.
 ```
 
 **2.** Put `~/go/bin` on your `PATH`, then copy config:

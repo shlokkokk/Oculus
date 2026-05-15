@@ -21,7 +21,8 @@ echo -e "${CYAN}[*] Starting Oculus Environment Setup...${RESET}"
 
 # 1. System Requirements Check
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${YELLOW}[!] Note: Not running as root. Some apt packages might require sudo password.${RESET}"
+  echo -e "${YELLOW}[!] Note: This script requires 'sudo' for system packages and /opt/recontools.${RESET}"
+  echo -e "${YELLOW}[*] Please ensure you have sudo privileges.${RESET}"
 fi
 
 # Check Python >= 3.8
@@ -31,16 +32,33 @@ if [ "$PY_VER" == "0" ]; then
     exit 1
 fi
 
+# 2. APT Packages (Bootstrap)
+echo -e "${CYAN}[*] Installing baseline dependencies...${RESET}"
+sudo apt-get update
+sudo apt-get install -y git wget curl unzip
+
 # Check Go
 if ! command -v go &> /dev/null; then
-    echo -e "${RED}[!] Go is not installed. Please install Go >= 1.20 and ensure it's in your PATH.${RESET}"
-    exit 1
+    echo -e "${YELLOW}[!] Go is not installed.${RESET}"
+    read -p "    Do you want to install the latest Go version now? (y/n): " INSTALL_GO
+    if [[ "$INSTALL_GO" =~ ^[Yy]$ ]]; then
+        echo -e "${CYAN}[*] Fetching latest Go version...${RESET}"
+        LATEST_GO=$(curl -s https://go.dev/VERSION?m=text | head -n 1)
+        echo -e "${CYAN}[*] Installing $LATEST_GO...${RESET}"
+        wget -q https://dl.google.com/go/${LATEST_GO}.linux-amd64.tar.gz
+        sudo tar -C /usr/local -xzf ${LATEST_GO}.linux-amd64.tar.gz
+        rm ${LATEST_GO}.linux-amd64.tar.gz
+        export PATH=$PATH:/usr/local/go/bin:~/go/bin
+        echo -e "${GREEN}[✔] $LATEST_GO installed. PATH will be updated below.${RESET}"
+    else
+        echo -e "${RED}[!] Go >= 1.20 is required for Oculus! Please install it manually.${RESET}"
+        exit 1
+    fi
 fi
 
-# 2. APT Packages
-echo -e "${CYAN}[*] Installing system dependencies...${RESET}"
-sudo apt-get update
-sudo apt-get install -y python3-pip git wget curl unzip nmap massdns wafw00f whatweb sqlmap jq
+# 3. APT Packages (Rest)
+echo -e "${CYAN}[*] Installing remaining system dependencies...${RESET}"
+sudo apt-get install -y python3-pip nmap massdns wafw00f whatweb sqlmap jq
 
 # 3. Python Packages
 echo -e "${CYAN}[*] Installing Python requirements...${RESET}"
@@ -49,7 +67,22 @@ pip3 install -r requirements.txt --break-system-packages
 # 4. ProjectDiscovery & Go Tools (with version pinning)
 echo -e "${CYAN}[*] Installing/Updating Go tools...${RESET}"
 
-export PATH=$PATH:/root/go/bin:~/go/bin
+# Ensure Go binaries are in PATH for this session
+export PATH=$PATH:/usr/local/go/bin:~/go/bin:$GOPATH/bin
+
+# Function to add to shell config if not present
+add_to_path() {
+    local shell_config=$1
+    if [ -f "$shell_config" ]; then
+        if ! grep -q "go/bin" "$shell_config"; then
+            echo 'export PATH=$PATH:/usr/local/go/bin:~/go/bin' >> "$shell_config"
+            echo -e "${GREEN}[✔] Added Go to PATH in $shell_config${RESET}"
+        fi
+    fi
+}
+
+add_to_path "$HOME/.bashrc"
+add_to_path "$HOME/.zshrc"
 
 install_go_tool() {
     TOOL_NAME=$1

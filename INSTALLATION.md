@@ -24,7 +24,7 @@ For command-line flags, module list, and YAML reference, see **[README.md](READM
 From your machine:
 
 ```bash
-git clone https://github.com/<your-org>/Oculus.git
+git clone https://github.com/shlokkokk/Oculus.git
 cd Oculus
 chmod +x install.sh
 ./install.sh
@@ -34,7 +34,7 @@ Use **`./install.sh --update`** later to refresh Go tools and `/opt/recontools` 
 
 ### What `install.sh` does
 
-1. Verifies **Python ≥ 3.8** and **`go`** in `PATH`.
+1. Verifies **Python ≥ 3.8** and **`go`** in `PATH` (offers to install the latest Go version if missing).
 2. **`apt-get install`**: `python3-pip`, `git`, `wget`, `curl`, `unzip`, `nmap`, `massdns`, `wafw00f`, `whatweb`, `sqlmap`, `jq`.
 3. **`pip3 install -r requirements.txt --break-system-packages`** (needed on newer Debian/Ubuntu PEP 668 environments).
 4. **`go install`** (see script for exact modules): subfinder, assetfinder, dnsx, httpx, naabu, katana, gau, waybackurls, nuclei, hakrawler, ffuf, dalfox, asnmap, gowitness, gf, amass, kr, subzy.
