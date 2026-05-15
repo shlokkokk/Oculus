@@ -432,7 +432,7 @@ class Oculus:
    ╚██████╔╝╚██████╗╚██████╔╝███████╗╚██████╔╝███████║
      ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝"""
             
-            desc = f"\n[bold white]Professional Reconnaissance Framework v{VERSION}[/]\n[bold cyan]For Kali Linux Bug Bounty Hunters[/]\n"
+            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]29 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
             
             panel_content = Align.center(Text.from_markup(ascii_art + "\n" + desc), vertical="middle")
             
@@ -453,8 +453,8 @@ class Oculus:
    ╚██████╔╝╚██████╗╚██████╔╝███████╗╚██████╔╝███████║
     ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝
     
-         {Colors.WHITE}Professional Reconnaissance Framework v{VERSION}{Colors.CYAN}
-               {Colors.WHITE}For Kali Linux Bug Bounty Hunters{Colors.CYAN}
+         {Colors.WHITE}Full-Spectrum Attack Surface Intelligence  v{VERSION}{Colors.CYAN}
+         {Colors.DIM}29 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
 ================================================================================
 {Colors.RESET}"""
             print(banner)
@@ -2076,7 +2076,233 @@ class Oculus:
                 self.logger.error(f"Deep recon step failed: {e}")
         self.show_diff()
         self.generate_summary()
-        print(f"\n{Colors.GREEN}{Colors.BOLD}[✔] DEEP RECON COMPLETED!{Colors.RESET}\n")
+        print(f"\n{Colors.GREEN}{Colors.BOLD}[+] DEEP RECON COMPLETED!{Colors.RESET}\n")
+
+    def run_full_spectrum_scan(self):
+        """Run every single Oculus module in perfect dependency order with concurrency where safe.
+        
+        Pipeline Architecture:
+        
+        PHASE 1 - DISCOVERY (Foundation)
+            [Sequential] Subdomain Enum -> DNS Bruteforce (merges back) -> DNS Resolution -> Alive Hosts
+            [Concurrent]  ASN Discovery + Cloud Assets + OSINT + Shodan + GitHub Dorking (independent, domain-only)
+        
+        PHASE 2 - INFRASTRUCTURE ANALYSIS
+            [Concurrent]  Fast Port Scan + Full Port Scan + Tech Scan + WAF Detection + Screenshots
+            (all need alive.txt, none depend on each other)
+        
+        PHASE 3 - CONTENT DISCOVERY
+            [Sequential]  URL Collection -> Advanced URL Enum (produces urls_final.txt)
+            [Concurrent]  Parameter Discovery + JS Endpoint Extraction (need urls.txt)
+            [Sequential]  Subdomain Takeover Check (needs subdomains.txt)
+        
+        PHASE 4 - VULNERABILITY ANALYSIS
+            [Sequential]  Nuclei Vulnerability Scan (needs alive.txt)
+            [Sequential]  GF Filters (needs urls_final.txt, gates Phase 5)
+            [Concurrent]  Directory Fuzzing + API Fuzzing (need alive.txt, independent)
+        
+        PHASE 5 - TARGETED EXPLOITATION
+            [Concurrent]  SQLi Scan + XSS Scan + Open Redirect Scan (all need gf/*.txt)
+            [Concurrent]  CORS Scanner + HTTP Smuggling (need alive.txt, independent)
+        """
+        if not self._require_setup():
+            return
+        
+        confirm = self.config.get('auto_confirm', False)
+        if not confirm:
+            print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
+            print(f"  FULL SPECTRUM SCAN will run ALL 29 modules across 5 phases.")
+            print(f"  This covers Recon, Infrastructure, Discovery, Vulnerability, and Exploitation.")
+            print(f"  Estimated runtime: 2-6 hours depending on target size and tool availability.")
+            print(f"{Colors.RESET}")
+            yn = input(f"{Colors.YELLOW}[!] Launch Full Spectrum Scan on {self.domain}? (y/n): {Colors.RESET}")
+            if yn.lower().strip() != 'y':
+                return
+        
+        start_time = time.time()
+        
+        print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
+        print(f"======================================================================")
+        print(f"   FULL SPECTRUM SCAN -- {self.domain}")
+        print(f"======================================================================")
+        print(f"{Colors.RESET}\n")
+        
+        # Thread-safe tracking lists
+        _lock = threading.Lock()
+        failed_steps = []
+        completed_steps = []
+        aborted = False
+        
+        def _run_step(name, func):
+            """Run a single step with error handling and thread-safe tracking"""
+            nonlocal aborted
+            if aborted:
+                return
+            try:
+                print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*60}")
+                print(f"  STEP: {name}")
+                print(f"{'='*60}{Colors.RESET}")
+                func()
+                with _lock:
+                    completed_steps.append(name)
+            except KeyboardInterrupt:
+                aborted = True
+                print(f"\n{Colors.YELLOW}[!] Ctrl+C detected during: {name} -- aborting pipeline{Colors.RESET}")
+            except Exception as e:
+                with _lock:
+                    failed_steps.append((name, str(e)))
+                self.logger.error(f"Full Spectrum step failed [{name}]: {e}")
+                print(f"{Colors.RED}[!] STEP FAILED: {name} -- {e}{Colors.RESET}")
+        
+        def _run_concurrent(step_list):
+            """Run multiple steps concurrently using threads"""
+            nonlocal aborted
+            if aborted:
+                return
+            if not self.config.get('parallel', True) or len(step_list) <= 1:
+                for name, func in step_list:
+                    if aborted:
+                        break
+                    _run_step(name, func)
+                return
+            
+            names = ', '.join(n for n, _ in step_list)
+            print(f"\n{Colors.CYAN}[*] Running {len(step_list)} tasks concurrently: {names}{Colors.RESET}")
+            with ThreadPoolExecutor(max_workers=len(step_list)) as executor:
+                futures = {executor.submit(_run_step, name, func): name for name, func in step_list}
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception:
+                        pass  # Already handled inside _run_step
+        
+        try:
+            # ── PHASE 1: DISCOVERY (Foundation) ──────────────────────────
+            print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 1/5: DISCOVERY ---{Colors.RESET}")
+            
+            # Sequential: subdomain pipeline (each feeds the next)
+            _run_step("Subdomain Enumeration", self.run_subdomain_enumeration)
+            _run_step("DNS Bruteforce", self.run_dns_bruteforce)
+            _run_step("DNS Resolution", self.run_dns_resolution)
+            _run_step("Alive Hosts Check", self.run_alive_hosts_check)
+            
+            # Concurrent: independent domain-only tasks
+            _run_concurrent([
+                ("ASN Discovery", self.run_asn_discovery),
+                ("Cloud Asset Discovery", self.run_cloud_asset_discovery),
+                ("OSINT Harvesting", self.run_osint_harvesting),
+                ("Shodan Recon", self.run_shodan_integration),
+                ("GitHub Dorking", self.run_github_dorking),
+            ])
+            
+            self.save_session()
+            
+            # ── PHASE 2: INFRASTRUCTURE ANALYSIS ─────────────────────────
+            if not aborted:
+                print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
+                
+                # Concurrent: all need alive.txt but are independent of each other
+                _run_concurrent([
+                    ("Fast Port Scan", self.run_fast_port_scan),
+                    ("Full Port Scan", self.run_full_port_scan),
+                    ("Tech Scan", self.run_tech_scan),
+                    ("WAF Detection", self.run_waf_detection),
+                    ("Screenshot Capture", self.run_screenshot_capture),
+                ])
+                
+                self.save_session()
+            
+            # ── PHASE 3: CONTENT DISCOVERY ───────────────────────────────
+            if not aborted:
+                print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 3/5: CONTENT DISCOVERY ---{Colors.RESET}")
+                
+                # URL Collection first (produces urls.txt needed by params/JS)
+                _run_step("URL Collection", self.run_url_collection)
+                _run_step("Advanced URL Enum", self.run_advanced_url_enum)
+                
+                # Concurrent: both need urls.txt, independent of each other
+                _run_concurrent([
+                    ("Parameter Discovery", self.run_parameter_discovery),
+                    ("JS Endpoint Extraction", self.run_js_endpoint_extraction),
+                ])
+                
+                # Subdomain takeover only needs subdomains.txt (already available)
+                _run_step("Subdomain Takeover Check", self.run_subdomain_takeover_check)
+                
+                self.save_session()
+            
+            # ── PHASE 4: VULNERABILITY ANALYSIS ──────────────────────────
+            if not aborted:
+                print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 4/5: VULNERABILITY ANALYSIS ---{Colors.RESET}")
+                
+                # Nuclei (needs alive.txt)
+                _run_step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan)
+                
+                # GF Filters (needs urls_final.txt, gates SQLi/XSS/Redirect scans)
+                _run_step("GF Filters", self.run_gf_filters)
+                
+                # Concurrent: fuzzing tasks (both need alive.txt, independent)
+                _run_concurrent([
+                    ("Directory Fuzzing", self.run_directory_fuzzing),
+                    ("API Fuzzing", self.run_api_fuzzing),
+                ])
+                
+                self.save_session()
+            
+            # ── PHASE 5: TARGETED EXPLOITATION ───────────────────────────
+            if not aborted:
+                print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 5/5: TARGETED EXPLOITATION ---{Colors.RESET}")
+                
+                # Concurrent: all GF-dependent scans (need gf/*.txt)
+                _run_concurrent([
+                    ("SQLi Scan", self.run_sqlmap_scan),
+                    ("XSS Scan (Dalfox)", self.run_xss_scan),
+                    ("Open Redirect Scan", self.run_open_redirect_scan),
+                ])
+                
+                # Concurrent: network-level vuln scans (need alive.txt)
+                _run_concurrent([
+                    ("CORS Scanner", self.run_cors_scan),
+                    ("HTTP Smuggling", self.run_http_smuggling),
+                ])
+                
+                self.save_session()
+                
+        except KeyboardInterrupt:
+            aborted = True
+            print(f"\n{Colors.YELLOW}[!] Scan aborted by user (Ctrl+C){Colors.RESET}")
+        
+        # ── FINAL: REPORTING (always runs, even on abort) ────────────
+        duration = int(time.time() - start_time)
+        hours, remainder = divmod(duration, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        duration_str = f"{hours}h {minutes}m {seconds}s"
+        
+        self.show_diff()
+        try:
+            self.generate_summary(duration=duration)
+            self.generate_html_report()
+            self.generate_json_report()
+            self.generate_markdown_report()
+        except Exception as e:
+            self.logger.error(f"Report generation failed: {e}")
+        
+        # Final Summary
+        status = "ABORTED" if aborted else "COMPLETED"
+        color = Colors.YELLOW if aborted else Colors.GREEN
+        print(f"\n{color}{Colors.BOLD}")
+        print(f"======================================================================")
+        print(f"   FULL SPECTRUM SCAN {status} -- {self.domain}")
+        print(f"======================================================================{Colors.RESET}")
+        print(f"\n  {Colors.WHITE}Duration    : {duration_str}{Colors.RESET}")
+        print(f"  {Colors.GREEN}Completed   : {len(completed_steps)} steps{Colors.RESET}")
+        if failed_steps:
+            print(f"  {Colors.RED}Failed      : {len(failed_steps)} steps{Colors.RESET}")
+            for name, err in failed_steps:
+                print(f"    {Colors.RED}- {name}: {err[:80]}{Colors.RESET}")
+        print(f"  {Colors.CYAN}Output Dir  : {self.output_dir}/{Colors.RESET}")
+        print(f"  {Colors.CYAN}Reports     : HTML, JSON, Markdown{Colors.RESET}")
+        print()
 
 
     # ═══════════════════════════════════════════════════════════════
@@ -2469,16 +2695,20 @@ function sortTable(n) {
                 "", ""
             )
             table.add_row(
-                "[9]", "[bold bright_green]FULL AUTOMATED RECON[/]",
-                "[D]", "[bold bright_magenta]Deep Recon Mode[/]"
+                "[9]", "[bold bright_green]Full Auto Recon    (Core 1-8)[/]",
+                "[D]", "[bold bright_magenta]Deep Recon         (Advanced)[/]"
             )
             table.add_row(
-                "[R]", "Generate Reports",
-                "[I]", "Initialize Tools"
+                "[U]", "[bold bright_red]Full Spectrum Scan (All 29)[/]",
+                "[R]", "Generate Reports"
             )
             table.add_row(
-                "[C]", "Change Domain",
-                "[H]", "Help  [bold white]|[/]  [bold cyan]Q[/] Quit"
+                "[I]", "Initialize Tools",
+                "[C]", "Change Domain"
+            )
+            table.add_row(
+                "[H]", "Help",
+                "[Q]", "Quit"
             )
 
             # Stats Header inside panel
@@ -2497,34 +2727,33 @@ function sortTable(n) {
                 if metrics:
                     stats_text.append(" | STATS: " + " - ".join(metrics), style="bold cyan")
                 
-                # Suggest Next Step logic
-                suggestion = "[1] Subdomain Enumeration OR [9] Full Automated Recon"
-                
-                # Core Recon checks
-                if "subdomains" in self.results:
-                    suggestion = "[2] DNS Resolution OR [3] Alive Hosts Check"
-                if "dns_resolved" in self.results:
-                    suggestion = "[3] Alive Hosts Check"
-                if "alive_hosts" in self.results:
-                    suggestion = "[4] Fast Port Scan OR [6] URL Collection"
-                if "fast_ports" in self.results or "full_ports" in self.results:
-                    suggestion = "[6] URL Collection"
-                if "urls" in self.results:
-                    suggestion = "[7] WAF Detection OR [8] Vulnerability Scan"
-                if "waf_detected" in self.results:
-                    suggestion = "[8] Vulnerability Scan"
-                if "vulnerabilities" in self.results:
-                    suggestion = "[D] Deep Recon Mode OR begin Advanced Modules (10-29)"
-                    
-                # Advanced Module Overrides
-                if "parameters" in self.results or "js_endpoints" in self.results:
-                    suggestion = "[12] Directory Fuzzing OR [13] API Fuzzing"
-                if "urls_final" in self.results:
-                    suggestion = "[16] Screenshot Capture OR [18] GF Filters"
-                if "gf_filters" in self.results:
+                # Suggest Next Step logic — cascaded so advanced overrides only fire if core is done
+                if "cors_findings" in self.results:
+                    suggestion = "[R] Generate Reports -- All scans complete!"
+                elif "xss_findings" in self.results:
+                    suggestion = "[22] CORS Scanner OR [23] HTTP Smuggling"
+                elif "gf_filters" in self.results:
                     suggestion = "[20] SQLi Scan OR [21] XSS Scan (Dalfox)"
-                if "xss_findings" in self.results:
-                    suggestion = "[22] CORS Scanner OR [26] GitHub Dorking"
+                elif "urls_final" in self.results:
+                    suggestion = "[16] Screenshot Capture OR [18] GF Filters"
+                elif "parameters" in self.results or "js_endpoints" in self.results:
+                    suggestion = "[12] Directory Fuzzing OR [13] API Fuzzing"
+                elif "vulnerabilities" in self.results:
+                    suggestion = "[D] Deep Recon OR [U] Full Spectrum Scan"
+                elif "waf_detected" in self.results:
+                    suggestion = "[8] Vulnerability Scan"
+                elif "urls" in self.results:
+                    suggestion = "[7] WAF Detection OR [8] Vulnerability Scan"
+                elif "fast_ports" in self.results or "full_ports" in self.results:
+                    suggestion = "[6] URL Collection"
+                elif "alive_hosts" in self.results:
+                    suggestion = "[4] Fast Port Scan OR [6] URL Collection"
+                elif "dns_resolved" in self.results:
+                    suggestion = "[3] Alive Hosts Check"
+                elif "subdomains" in self.results:
+                    suggestion = "[2] DNS Resolution OR [3] Alive Hosts Check"
+                else:
+                    suggestion = "[1] Subdomain Enumeration OR [9] Full Auto Recon OR [U] Full Spectrum"
                 
                 stats_text.append("\nSUGGESTED NEXT STEP: ", style="bold yellow")
                 stats_text.append(suggestion, style="bold white")
@@ -2540,15 +2769,17 @@ function sortTable(n) {
             rprint(panel)
             print("")
         else:
-            print(f"\n{Colors.CYAN}--- OCULUS MENU ---{Colors.RESET}")
-            print(f"{Colors.YELLOW}[ PHASE 1: RECON ]{Colors.RESET}")
+            print(f"\n{Colors.CYAN}--- OCULUS v{VERSION} ---{Colors.RESET}")
+            print(f"{Colors.YELLOW}[ CORE RECON ]{Colors.RESET}")
             print("1. Subdomains  | 2. DNS Resolv  | 3. Alive Hosts | 4. Fast Ports  | 5. Full Ports")
-            print(f"{Colors.YELLOW}[ PHASE 2: DISCOVERY ]{Colors.RESET}")
+            print(f"{Colors.YELLOW}[ DISCOVERY ]{Colors.RESET}")
             print("6. URLs        | 10. Parameters | 11. JS Endpoints| 12. Dir Fuzz  | 13. API Fuzz")
-            print(f"{Colors.YELLOW}[ PHASE 3: VULNERABILITY ]{Colors.RESET}")
+            print(f"{Colors.YELLOW}[ VULNERABILITY ]{Colors.RESET}")
             print("7. WAF Detect  | 8. Vuln Scan   | 20. SQLi Scan  | 21. XSS Scan   | 22. CORS")
-            print(f"{Colors.YELLOW}[ CORE AUTOMATION ]{Colors.RESET}")
-            print("9. Full Recon  | D. Deep Recon  | C. Domain      | I. Init Tools  | Q. Quit")
+            print(f"{Colors.YELLOW}[ OSINT & MORE ]{Colors.RESET}")
+            print("14. Takeover   | 17. DNS Brute  | 24. ASN        | 25. Cloud      | 26-29. OSINT")
+            print(f"{Colors.YELLOW}[ AUTOMATION & SYSTEM ]{Colors.RESET}")
+            print("9. Full Auto   | D. Deep Recon  | U. Full Spectrum| C. Domain     | Q. Quit")
             print(f"{Colors.CYAN}-------------------{Colors.RESET}\n")
             
             if self.domain:
@@ -2632,6 +2863,7 @@ function sortTable(n) {
                 '28': self.run_shodan_integration,
                 '29': self.run_open_redirect_scan,
                 'D': self.run_deep_recon_mode,
+                'U': self.run_full_spectrum_scan,
                 'R': lambda: (self.generate_html_report(), self.generate_json_report(), self.generate_markdown_report()),
                 'C': self.setup_domain,
                 'I': self.initialize_tools,

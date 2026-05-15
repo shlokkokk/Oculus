@@ -51,10 +51,12 @@ echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.bashrc && source ~/.bashrc
 mkdir -p ~/.config/oculus && cp config.yaml.example ~/.config/oculus/config.yaml
 ```
 
-**3.** Run—pick **C** to set a domain, then **9** for full automated recon, or use headless CLI:
+**3.** Run—pick **C** to set a domain, then **9** for full automated recon, **U** for the full spectrum scan, or use headless CLI:
 
 ```bash
 python3 oculus.py -d example.com --full-recon --no-confirm
+# Or run every module in one go:
+python3 oculus.py -d example.com --full-spectrum --no-confirm
 ```
 
 Put **Shodan** and **GitHub** tokens in `api_keys` for modules **28** and **26**. The sample YAML also lists **Chaos** for ProjectDiscovery-style workflows (Subfinder can use PD keys via your environment; the Python runner does not read `chaos` yet).
@@ -63,7 +65,7 @@ Put **Shodan** and **GitHub** tokens in `api_keys` for modules **28** and **26**
 
 ## Module overview
 
-Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). **9** / **`--full-recon`** runs **only** the core chain **1→8** (then summary + HTML + JSON). **D** / **`--deep`** runs a **fixed 14-step advanced chain** — **not** all modules, **not** 1–9; see the **D** row below. Run **9** (or **1–8** + **6** for URLs) *before* **D** so `alive.txt` and URL files exist.
+Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). **9** / **`--full-recon`** runs **only** the core chain **1→8**. **D** / **`--deep`** runs a **fixed 14-step advanced chain** (not 1–9). **U** / **`--full-spectrum`** runs **every single module** across 5 phases with intelligent concurrency. See the comparison table below.
 
 | # | CLI | Primary tools | What happens |
 |:---:|:---|:---|:---|
@@ -96,8 +98,52 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 | **27** | `osint` | theHarvester | Broad OSINT (`-b all`) → **`osint/`** HTML |
 | **28** | `shodan` | Shodan API | Passive **hostname:** hits for exposed services (**API key** in YAML) → **`shodan/`** |
 | **29** | `redirect` | Python | Fuzz redirect params from **`gf/redirect.txt`**; may auto-run **gf** first → **`redirects/`** |
-| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **24 → 10→11→12→13→14→15→16→18→19→21→22→23→20** (ASN first, **sqlmap** last). **Skips** menus **1–9**, **17**, **25–29** (no subdomain refresh, no **dnsbrute**, no **cloud/github/osint/shodan/redirect**). Needs prior **`alive.txt`** / URLs from **9** or manual **1–8**+**6**. |
+| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **24 → 10→11→12→13→14→15→16→18→19→21→22→23→20** (ASN first, **sqlmap** last). **Skips** menus **1–9**, **17**, **25–29**. Needs prior **`alive.txt`** / URLs from **9** or manual **1–8**+**6**. |
+| **U** | `--full-spectrum` | *(all 29 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
 | **R** | — | *(generators)* | Rebuild **`report.html`**, **`findings.json`**, **`report.md`** from disk artifacts |
+
+---
+
+## Automation modes compared
+
+Oculus has three preset automation modes. Pick the one that matches your scope and time budget.
+
+| | **[9] Full Auto Recon** | **[D] Deep Recon** | **[U] Full Spectrum Scan** |
+|:---|:---|:---|:---|
+| **Scope** | Core recon pipeline | Advanced modules only | Everything — recon through exploitation |
+| **Modules run** | 7 (steps 1→8, skips 5) | 14 fixed advanced steps | All 29 modules |
+| **Prerequisite** | Just set a domain | Needs `alive.txt` + URLs (run 9 first) | Just set a domain |
+| **Concurrency** | Subdomain tools + URL tools in parallel | Sequential only | Full concurrent scheduling per phase |
+| **Estimated time** | 15–45 min | 1–3 hours | 2–6 hours |
+| **What it skips** | Advanced modules (10–29) | Core (1–9), DNS brute (17), Cloud/OSINT/Shodan/GitHub/Redirect (25–29) | Nothing — runs every module |
+| **Reports** | HTML + JSON + summary | Summary only (run R for full) | HTML + JSON + Markdown + summary |
+| **Ctrl+C safe** | Stops at current step | Stops at current step | Graceful abort, saves progress, still generates reports |
+| **Thread safety** | Basic | Basic | Full `threading.Lock` protection |
+| **Best for** | Quick initial assessment | Deep-dive after core recon | Overnight / hands-off full engagement |
+
+### Full Spectrum Scan — 5-phase pipeline
+
+```
+PHASE 1: DISCOVERY
+  [Sequential]  Subdomain Enum → DNS Bruteforce → DNS Resolution → Alive Hosts
+  [Concurrent]  ASN + Cloud Assets + OSINT + Shodan + GitHub Dorking
+
+PHASE 2: INFRASTRUCTURE
+  [Concurrent]  Fast Port Scan + Full Port Scan + Tech Scan + WAF Detection + Screenshots
+
+PHASE 3: CONTENT DISCOVERY
+  [Sequential]  URL Collection → Advanced URL Enum
+  [Concurrent]  Parameter Discovery + JS Endpoint Extraction
+  [Sequential]  Subdomain Takeover Check
+
+PHASE 4: VULNERABILITY ANALYSIS
+  [Sequential]  Nuclei Vulnerability Scan → GF Filters
+  [Concurrent]  Directory Fuzzing + API Fuzzing
+
+PHASE 5: TARGETED EXPLOITATION
+  [Concurrent]  SQLi Scan + XSS Scan + Open Redirect Scan
+  [Concurrent]  CORS Scanner + HTTP Smuggling
+```
 
 ---
 
@@ -314,6 +360,9 @@ python3 oculus.py -d example.com --full-recon --no-confirm
 # Deep mode = fixed 14 advanced steps (NOT menus 1–9). Run full recon first so alive.txt / URLs exist.
 python3 oculus.py -d example.com --deep --no-confirm
 
+# Full Spectrum Scan = ALL 29 modules in 5 phases with concurrency. Set it and forget it.
+python3 oculus.py -d example.com --full-spectrum --no-confirm
+
 # Pick modules à la carte (order runs left → right)
 python3 oculus.py -d example.com --module subdomain,dns,alive,urls,waf --no-confirm
 
@@ -333,7 +382,7 @@ python3 oculus.py -d example.com --module subdomain,alive --jitter
 python3 oculus.py --update
 ```
 
-**Interactive workflow:** run without `-d` → **C** set domain → **I** verify tools → **9** or pick numbers → **R** export HTML/JSON/MD.
+**Interactive workflow:** run without `-d` → **C** set domain → **I** verify tools → **9** (core) or **U** (full spectrum) or pick numbers → **R** export HTML/JSON/MD.
 
 </details>
 
@@ -433,6 +482,12 @@ Runs **exactly** this fixed sequence (same as `run_deep_recon_mode` in code): **
 
 Then: **session diff** + **`summary.txt`** only — run **R** for HTML / JSON / Markdown exports.
 
+**Full Spectrum Scan** (`--full-spectrum` / menu **U**) — **every module, optimal order:**
+
+Runs all 29 modules across 5 phases with intelligent concurrency. See **[Automation modes compared](#automation-modes-compared)** for the full pipeline diagram. Thread-safe tracking, graceful Ctrl+C abort (saves progress and still generates reports), and session checkpoints between every phase.
+
+**No prerequisite:** Just set a domain. Full Spectrum handles the entire dependency chain from subdomain enumeration through targeted exploitation. Auto-generates HTML, JSON, and Markdown reports at completion.
+
 ### Reporting (menu **R**)
 
 | Artifact | Contents |
@@ -478,7 +533,7 @@ Then: **session diff** + **`summary.txt`** only — run **R** for HTML / JSON / 
 | `shodan` | 28 | **Shodan** hostname search |
 | `redirect` | 29 | Open redirect probes on `gf/redirect.txt` |
 
-Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–9, **not** 17 / 25–29. **17** and **25–29** are always **manual** / `--module` only.
+Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–9, **not** 17 / 25–29. Menu **U** / **`--full-spectrum`** = **all 29 modules** in 5 concurrent phases — see **[Automation modes compared](#automation-modes-compared)**.
 
 </details>
 
@@ -518,8 +573,9 @@ Non-interactive mode requires **`-d`**. More recipes live under **[CLI cookbook]
 | Flag | Meaning |
 |:---|:---|
 | `-d`, `--domain` | Target domain (required for non-interactive runs) |
-| `--full-recon` | Full automated pipeline |
+| `--full-recon` | Full automated pipeline (core 1→8) |
 | `--deep` | Fixed **14-step** advanced chain (**24→10…→20**); does **not** run **1–9** or **17 / 25–29** |
+| `--full-spectrum` | **All 29 modules** in 5 phases with concurrency — see **[Automation modes compared](#automation-modes-compared)** |
 | `--module` | Comma-separated modules (exact names below) |
 | `--no-confirm` | Skip prompts (CI / automation); sets `auto_confirm` |
 | `--threads N` | Overrides `threads` (httpx) |
@@ -577,6 +633,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 | **28** | Shodan passive (needs key) |
 | **29** | Open redirect checks |
 | **D** | **Deep recon** — fixed **14** steps (**24→10→…→20**); not full **1–29** ([details](#feature-catalog)) |
+| **U** | **Full Spectrum Scan** — all **29 modules** in 5 phases with concurrency ([details](#automation-modes-compared)) |
 | **R** | Regenerate **HTML + JSON + Markdown** reports |
 | **C** | Set / change target domain + `output-<domain>/` |
 | **I** | Tool installation check |
