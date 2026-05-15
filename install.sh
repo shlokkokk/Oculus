@@ -754,12 +754,18 @@ fi
 # Clone community patterns to temp dir (NOT cwd)
 GF_TEMP=$(mktemp -d)
 CLEANUP_PATHS+=("$GF_TEMP")
+GF_ERR_LOG="${GF_TEMP}/gf-clone.err"
 
-if git clone -q --depth=1 https://github.com/1ndianl33t/Gf-Patterns "$GF_TEMP/Gf-Patterns" 2>/dev/null; then
+if git clone --depth=1 https://github.com/1ndianl33t/Gf-Patterns "$GF_TEMP/Gf-Patterns" 2>"$GF_ERR_LOG"; then
     cp "$GF_TEMP/Gf-Patterns/"*.json "$HOME/.gf/" 2>/dev/null || true
     log_success "Installed community GF patterns"
 else
-    log_warn "Could not clone Gf-Patterns (non-critical)"
+    log_warn "Could not clone Gf-Patterns (non-critical — built-in patterns still installed)"
+    if [ -s "$GF_ERR_LOG" ]; then
+        GF_REASON=$(tail -n 1 "$GF_ERR_LOG" | sed 's/^[[:space:]]*//')
+        [ -n "$GF_REASON" ] && log_warn "  Reason: ${GF_REASON}"
+    fi
+    log_warn "  Retry manually: git clone https://github.com/1ndianl33t/Gf-Patterns /tmp/Gf-Patterns && cp /tmp/Gf-Patterns/*.json ~/.gf/"
 fi
 
 # ══════════════════════════════════════════════════════════════
