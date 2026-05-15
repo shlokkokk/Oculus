@@ -325,6 +325,23 @@ def pip_install_package_dir(opt):
         py_log(f"pip install failed: {r.stderr or r.stdout}")
     return False
 
+# Tools invoked as python3 /opt/recontools/<repo>/<script>.py — not PATH CLIs
+SCRIPT_BASED_TOOLS = frozenset({"xsstrike", "smuggler", "linkfinder"})
+
+def recon_script_exists(name_lower, opt):
+    """Return True when the cloned repo contains its main Python entry script."""
+    candidates = [
+        os.path.join(opt, f"{name_lower}.py"),
+        os.path.join(opt, name_lower, f"{name_lower}.py"),
+    ]
+    if name_lower == "xsstrike":
+        candidates.append(os.path.join(opt, "xsstrike.py"))
+    elif name_lower == "linkfinder":
+        candidates.append(os.path.join(opt, "linkfinder.py"))
+    elif name_lower == "smuggler":
+        candidates.append(os.path.join(opt, "smuggler.py"))
+    return any(os.path.isfile(p) for p in candidates)
+
 def install_kiterunner(opt, progress, tid):
     dist_bin = os.path.join(opt, "dist", "kr")
     has_makefile = any(
@@ -442,10 +459,15 @@ def install_recon_tool(name, repo, progress, tid):
         cli_name = "kr" if name_lower == "kiterunner" else name_lower
 
         augment_path_env()
-        if os.path.exists(opt) and not UPDATE_MODE and cli_available(cli_name):
-            progress.update(tid, description=f"[bold green]✔ {name}[/] (Present)", completed=100)
-            results[name] = ("skipped", "CLI already on PATH")
-            return
+        if os.path.exists(opt) and not UPDATE_MODE:
+            if cli_available(cli_name):
+                progress.update(tid, description=f"[bold green]✔ {name}[/] (Present)", completed=100)
+                results[name] = ("skipped", "CLI already on PATH")
+                return
+            if name_lower in SCRIPT_BASED_TOOLS and recon_script_exists(name_lower, opt):
+                progress.update(tid, description=f"[bold green]✔ {name}[/] (Script ready)", completed=100)
+                results[name] = ("skipped", "Script in /opt/recontools")
+                return
 
         if os.path.exists(opt):
             if UPDATE_MODE:
@@ -506,6 +528,9 @@ def install_recon_tool(name, repo, progress, tid):
         if cli_available(cli_name):
             progress.update(tid, description=f"[bold green]✔ {name}[/] (Ready)", completed=100)
             results[name] = ("success", f"{cli_name} on PATH")
+        elif name_lower in SCRIPT_BASED_TOOLS and recon_script_exists(name_lower, opt):
+            progress.update(tid, description=f"[bold green]✔ {name}[/] (Script ready)", completed=100)
+            results[name] = ("success", "Script in /opt/recontools")
         else:
             progress.update(tid, description=f"[bold red]✘ {name}[/] (CLI missing)", completed=100)
             results[name] = ("failed", f"{cli_name} not on PATH after install")
@@ -822,11 +847,41 @@ else
     echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
 fi
 echo ""
-echo -e "  ${CYAN}Next steps:${RESET}"
-echo -e "    ${DIM}1.${RESET} Reload shell:    ${YELLOW}source ~/.bashrc${RESET}"
-echo -e "    ${DIM}2.${RESET} Verify install:  ${YELLOW}python3 oculus.py --version${RESET}"
-echo -e "    ${DIM}3.${RESET} Tool check:      ${YELLOW}python3 oculus.py${RESET}  →  press ${CYAN}I${RESET}"
-echo -e "    ${DIM}4.${RESET} Edit config:     ${YELLOW}nano ~/.config/oculus/config.yaml${RESET}"
+
+# Detect login shell so users source the correct rc file (bash vs zsh)
+case "${SHELL:-}" in
+    */zsh|zsh)
+        SHELL_RC="$HOME/.zshrc"
+        SHELL_NAME="zsh"
+        ;;
+    */bash|bash)
+        SHELL_RC="$HOME/.bashrc"
+        SHELL_NAME="bash"
+        ;;
+    *)
+        SHELL_RC="$HOME/.bashrc"
+        SHELL_NAME="bash"
+        ;;
+esac
+
+echo -e "  ${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "  ${YELLOW}${BOLD}  REQUIRED — Reload your shell before running Oculus${RESET}"
+echo -e "  ${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "  ${YELLOW}  PATH was updated (~/.local/bin, Go). Without a reload, tools${RESET}"
+echo -e "  ${YELLOW}  installed via pip may not be found in the current session.${RESET}"
+echo ""
+echo -e "    ${BOLD}${YELLOW}source ${SHELL_RC}${RESET}"
+echo ""
+echo -e "  ${DIM}  Alternative: open a new terminal (${SHELL_NAME} detected).${RESET}"
+if [ "$SHELL_NAME" = "zsh" ]; then
+    echo -e "  ${DIM}  On zsh, use ~/.zshrc only — not ~/.bashrc.${RESET}"
+fi
+echo -e "  ${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo ""
+echo -e "  ${CYAN}Then:${RESET}"
+echo -e "    ${DIM}·${RESET} Verify:     ${YELLOW}python3 oculus.py --version${RESET}"
+echo -e "    ${DIM}·${RESET} Tool check: ${YELLOW}python3 oculus.py${RESET}  →  press ${CYAN}I${RESET}"
+echo -e "    ${DIM}·${RESET} Config:     ${YELLOW}nano ~/.config/oculus/config.yaml${RESET}"
 echo ""
 
 # Propagate failure exit code so CI/Docker can detect broken installs
