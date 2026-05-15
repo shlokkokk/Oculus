@@ -379,6 +379,22 @@ def install_recon_tool(name, repo, progress, tid):
             if not pip_install_req(req):
                 log_failure(name, "pip requirements had errors (tool may still work)")
         
+        # If the cloned repo is a Python package, attempt a user-local pip install
+        setup_py = os.path.join(opt, "setup.py")
+        pyproject = os.path.join(opt, "pyproject.toml")
+        if os.path.exists(setup_py) or os.path.exists(pyproject):
+            try:
+                log_info(f"Installing python package for {name} into user site-packages...")
+                r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", opt],
+                                   capture_output=True, text=True, timeout=300)
+                if r.returncode == 0:
+                    log_success(f"Installed {name} via pip --user")
+                else:
+                    log_warn(f"pip install --user {name} had warnings/errors")
+                    log_failure(name, r.stderr if r.stderr else r.stdout)
+            except Exception as e:
+                log_failure(name, str(e))
+        
         # Specialized build for Go-based git tools (like Kiterunner)
         makefile = os.path.join(opt, "Makefile")
         if name.lower() == "kiterunner" and os.path.exists(makefile):
@@ -594,6 +610,25 @@ if [ -f "$HOME/.zshrc" ] && ! grep -q 'GOPATH' "$HOME/.zshrc" 2>/dev/null; then
         echo 'export PATH="$PATH:/usr/local/go/bin:$GOPATH/bin"'
     } >> "$HOME/.zshrc"
     log_success "Added Go PATH to ~/.zshrc"
+fi
+
+# Ensure user-local bin is on PATH for pip --user installs
+if ! grep -q 'LOCAL_BIN' "$HOME/.bashrc" 2>/dev/null; then
+    {
+        echo ''
+        echo '# Oculus — user local bin'
+        echo 'export PATH="$HOME/.local/bin:$PATH"'
+    } >> "$HOME/.bashrc"
+    log_success "Added ~/.local/bin to ~/.bashrc"
+fi
+
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'LOCAL_BIN' "$HOME/.zshrc" 2>/dev/null; then
+    {
+        echo ''
+        echo '# Oculus — user local bin'
+        echo 'export PATH="$HOME/.local/bin:$PATH"'
+    } >> "$HOME/.zshrc"
+    log_success "Added ~/.local/bin to ~/.zshrc"
 fi
 
 # ══════════════════════════════════════════════════════════════
