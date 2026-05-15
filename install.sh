@@ -865,23 +865,23 @@ case "${SHELL:-}" in
 esac
 
 echo -e "  ${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo -e "  ${YELLOW}${BOLD}  REQUIRED — Reload your shell before running Oculus${RESET}"
+echo -e "  ${YELLOW}${BOLD}  REQUIRED — Run this command before using Oculus${RESET}"
 echo -e "  ${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo -e "  ${YELLOW}  PATH was updated (~/.local/bin, Go). Without a reload, tools${RESET}"
-echo -e "  ${YELLOW}  installed via pip may not be found in the current session.${RESET}"
+echo -e "  ${YELLOW}  Installation updated your PATH. Run the line below in this${RESET}"
+echo -e "  ${YELLOW}  terminal (type it and press Enter):${RESET}"
 echo ""
-echo -e "    ${BOLD}${YELLOW}source ${SHELL_RC}${RESET}"
+echo -e "  ${DIM}  \$${RESET} ${BOLD}${YELLOW}source ${SHELL_RC}${RESET}"
 echo ""
-echo -e "  ${DIM}  Alternative: open a new terminal (${SHELL_NAME} detected).${RESET}"
+echo -e "  ${DIM}  Or close this terminal and open a new one.${RESET}"
 if [ "$SHELL_NAME" = "zsh" ]; then
-    echo -e "  ${DIM}  On zsh, use ~/.zshrc only — not ~/.bashrc.${RESET}"
+    echo -e "  ${DIM}  (${SHELL_NAME}: use the command above)${RESET}"
 fi
 echo -e "  ${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
-echo -e "  ${CYAN}Then:${RESET}"
-echo -e "    ${DIM}·${RESET} Verify:     ${YELLOW}python3 oculus.py --version${RESET}"
-echo -e "    ${DIM}·${RESET} Tool check: ${YELLOW}python3 oculus.py${RESET}  →  press ${CYAN}I${RESET}"
-echo -e "    ${DIM}·${RESET} Config:     ${YELLOW}nano ~/.config/oculus/config.yaml${RESET}"
+echo -e "  ${CYAN}Optional — only if you want to:${RESET}"
+echo -e "    ${DIM}·${RESET} Check the version:  ${YELLOW}python3 oculus.py --version${RESET}"
+echo -e "    ${DIM}·${RESET} List all tools:     ${YELLOW}python3 oculus.py${RESET}  then press ${CYAN}I${RESET}"
+echo -e "    ${DIM}·${RESET} Edit settings:      ${YELLOW}nano ~/.config/oculus/config.yaml${RESET}"
 echo ""
 
 # Propagate failure exit code so CI/Docker can detect broken installs
