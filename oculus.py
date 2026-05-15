@@ -202,19 +202,25 @@ class Oculus:
         self.logger.addHandler(eh)
 
     def find_tool(self, name):
+        """Unified cross-platform path detection for all Oculus tools"""
         paths = [
             shutil.which(name),
-            f"/usr/local/bin/{name}",
-            f"/usr/bin/{name}",
             os.path.expanduser(f"~/go/bin/{name}"),
             f"/home/kali/go/bin/{name}",
+            f"/usr/local/bin/{name}",
+            f"/usr/bin/{name}",
             f"/root/go/bin/{name}",
+            # Case-sensitive Opt paths
             f"/opt/recontools/{name}/{name}",
             f"/opt/recontools/{name.lower()}/{name.lower()}",
-            f"/opt/recontools/{name.capitalize()}/{name.lower()}.py",
+            f"/opt/recontools/ParamSpider/paramspider.py",
+            f"/opt/recontools/Arjun/arjun.py",
+            f"/opt/recontools/XSStrike/xsstrike.py",
+            f"/opt/recontools/LinkFinder/linkfinder.py",
+            f"/opt/recontools/theHarvester/theHarvester.py",
         ]
         for p in paths:
-            if p and os.path.exists(p):
+            if p and os.path.exists(p) and not os.path.isdir(p):
                 return p
         return None
 
@@ -505,12 +511,12 @@ class Oculus:
             print(f"  {color}[{status}] {tool.capitalize()}{Colors.RESET}")
 
         special_tools = {
-            'paramspider': '/opt/recontools/ParamSpider/paramspider.py',
-            'arjun': '/opt/recontools/Arjun/arjun.py',
-            'xsstrike': '/opt/recontools/XSStrike/xsstrike.py',
-            'smuggler': '/opt/recontools/smuggler/smuggler.py',
-            'linkfinder': '/opt/recontools/LinkFinder/linkfinder.py',
-            'theharvester': '/opt/recontools/theHarvester/theHarvester.py',
+            'paramspider': self.find_tool('paramspider'),
+            'arjun': self.find_tool('arjun'),
+            'xsstrike': self.find_tool('xsstrike'),
+            'smuggler': self.find_tool('smuggler'),
+            'linkfinder': self.find_tool('linkfinder'),
+            'theharvester': self.find_tool('theharvester'),
             'subzy': self.find_tool('subzy'),
             'kr': self.find_tool('kr'),
         }
