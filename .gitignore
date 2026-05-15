@@ -93,6 +93,10 @@ venv.bak/
 # VS Code
 .vscode/
 
+# Internal documentation (not for public repo)
+INTERNAL.md
+docs/INTERNAL.md
+
 # Project artifacts
 output-*/
 session.json

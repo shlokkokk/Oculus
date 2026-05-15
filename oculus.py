@@ -155,6 +155,7 @@ class Oculus:
         self.logger = None
         self.session_file = ""
         self._path_augmented = False
+        self._session_lock = threading.Lock()
         self._augment_path()
 
     def _augment_path(self, force=False):
@@ -504,22 +505,39 @@ class Oculus:
             self.logger.error(f"Merge error: {e}")
             return 0
 
+    @staticmethod
+    def _path_has_output(path):
+        """True if path is a non-empty file or a directory containing a non-empty file."""
+        if os.path.isfile(path):
+            return os.path.getsize(path) > 0
+        if os.path.isdir(path):
+            for root, _, files in os.walk(path):
+                for name in files:
+                    fp = os.path.join(root, name)
+                    try:
+                        if os.path.getsize(fp) > 0:
+                            return True
+                    except OSError:
+                        continue
+        return False
+
     def save_session(self):
         """Save session state to JSON for resume capability"""
         if not self.output_dir:
             return
-        session_data = {
-            'domain': self.domain,
-            'output_dir': self.output_dir,
-            'results': self.results,
-            'completed_modules': list(self.results.keys()),
-            'timestamp': datetime.now().isoformat(),
-            'version': VERSION,
-        }
         try:
             session_path = Path(self.output_dir) / 'session.json'
-            with open(session_path, 'w') as f:
-                json.dump(session_data, f, indent=2)
+            with self._session_lock:
+                session_data = {
+                    'domain': self.domain,
+                    'output_dir': self.output_dir,
+                    'results': dict(self.results),
+                    'completed_modules': list(self.results.keys()),
+                    'timestamp': datetime.now().isoformat(),
+                    'version': VERSION,
+                }
+                with open(session_path, 'w', encoding='utf-8') as f:
+                    json.dump(session_data, f, indent=2)
         except Exception as e:
             self.logger.error(f"Session save failed: {e}")
 
@@ -528,8 +546,9 @@ class Oculus:
         session_path = Path(self.output_dir) / 'session.json'
         if session_path.exists():
             try:
-                with open(session_path) as f:
-                    data = json.load(f)
+                with self._session_lock:
+                    with open(session_path, encoding='utf-8') as f:
+                        data = json.load(f)
                 completed = data.get('completed_modules', [])
                 if completed:
                     print(f"\n{Colors.CYAN}[*] Previous session found ({data.get('timestamp', 'unknown')}){Colors.RESET}")
@@ -1741,9 +1760,12 @@ class Oculus:
                 with open(subs_file, 'w', encoding='utf-8') as f:
                     for s in sorted(merged):
                         f.write(s + '\n')
+                self.results['dns_brute'] = new_found
                 print(f"{Colors.GREEN}[✔] DNS bruteforce — {len(new_subs)} resolved, {new_found} new subdomains added{Colors.RESET}")
             else:
+                self.results['dns_brute'] = 0
                 print(f"{Colors.GREEN}[✔] DNS bruteforce completed — no new subdomains found{Colors.RESET}")
+            self.save_session()
         else:
             print(f"{Colors.RED}[!] DNS bruteforce failed{Colors.RESET}")
 
@@ -2061,9 +2083,7 @@ class Oculus:
             return
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting GitHub Secret Scanning...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/github"
-        Path(out_dir).mkdir(exist_ok=True)
-        
-        # urllib.request/json imported at top level
+
         headers = {'Authorization': f'token {gh_token}', 'Accept': 'application/vnd.github.v3+json'}
         query = urllib.parse.quote(f'"{self.domain}" password OR secret OR key OR token')
         url = f'https://api.github.com/search/code?q={query}&per_page=10'
@@ -2072,7 +2092,8 @@ class Oculus:
             with urllib.request.urlopen(req, timeout=15) as response:
                 data = json.loads(response.read())
                 items = data.get('items', [])
-                with open(f"{out_dir}/github_secrets.txt", 'w') as f:
+                Path(out_dir).mkdir(parents=True, exist_ok=True)
+                with open(f"{out_dir}/github_secrets.txt", 'w', encoding='utf-8') as f:
                     for item in items:
                         repo = item.get('repository', {}).get('full_name', '')
                         file = item.get('path', '')
@@ -2327,8 +2348,8 @@ class Oculus:
 
         # ── Detect existing scan data ────────────────────────────────
         scan_keys = {
-            'subdomains': 'Subs', 'dns_resolved': 'DNS', 'alive_hosts': 'Alive',
-            'fast_ports': 'Fast Ports', 'full_ports': 'Full Ports',
+            'subdomains': 'Subs', 'dns_brute': 'DNS Brute', 'dns_resolved': 'DNS',
+            'alive_hosts': 'Alive', 'fast_ports': 'Fast Ports', 'full_ports': 'Full Ports',
             'urls': 'URLs', 'urls_final': 'URLs Final', 'waf_detected': 'WAF',
             'vulnerabilities': 'Vulns', 'parameters': 'Params',
             'js_endpoints': 'JS', 'gf_filters': 'GF',
@@ -2352,6 +2373,9 @@ class Oculus:
                     skip_completed = True
                 elif choice == '2':
                     skip_completed = False
+                    self.results.clear()
+                    self._prev_results = {}
+                    print(f"{Colors.YELLOW}[*] Fresh scan — previous result counters cleared.{Colors.RESET}")
                 else:
                     return
         else:
@@ -2380,15 +2404,27 @@ class Oculus:
         skipped_steps = []
         aborted = False
 
-        def _run_step(name, func, result_key=None):
+        def _step_already_done(result_key=None, marker_files=None):
+            """Resume: skip if results key exists or non-empty output artifacts exist."""
+            if not skip_completed:
+                return False, None
+            if result_key and result_key in self.results:
+                return True, self.results[result_key]
+            if marker_files and self.output_dir:
+                for rel in marker_files:
+                    p = os.path.join(self.output_dir, rel)
+                    if Oculus._path_has_output(p):
+                        return True, rel
+            return False, None
+
+        def _run_step(name, func, result_key=None, marker_files=None):
             """Run a single step with skip-check, error handling, and thread-safe tracking."""
             nonlocal aborted
             if aborted:
                 return
-            # Skip logic: if resuming and this step's result key already exists
-            if skip_completed and result_key and result_key in self.results:
-                val = self.results[result_key]
-                print(f"\n{Colors.BLUE}[SKIP] {name} -- already completed ({val}){Colors.RESET}")
+            done, hint = _step_already_done(result_key, marker_files)
+            if done:
+                print(f"\n{Colors.BLUE}[SKIP] {name} -- already completed ({hint}){Colors.RESET}")
                 with _lock:
                     skipped_steps.append(name)
                 return
@@ -2400,7 +2436,8 @@ class Oculus:
                 with _lock:
                     completed_steps.append(name)
             except KeyboardInterrupt:
-                aborted = True
+                with _lock:
+                    aborted = True
                 print(f"\n{Colors.YELLOW}[!] Ctrl+C detected during: {name} -- aborting pipeline{Colors.RESET}")
             except Exception as e:
                 with _lock:
@@ -2408,26 +2445,47 @@ class Oculus:
                 self.logger.error(f"Full Spectrum step failed [{name}]: {e}")
                 print(f"{Colors.RED}[!] STEP FAILED: {name} -- {e}{Colors.RESET}")
 
+        def step(name, func, result_key=None, marker_files=None):
+            """Queue one sequential step (keyword args — no positional None)."""
+            _run_step(name, func, result_key=result_key, marker_files=marker_files)
+
+        def cstep(name, func, result_key=None, marker_files=None):
+            """Build one concurrent step spec as a dict."""
+            return {
+                'name': name,
+                'func': func,
+                'result_key': result_key,
+                'marker_files': marker_files,
+            }
+
         def _run_concurrent(step_list):
-            """Run multiple steps concurrently. Items are (name, func) or (name, func, result_key)."""
+            """Run multiple steps concurrently (each entry from cstep())."""
             nonlocal aborted
             if aborted:
                 return
             if not self.config.get('parallel', True) or len(step_list) <= 1:
-                for item in step_list:
+                for spec in step_list:
                     if aborted:
                         break
-                    rk = item[2] if len(item) > 2 else None
-                    _run_step(item[0], item[1], rk)
+                    _run_step(
+                        spec['name'], spec['func'],
+                        result_key=spec.get('result_key'),
+                        marker_files=spec.get('marker_files'),
+                    )
                 return
 
-            names = ', '.join(item[0] for item in step_list)
+            names = ', '.join(spec['name'] for spec in step_list)
             print(f"\n{Colors.CYAN}[*] Running {len(step_list)} tasks concurrently: {names}{Colors.RESET}")
             with ThreadPoolExecutor(max_workers=len(step_list)) as executor:
                 futures = {}
-                for item in step_list:
-                    rk = item[2] if len(item) > 2 else None
-                    futures[executor.submit(_run_step, item[0], item[1], rk)] = item[0]
+                for spec in step_list:
+                    futures[executor.submit(
+                        _run_step,
+                        spec['name'],
+                        spec['func'],
+                        spec.get('result_key'),
+                        spec.get('marker_files'),
+                    )] = spec['name']
                 for future in as_completed(futures):
                     try:
                         future.result()
@@ -2438,17 +2496,22 @@ class Oculus:
             # ── PHASE 1: DISCOVERY ───────────────────────────────────
             print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 1/5: DISCOVERY ---{Colors.RESET}")
 
-            _run_step("Subdomain Enumeration", self.run_subdomain_enumeration, "subdomains")
-            _run_step("DNS Bruteforce", self.run_dns_bruteforce)
-            _run_step("DNS Resolution", self.run_dns_resolution, "dns_resolved")
-            _run_step("Alive Hosts Check", self.run_alive_hosts_check, "alive_hosts")
+            step("Subdomain Enumeration", self.run_subdomain_enumeration, result_key="subdomains")
+            step("DNS Bruteforce", self.run_dns_bruteforce, result_key="dns_brute",
+                 marker_files=["massdns_out.txt"])
+            step("DNS Resolution", self.run_dns_resolution, result_key="dns_resolved")
+            step("Alive Hosts Check", self.run_alive_hosts_check, result_key="alive_hosts")
 
             _run_concurrent([
-                ("ASN Discovery", self.run_asn_discovery),
-                ("Cloud Asset Discovery", self.run_cloud_asset_discovery),
-                ("OSINT Harvesting", self.run_osint_harvesting),
-                ("Shodan Recon", self.run_shodan_integration),
-                ("GitHub Dorking", self.run_github_dorking),
+                cstep("ASN Discovery", self.run_asn_discovery, marker_files=["asn/asn_ranges.txt"]),
+                cstep("Cloud Asset Discovery", self.run_cloud_asset_discovery,
+                      marker_files=["cloud/s3_buckets.txt"]),
+                cstep("OSINT Harvesting", self.run_osint_harvesting,
+                      marker_files=["osint/theharvester.html"]),
+                cstep("Shodan Recon", self.run_shodan_integration,
+                      marker_files=["shodan/shodan_results.txt"]),
+                cstep("GitHub Dorking", self.run_github_dorking,
+                      marker_files=["github/github_secrets.txt"]),
             ])
 
             self.save_session()
@@ -2458,11 +2521,12 @@ class Oculus:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
 
                 _run_concurrent([
-                    ("Fast Port Scan", self.run_fast_port_scan, "fast_ports"),
-                    ("Full Port Scan", self.run_full_port_scan, "full_ports"),
-                    ("Tech Scan", self.run_tech_scan),
-                    ("WAF Detection", self.run_waf_detection, "waf_detected"),
-                    ("Screenshot Capture", self.run_screenshot_capture),
+                    cstep("Fast Port Scan", self.run_fast_port_scan, result_key="fast_ports"),
+                    cstep("Full Port Scan", self.run_full_port_scan, result_key="full_ports"),
+                    cstep("Tech Scan", self.run_tech_scan,
+                          marker_files=["tech_scan/whatweb_results.json"]),
+                    cstep("WAF Detection", self.run_waf_detection, result_key="waf_detected"),
+                    cstep("Screenshot Capture", self.run_screenshot_capture, marker_files=["screenshots"]),
                 ])
 
                 self.save_session()
@@ -2471,15 +2535,17 @@ class Oculus:
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 3/5: CONTENT DISCOVERY ---{Colors.RESET}")
 
-                _run_step("URL Collection", self.run_url_collection, "urls")
-                _run_step("Advanced URL Enum", self.run_advanced_url_enum, "urls_final")
+                step("URL Collection", self.run_url_collection, result_key="urls")
+                step("Advanced URL Enum", self.run_advanced_url_enum, result_key="urls_final")
 
                 _run_concurrent([
-                    ("Parameter Discovery", self.run_parameter_discovery, "parameters"),
-                    ("JS Endpoint Extraction", self.run_js_endpoint_extraction, "js_endpoints"),
+                    cstep("Parameter Discovery", self.run_parameter_discovery, result_key="parameters"),
+                    cstep("JS Endpoint Extraction", self.run_js_endpoint_extraction,
+                          result_key="js_endpoints"),
                 ])
 
-                _run_step("Subdomain Takeover Check", self.run_subdomain_takeover_check)
+                step("Subdomain Takeover Check", self.run_subdomain_takeover_check,
+                     marker_files=["takeover/takeovers.txt", "takeover/cname_fallback.txt"])
 
                 self.save_session()
 
@@ -2487,12 +2553,12 @@ class Oculus:
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 4/5: VULNERABILITY ANALYSIS ---{Colors.RESET}")
 
-                _run_step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, "vulnerabilities")
-                _run_step("GF Filters", self.run_gf_filters, "gf_filters")
+                step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, result_key="vulnerabilities")
+                step("GF Filters", self.run_gf_filters, result_key="gf_filters")
 
                 _run_concurrent([
-                    ("Directory Fuzzing", self.run_directory_fuzzing),
-                    ("API Fuzzing", self.run_api_fuzzing),
+                    cstep("Directory Fuzzing", self.run_directory_fuzzing, marker_files=["fuzzing"]),
+                    cstep("API Fuzzing", self.run_api_fuzzing, marker_files=["api_fuzzing"]),
                 ])
 
                 self.save_session()
@@ -2502,14 +2568,14 @@ class Oculus:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 5/5: TARGETED EXPLOITATION ---{Colors.RESET}")
 
                 _run_concurrent([
-                    ("SQLi Scan", self.run_sqlmap_scan),
-                    ("XSS Scan (Dalfox)", self.run_xss_scan, "xss_findings"),
-                    ("Open Redirect Scan", self.run_open_redirect_scan),
+                    cstep("SQLi Scan", self.run_sqlmap_scan, marker_files=["sqlmap"]),
+                    cstep("XSS Scan (Dalfox)", self.run_xss_scan, result_key="xss_findings"),
+                    cstep("Open Redirect Scan", self.run_open_redirect_scan, marker_files=["redirects"]),
                 ])
 
                 _run_concurrent([
-                    ("CORS Scanner", self.run_cors_scan, "cors_findings"),
-                    ("HTTP Smuggling", self.run_http_smuggling),
+                    cstep("CORS Scanner", self.run_cors_scan, result_key="cors_findings"),
+                    cstep("HTTP Smuggling", self.run_http_smuggling, marker_files=["smuggling"]),
                 ])
 
                 self.save_session()
@@ -3058,6 +3124,7 @@ function sortTable(n) {
             
             t.append("CLI MODE:\n", style="bold white")
             t.append("  oculus -d domain.com --full-recon --no-confirm\n")
+            t.append("  oculus -d domain.com --full-spectrum --no-confirm\n")
             t.append("  oculus -d domain.com --module subdomain,alive,vuln\n")
             t.append("  oculus -d domain.com --deep\n\n")
             
@@ -3142,8 +3209,9 @@ def build_parser():
         description=f'Oculus v{VERSION} — Professional Recon Framework'
     )
     parser.add_argument('-d', '--domain', help='Target domain')
-    parser.add_argument('--full-recon', action='store_true', help='Run full automated recon')
-    parser.add_argument('--deep', action='store_true', help='Run deep recon mode')
+    parser.add_argument('--full-recon', action='store_true', help='Run full automated recon (core modules 1–8)')
+    parser.add_argument('--full-spectrum', action='store_true', help='Run full spectrum scan (all modules, 5 phases)')
+    parser.add_argument('--deep', action='store_true', help='Run deep recon mode (14 advanced steps)')
     parser.add_argument('--module', help='Comma-separated modules: subdomain,dns,alive,ports,urls,waf,vuln,xss,cors,asn')
     parser.add_argument('--no-confirm', action='store_true', help='Skip all confirmation prompts')
     parser.add_argument('--threads', type=int, help='Thread count')
@@ -3224,7 +3292,11 @@ def main():
         recon.setup_complete = True
         recon.load_session()
 
-        if args.full_recon:
+        if args.full_recon and args.full_spectrum:
+            print(f"{Colors.YELLOW}[!] Both --full-recon and --full-spectrum set; running full spectrum.{Colors.RESET}")
+        if args.full_spectrum:
+            recon.run_full_spectrum_scan()
+        elif args.full_recon:
             recon.run_full_automated_recon()
         elif args.deep:
             recon.run_deep_recon_mode()
