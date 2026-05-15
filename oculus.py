@@ -64,6 +64,7 @@ DEFAULT_CONFIG = {
         'dirs': '/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt',
         'dirs_fallback': '/usr/share/wordlists/dirb/common.txt',
         'resolvers': '/opt/recontools/massdns/resolvers.txt',
+        'resolvers_fallback': '/usr/share/massdns/resolvers.txt',
     },
     'api_keys': {
         'shodan': '',
@@ -204,21 +205,28 @@ class Oculus:
     def find_tool(self, name):
         """Unified cross-platform path detection for all Oculus tools"""
         paths = [
-            shutil.which(name),
             os.path.expanduser(f"~/go/bin/{name}"),
             f"/home/kali/go/bin/{name}",
             f"/usr/local/bin/{name}",
             f"/usr/bin/{name}",
             f"/root/go/bin/{name}",
-            # Case-sensitive Opt paths
             f"/opt/recontools/{name}/{name}",
             f"/opt/recontools/{name.lower()}/{name.lower()}",
-            f"/opt/recontools/ParamSpider/paramspider.py",
-            f"/opt/recontools/Arjun/arjun.py",
-            f"/opt/recontools/XSStrike/xsstrike.py",
-            f"/opt/recontools/LinkFinder/linkfinder.py",
-            f"/opt/recontools/theHarvester/theHarvester.py",
+            shutil.which(name),
         ]
+        
+        # Add tool-specific exact python script paths
+        if name.lower() == 'paramspider':
+            paths.append("/opt/recontools/ParamSpider/paramspider.py")
+        elif name.lower() == 'arjun':
+            paths.append("/opt/recontools/Arjun/arjun.py")
+        elif name.lower() == 'xsstrike':
+            paths.append("/opt/recontools/XSStrike/xsstrike.py")
+        elif name.lower() == 'linkfinder':
+            paths.append("/opt/recontools/LinkFinder/linkfinder.py")
+        elif name.lower() == 'theharvester':
+            paths.append("/opt/recontools/theHarvester/theHarvester.py")
+
         for p in paths:
             if p and os.path.exists(p) and not os.path.isdir(p):
                 return p
@@ -516,7 +524,7 @@ class Oculus:
             'xsstrike': self.find_tool('xsstrike'),
             'smuggler': self.find_tool('smuggler'),
             'linkfinder': self.find_tool('linkfinder'),
-            'theharvester': self.find_tool('theharvester'),
+            'theharvester': self.find_tool('theHarvester'),
             'subzy': self.find_tool('subzy'),
             'kr': self.find_tool('kr'),
         }
@@ -773,7 +781,7 @@ class Oculus:
         httpx_bin = self.get_tool('httpx')
         threads = self.config.get('threads', 50)
         rl = self.config.get('rate_limit', 150)
-        cmd = (f"{httpx_bin} -l {subs_file} -sc -title -ip -cdn -json "
+        cmd = (f"{httpx_bin} -list {subs_file} -sc -title -ip -cdn -json "
                f"-threads {threads} -rl {rl} -timeout 10 -o {raw_output}")
         if not self.run_command_with_retry(cmd, timeout=600, label="httpx"):
             print(f"{Colors.RED}[!] HTTPx scan failed{Colors.RESET}")
@@ -868,8 +876,8 @@ class Oculus:
             naabu_bin = self.get_tool('naabu')
             ports = self.config.get('naabu', {}).get('ports', '1-65535')
             rate = self.config.get('naabu', {}).get('rate', 2000)
-            cmd = (f"{naabu_bin} -l {final_input} -p {ports} -rate {rate} "
-                   f"-scan-all-ips -host-retry 3 -no-color -o {output_file}")
+            cmd = (f"{naabu_bin} -list {final_input} -p {ports} -rate {rate} "
+                   f"-scan-all-ips -no-color -o {output_file}")
             timeout = 300
         else:
             nmap_bin = self.get_tool('nmap')
@@ -1210,9 +1218,9 @@ class Oculus:
             urls_file = f"{self.output_dir}/urls.txt"
             if os.path.exists(urls_file):
                 print(f"{Colors.YELLOW}[*] Running Arjun...{Colors.RESET}")
-                arjun_bin = self.get_tool('arjun', "/opt/recontools/Arjun/arjun.py")
+                arjun_bin = self.get_tool('arjun', "arjun")
                 output_arjun = f"{param_dir}/arjun.json"
-                cmd = f"python3 {arjun_bin} -i {urls_file} -t 20 --json -o {output_arjun}"
+                cmd = f"{arjun_bin} -i {urls_file} -t 20 --json -o {output_arjun}"
                 if self.run_command(cmd, timeout=1200, label="arjun"):
                     print(f"{Colors.GREEN}[✔] Arjun completed{Colors.RESET}")
 
@@ -1334,8 +1342,8 @@ class Oculus:
         ffuf_bin = self.get_tool('ffuf')
         cmd = (f"{ffuf_bin} -w {wordlist} -u {host}/FUZZ -e {ext} "
                f"-mc {status} -recursion -recursion-depth {depth} "
-               f"-t 40 -o {out_file}")
-        if self.run_command(cmd, timeout=900, label=f"ffuf:{safe_host}"):
+               f"-t 20 -o {out_file}")
+        if self.run_command(cmd, timeout=1800, label=f"ffuf:{safe_host}"):
             return out_file
         return None
 
@@ -1514,6 +1522,8 @@ class Oculus:
         if not self._require_setup() or not self._require_tool('massdns'):
             return
         resolvers = self.config.get('wordlists', {}).get('resolvers')
+        if not os.path.exists(resolvers):
+            resolvers = self.config.get('wordlists', {}).get('resolvers_fallback', '/usr/share/massdns/resolvers.txt')
         if not self._require_file(resolvers, "Resolvers list not found!"):
             return
         wordlist = self.config.get('wordlists', {}).get('dns')
@@ -1775,7 +1785,7 @@ class Oculus:
         asnmap_bin = self.get_tool('asnmap')
         sd = self.safe_domain()
         cmd = f"{asnmap_bin} -d {sd} -silent"
-        if self.run_command(cmd, output_file=f"{out_dir}/asn_ranges.txt", timeout=60, label="asnmap"):
+        if self.run_command(cmd, output_file=f"{out_dir}/asn_ranges.txt", timeout=120, label="asnmap"):
             count = self.count_file_lines(f"{out_dir}/asn_ranges.txt")
             print(f"{Colors.GREEN}[✔] ASN Discovery completed — found {count} CIDR ranges{Colors.RESET}")
             if count > 0:
@@ -1905,14 +1915,20 @@ class Oculus:
 
     def run_osint_harvesting(self):
         """Gather emails and OSINT using theHarvester"""
-        if not self._require_setup():
+        if not self._require_setup() or not self._require_tool('theharvester'):
             return
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting OSINT Harvesting...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/osint"
         Path(out_dir).mkdir(exist_ok=True)
-        bin_path = self.get_tool('theHarvester', '/opt/recontools/theHarvester/theHarvester.py')
+        bin_path = self.get_tool('theharvester', '/opt/recontools/theHarvester/theHarvester.py')
+        if not bin_path or not os.path.exists(bin_path):
+            # Fallback to system command name
+            bin_path = "theHarvester"
+            
         out_file = f"{out_dir}/theharvester.html"
-        cmd = f"python3 {bin_path} -d {self.safe_domain()} -b all -f {out_file}"
+        
+        prefix = "python3 " if isinstance(bin_path, str) and bin_path.endswith('.py') else ""
+        cmd = f"{prefix}{bin_path} -d {self.safe_domain()} -b all -f {out_file}"
         if self.run_command(cmd, timeout=600, label="harvester"):
             print(f"{Colors.GREEN}[✔] OSINT Harvesting completed{Colors.RESET}")
         else:
@@ -1978,7 +1994,8 @@ class Oculus:
         found = []
         def check_redirect(url):
             for payload in payloads:
-                target = re.sub(r'=[^&]+', f'={payload}', url)
+                # Use lambda to avoid backslash escape issues in replacement string
+                target = re.sub(r'=[^&]+', lambda m: f'={payload}', url)
                 try:
                     req = urllib.request.Request(
                         target,
@@ -2293,10 +2310,8 @@ class Oculus:
                 _run_step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, "vulnerabilities")
                 _run_step("GF Filters", self.run_gf_filters, "gf_filters")
 
-                _run_concurrent([
-                    ("Directory Fuzzing", self.run_directory_fuzzing),
-                    ("API Fuzzing", self.run_api_fuzzing),
-                ])
+                _run_step("Directory Fuzzing", self.run_directory_fuzzing)
+                _run_step("API Fuzzing", self.run_api_fuzzing)
 
                 self.save_session()
 
