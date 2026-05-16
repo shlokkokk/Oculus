@@ -1,8 +1,6 @@
 #!/bin/bash
-# ╔═══════════════════════════════════════════════════════════════╗
-# ║  Oculus v3 — Professional Installation Engine                ║
-# ║  Hardened · Idempotent · Docker & CI Compatible              ║
-# ╚═══════════════════════════════════════════════════════════════╝
+# Oculus v3 — Professional Installation Engine
+# Hardened · Idempotent · Docker & CI Compatible
 
 # Failsafe: Ensure we are running in Bash
 if [ -z "$BASH_VERSION" ]; then
@@ -11,7 +9,7 @@ fi
 
 set -o pipefail
 
-# ── Color Palette ──────────────────────────────────────────────
+# Color Palette
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
 RED="\033[1;31m"
@@ -22,13 +20,13 @@ DIM="\033[2m"
 BOLD="\033[1m"
 RESET="\033[0m"
 
-# ── Globals ────────────────────────────────────────────────────
+# Globals
 export UPDATE_MODE=false
 INTERACTIVE=true
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLEANUP_PATHS=()
 
-# ── Argument Parsing ──────────────────────────────────────────
+# Argument Parsing
 for arg in "$@"; do
     case "$arg" in
         --update)          export UPDATE_MODE=true ;;
@@ -61,7 +59,7 @@ if [ "$UPDATE_MODE" = true ]; then
     echo -e "${YELLOW}[*] Update mode — will upgrade existing tools.${RESET}"
 fi
 
-# ── Cleanup Trap ──────────────────────────────────────────────
+# Cleanup Trap
 cleanup() {
     for path in "${CLEANUP_PATHS[@]}"; do
         rm -rf "$path" 2>/dev/null || true
@@ -69,7 +67,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ── Helper Functions ──────────────────────────────────────────
+# Helper Functions
 log_info()    { echo -e "${CYAN}[*]${RESET} $1"; }
 log_success() { echo -e "${GREEN}[✔]${RESET} $1"; }
 log_warn()    { echo -e "${YELLOW}[!]${RESET} $1"; }
@@ -100,9 +98,7 @@ check_sudo() {
     fi
 }
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 1: Pre-flight Checks
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 1 · Pre-flight Checks"
 
 check_sudo
@@ -119,9 +115,7 @@ if [ "$PY_VER" = "0" ]; then
 fi
 log_success "Python $(python3 --version 2>&1 | cut -d' ' -f2) detected"
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 2: System Packages
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 2 · System Packages"
 
 log_info "Updating package lists..."
@@ -140,9 +134,7 @@ sudo apt-get install -y "${APT_PACKAGES[@]}" -qq 2>/dev/null \
     || log_warn "Some apt packages may have failed (continuing)"
 log_success "System packages ready"
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 3: Go Toolchain
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 3 · Go Toolchain"
 
 export GOPATH="${GOPATH:-$HOME/go}"
@@ -194,9 +186,7 @@ else
     log_success "Go $(go version | awk '{print $3}' | sed 's/go//') detected"
 fi
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 4: Python Dependencies
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 4 · Python Dependencies"
 
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
@@ -211,9 +201,7 @@ else
     safe_pip_install rich -q || log_warn "Could not install rich"
 fi
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 5: Tool Installation Dashboard
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 5.1 · Tool Installation Dashboard"
 
 # Prepare /opt/recontools
@@ -245,7 +233,7 @@ try:
 except ImportError:
     HAS_RICH = False
 
-# ── Fallback if rich is missing ─────────────────────────────
+# Fallback if rich is missing
 if not HAS_RICH:
     print("[!] 'rich' not available — using plain output")
 
@@ -546,7 +534,7 @@ def install_recon_tool(name, repo, progress, tid):
         log_failure(name, str(e))
         results[name] = ("failed", str(e)[:80])
 
-# ── Run Installation ────────────────────────────────────────
+# Run Installation
 if HAS_RICH:
     console.print(Panel(
         "[bold cyan]Oculus v3 — Tool Installation Engine[/]\n"
@@ -585,7 +573,7 @@ if HAS_RICH:
                 future.result()
                 progress.advance(main_task)
 
-    # ── Summary Table ────────────────────────────────────────
+    # Summary Table
     console.print()
     table = Table(title="[bold]Installation Summary[/]", box=box.ROUNDED,
                   border_style="cyan", header_style="bold cyan", padding=(0, 1))
@@ -656,9 +644,7 @@ if [ $PYTHON_EXIT -ne 0 ]; then
 fi
 INSTALL_FAILED=$PYTHON_EXIT
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 5b: Python CLIs (paramspider, arjun, kr) — pip install + system symlinks
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 5.2 · Python CLI Tools"
 
 export PATH="$HOME/.local/bin:/usr/local/bin:$GOPATH/bin:$PATH"
@@ -737,9 +723,7 @@ for t in arjun paramspider kr; do
     fi
 done
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 6: GF Patterns
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 6 · GF Patterns"
 
 mkdir -p "$HOME/.gf"
@@ -768,9 +752,7 @@ else
     log_warn "  Retry manually: git clone https://github.com/1ndianl33t/Gf-Patterns /tmp/Gf-Patterns && cp /tmp/Gf-Patterns/*.json ~/.gf/"
 fi
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 7: Nuclei Templates
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 7 · Nuclei Templates"
 
 if cmd_exists nuclei; then
@@ -784,9 +766,7 @@ else
     log_warn "Nuclei not on PATH — skipping template update"
 fi
 
-# ══════════════════════════════════════════════════════════════
 # PHASE 8: Configuration
-# ══════════════════════════════════════════════════════════════
 log_step "Phase 8 · Configuration"
 
 if [ ! -f "$HOME/.config/oculus/config.yaml" ] && [ -f "$SCRIPT_DIR/config.yaml.example" ]; then

@@ -829,9 +829,7 @@ class Oculus:
             print()
 
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 1: SUBDOMAIN ENUMERATION (CONCURRENT)
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 1: SUBDOMAIN ENUMERATION (CONCURRENT)
 
     def _run_single_subdomain_tool(self, tool_name, cmd, output_file):
         """Worker for concurrent subdomain enumeration"""
@@ -914,9 +912,7 @@ class Oculus:
             print(f"{Colors.RED}[!] Error processing subdomains: {e}{Colors.RESET}")
             self.logger.error(f"Subdomain processing: {e}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 2: DNS RESOLUTION
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 2: DNS RESOLUTION
 
     def run_dns_resolution(self):
         """Run DNS resolution on found subdomains"""
@@ -940,9 +936,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] DNS resolution failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 3: ALIVE HOSTS CHECK (httpx JSON)
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 3: ALIVE HOSTS CHECK (httpx JSON)
 
     def run_alive_hosts_check(self):
         """Check which hosts are alive using HTTPx with JSON parsing"""
@@ -992,9 +986,7 @@ class Oculus:
         self.save_session()
         self.suggest_next_steps('alive_hosts')
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 4: FAST PORT SCAN (Naabu + CDN detection + Nmap fallback)
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 4: FAST PORT SCAN (Naabu + CDN detection + Nmap fallback)
 
     def run_fast_port_scan(self):
         """Run fast port scan with CDN detection and smart fallback"""
@@ -1090,9 +1082,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] Fast port scan failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 5: FULL PORT SCAN (Nmap -sV -sC with safe XML parsing)
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 5: FULL PORT SCAN (Nmap -sV -sC with safe XML parsing)
 
     def run_full_port_scan(self):
         """Comprehensive port scan with Nmap — fixed XML parsing"""
@@ -1153,9 +1143,7 @@ class Oculus:
             print(f"{Colors.RED}[!] Full port scan failed{Colors.RESET}")
 
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 6: URL COLLECTION (CONCURRENT)
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 6: URL COLLECTION (CONCURRENT)
 
     def _run_single_url_tool(self, tool_name, cmd, output_file):
         """Worker for concurrent URL collection"""
@@ -1228,9 +1216,7 @@ class Oculus:
             print(f"{Colors.RED}[!] Error processing URLs: {e}{Colors.RESET}")
             self.logger.error(f"URL processing: {e}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 7: WAF DETECTION (CONCURRENT)
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 7: WAF DETECTION (CONCURRENT)
 
     def _check_single_waf(self, host):
         """Worker for concurrent WAF detection"""
@@ -1289,9 +1275,7 @@ class Oculus:
         self.save_session()
         self.suggest_next_steps('waf_detection')
 
-    # ═══════════════════════════════════════════════════════════════
-    #  CORE MODULE 8: NUCLEI VULNERABILITY SCAN (FIXED — JSONL parsing)
-    # ═══════════════════════════════════════════════════════════════
+    # CORE MODULE 8: NUCLEI VULNERABILITY SCAN (FIXED — JSONL parsing)
 
     def run_vulnerability_scan(self):
         """Run Nuclei with JSONL output for reliable parsing"""
@@ -1369,9 +1353,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] Nuclei scan failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 10: PARAMETER DISCOVERY
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 10: PARAMETER DISCOVERY
 
     def run_parameter_discovery(self):
         """Discover parameters using ParamSpider + Arjun"""
@@ -1441,9 +1423,7 @@ class Oculus:
         self.save_session()
 
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 11: JS ENDPOINT EXTRACTION
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 11: JS ENDPOINT EXTRACTION
 
     def run_js_endpoint_extraction(self):
         """Extract endpoints and secrets from JS files"""
@@ -1520,9 +1500,7 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] Found {len(set(found_secrets))} potential secrets{Colors.RESET}")
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 12: DIRECTORY FUZZING
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 12: DIRECTORY FUZZING
 
     def _fuzz_single_host(self, host, wordlist, ext, status, depth):
         """Worker for concurrent directory fuzzing"""
@@ -1571,9 +1549,7 @@ class Oculus:
                     print(f"{Colors.RED}[!] Fuzzing failed for {h}{Colors.RESET}")
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 13: API FUZZING
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 13: API FUZZING
 
     def run_api_fuzzing(self):
         """API specific fuzzing using kr (Kiterunner)"""
@@ -1604,9 +1580,7 @@ class Oculus:
             print(f"{Colors.RED}[!] kr scan failed or routes wordlist missing{Colors.RESET}")
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 14: SUBDOMAIN TAKEOVER CHECK
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 14: SUBDOMAIN TAKEOVER CHECK
 
     def run_subdomain_takeover_check(self):
         """Check for subdomain takeover using subzy"""
@@ -1659,9 +1633,7 @@ class Oculus:
             print(f"{Colors.YELLOW}[!] Found {len(takeovers)} external CNAMEs pointing outside domain!{Colors.RESET}")
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 15: ADVANCED URL ENUMERATION (hakrawler)
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 15: ADVANCED URL ENUMERATION (hakrawler)
 
     def run_advanced_url_enum(self):
         if not self._require_setup():
@@ -1693,9 +1665,7 @@ class Oculus:
         self.results['urls_final'] = count
         return count
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 16: SCREENSHOT CAPTURE (gowitness)
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 16: SCREENSHOT CAPTURE (gowitness)
 
     def run_screenshot_capture(self):
         if not self._require_setup() or not self._require_tool('gowitness'):
@@ -1713,9 +1683,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] Gowitness failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 17: DNS BRUTEFORCE
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 17: DNS BRUTEFORCE
 
     def run_dns_bruteforce(self):
         if not self._require_setup() or not self._require_tool('massdns'):
@@ -1769,9 +1737,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] DNS bruteforce failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 18: GF FILTERS
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 18: GF FILTERS
 
     def run_gf_filters(self):
         if not self._require_setup() or not self._require_tool('gf'):
@@ -1803,9 +1769,7 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] GF filters completed{Colors.RESET}")
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 19: TECH SCAN (WhatWeb)
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 19: TECH SCAN (WhatWeb)
 
     def run_tech_scan(self):
         if not self._require_setup() or not self._require_tool('whatweb'):
@@ -1823,9 +1787,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] WhatWeb scan failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 20: SQLI SCAN (SQLMap)
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 20: SQLI SCAN (SQLMap)
 
     def run_sqlmap_scan(self):
         if not self._require_setup() or not self._require_tool('sqlmap'):
@@ -1842,9 +1804,7 @@ class Oculus:
             print(f"{Colors.RED}[!] SQLMap scan failed{Colors.RESET}")
 
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 21: XSS SCAN (Dalfox)
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 21: XSS SCAN (Dalfox)
 
     def run_xss_scan(self):
         """Automated XSS scanning using Dalfox"""
@@ -1871,9 +1831,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] Dalfox scan failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 22: CORS SCANNER
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 22: CORS SCANNER
 
     def _cors_worker(self, host):
         # urllib.request imported at top level
@@ -1938,9 +1896,7 @@ class Oculus:
         self.results['cors_findings'] = vuln_count
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 23: HTTP SMUGGLING
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 23: HTTP SMUGGLING
 
     def run_http_smuggling(self):
         """Smuggler integration for HTTP request smuggling"""
@@ -1973,9 +1929,7 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] Smuggler scan completed — {len(all_results)} results across {len(hosts)} hosts{Colors.RESET}")
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 24: ASN DISCOVERY
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 24: ASN DISCOVERY
 
     def run_asn_discovery(self):
         """Discover ASN and IP ranges using asnmap"""
@@ -1995,14 +1949,10 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] ASN Discovery failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  ORCHESTRATION: FULL AND DEEP RECON
-    # ═══════════════════════════════════════════════════════════════
+    # ORCHESTRATION: FULL AND DEEP RECON
 
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 25: CLOUD ASSET DISCOVERY
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 25: CLOUD ASSET DISCOVERY
 
     def run_cloud_asset_discovery(self):
         """Discover S3 buckets, GCP/Azure blobs associated with domain"""
@@ -2069,9 +2019,7 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] Cloud Discovery completed — found {len(found_buckets)} buckets{Colors.RESET}")
         self.save_session()
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 26: GITHUB DORKING
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 26: GITHUB DORKING
 
     def run_github_dorking(self):
         """Search GitHub for leaked secrets related to domain"""
@@ -2110,9 +2058,7 @@ class Oculus:
         except Exception as e:
             print(f"{Colors.RED}[!] GitHub Dorking failed: {e}{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 27: OSINT HARVESTING (theHarvester)
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 27: OSINT HARVESTING (theHarvester)
 
     def run_osint_harvesting(self):
         """Gather emails and OSINT using theHarvester"""
@@ -2135,9 +2081,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] OSINT Harvesting failed{Colors.RESET}")
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 28: SHODAN INTEGRATION
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 28: SHODAN INTEGRATION
 
     def run_shodan_integration(self):
         """Passive IP/Port recon via Shodan API"""
@@ -2169,9 +2113,7 @@ class Oculus:
             print(f"{Colors.RED}[!] Shodan API Error: {e}{Colors.RESET}")
 
 
-    # ═══════════════════════════════════════════════════════════════
-    #  MODULE 29: OPEN REDIRECT SCANNER
-    # ═══════════════════════════════════════════════════════════════
+    # MODULE 29: OPEN REDIRECT SCANNER
 
     def run_open_redirect_scan(self):
         """Scan for open redirects using GF filtered URLs"""
@@ -2346,7 +2288,7 @@ class Oculus:
         if not self._require_setup():
             return
 
-        # ── Detect existing scan data ────────────────────────────────
+        # Detect existing scan data
         scan_keys = {
             'subdomains': 'Subs', 'dns_brute': 'DNS Brute', 'dns_resolved': 'DNS',
             'alive_hosts': 'Alive', 'fast_ports': 'Fast Ports', 'full_ports': 'Full Ports',
@@ -2493,7 +2435,7 @@ class Oculus:
                         pass  # Already handled inside _run_step
 
         try:
-            # ── PHASE 1: DISCOVERY ───────────────────────────────────
+            # PHASE 1: DISCOVERY
             print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 1/5: DISCOVERY ---{Colors.RESET}")
 
             step("Subdomain Enumeration", self.run_subdomain_enumeration, result_key="subdomains")
@@ -2516,7 +2458,7 @@ class Oculus:
 
             self.save_session()
 
-            # ── PHASE 2: INFRASTRUCTURE ──────────────────────────────
+            # PHASE 2: INFRASTRUCTURE
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
 
@@ -2531,7 +2473,7 @@ class Oculus:
 
                 self.save_session()
 
-            # ── PHASE 3: CONTENT DISCOVERY ───────────────────────────
+            # PHASE 3: CONTENT DISCOVERY
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 3/5: CONTENT DISCOVERY ---{Colors.RESET}")
 
@@ -2549,7 +2491,7 @@ class Oculus:
 
                 self.save_session()
 
-            # ── PHASE 4: VULNERABILITY ANALYSIS ──────────────────────
+            # PHASE 4: VULNERABILITY ANALYSIS
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 4/5: VULNERABILITY ANALYSIS ---{Colors.RESET}")
 
@@ -2563,7 +2505,7 @@ class Oculus:
 
                 self.save_session()
 
-            # ── PHASE 5: TARGETED EXPLOITATION ───────────────────────
+            # PHASE 5: TARGETED EXPLOITATION
             if not aborted:
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 5/5: TARGETED EXPLOITATION ---{Colors.RESET}")
 
@@ -2584,7 +2526,7 @@ class Oculus:
             aborted = True
             print(f"\n{Colors.YELLOW}[!] Scan aborted by user (Ctrl+C){Colors.RESET}")
 
-        # ── FINAL: REPORTING (always runs, even on abort) ────────────
+        # FINAL: REPORTING (always runs, even on abort)
         duration = int(time.time() - start_time)
         hours, remainder = divmod(duration, 3600)
         minutes, seconds = divmod(remainder, 60)
