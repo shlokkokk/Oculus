@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                 Oculus - Professional Recon Framework v3.1                   ║
+║                 Oculus - Professional Recon Framework v4.0                   ║
 ║                              for Kali Linux                                  ║
 ║                                                                              ║
 ║    A beautiful, powerful, automated, and intelligent reconnaissance tool     ║
@@ -51,7 +51,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-VERSION = "3.1.0"
+VERSION = "4.0.0"
 
 DEFAULT_CONFIG = {
     'threads': 50,

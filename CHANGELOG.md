@@ -2,6 +2,13 @@
 
 All notable changes to the **Oculus** project will be documented in this file.
 
+## [4.0.0] - 2026-05-17
+### 🚀 Added
+- **Web Cockpit:** A complete, real-time web interface built with FastAPI and React.
+- **Operator Dashboard:** Configure scans, select modules, and monitor live streaming output directly from the browser.
+- **Results Viewer:** Browse artifacts, view HTML/JSON/Markdown reports, and inspect tool health status visually.
+- **Zero-Modification CLI:** The web interface wraps the existing `Oculus` engine without modifying the trusted CLI source of truth.
+
 ## [3.1.0] - 2026-05-15
 ### 🚀 Added
 - **Full Spectrum Scan (`[U]`):** A new 5-phase orchestration pipeline running all 29 modules concurrently with intelligent dependency gating.

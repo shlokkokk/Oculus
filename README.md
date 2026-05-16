@@ -2,7 +2,7 @@
   <br>
   <samp><b>O C U L U S</b></samp>
   <br><br>
-  <sub><i>v3 · one lens. full surface.</i></sub>
+  <sub><i>v4 · one lens. full surface.</i></sub>
   <br><br>
   <a href="#quick-start"><img alt="Quick start" src="https://img.shields.io/badge/setup-install.sh-00d4aa?style=flat-square"></a>
   <a href="#expandable-guides"><img alt="Guides" src="https://img.shields.io/badge/docs-expandable-9333ea?style=flat-square"></a>
@@ -30,7 +30,23 @@
 | **State** | `output-<domain>/session.json` (gitignored) — resume-friendly scans |
 | **Guides** | **[Expandable guides](#expandable-guides)** — full config, CLI cookbook, outputs, playbooks |
 | **Modules** | **[Module overview](#module-overview)** — always-visible cheat sheet (tools + what each step does) |
+| **Web UI** | **[web/README.md](web/README.md)** — full real-time web interface to run Oculus from your browser |
 | **Deep dive** | **[INSTALLATION.md](INSTALLATION.md)** (native / manual / Docker) · **[CHANGELOG.md](CHANGELOG.md)** |
+
+---
+
+## Run in Browser (New Web UI!)
+
+Oculus v4.0 now features a complete, real-time web interface. You can now configure scans, monitor live terminal output, and view generated reports directly in your browser without ever touching the CLI.
+
+```bash
+cd web/backend && pip install -r requirements.txt
+cd ../frontend && npm install && npm run build
+cd ../backend && python -m uvicorn server:app --host 127.0.0.1 --port 8000
+# Open http://localhost:8000
+```
+
+See the **[Web README](web/README.md)** for full details.
 
 ---
 
@@ -294,7 +310,7 @@ Subfinder and other PD tools read provider keys from the environment or **`~/.co
 ### Full starter YAML (identical to [`config.yaml.example`](config.yaml.example))
 
 ```yaml
-# Oculus v3 Configuration File
+# Oculus v4 Configuration File
 # Copy to ~/.config/oculus/config.yaml
 
 # General settings
@@ -711,6 +727,6 @@ flowchart LR
 
 <p align="center">
   <br>
-  <sub>Oculus v3 — clarity over noise.</sub>
+  <sub>Oculus v4 — clarity over noise.</sub>
   <br><br>
 </p>
