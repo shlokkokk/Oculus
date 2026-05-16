@@ -25,6 +25,7 @@
 | | |
 |:---|:---|
 | **Entry** | `python3 oculus.py` — interactive menu, or CLI flags below |
+| **Web UI** | `web/` — local browser console that runs the existing CLI and streams scan output |
 | **Config** | `~/.config/oculus/config.yaml` (copy from [`config.yaml.example`](config.yaml.example)) |
 | **Output** | `output-<domain>/` — logs, text dumps, `session.json`, `findings.json`, `report.html`, `report.md` |
 | **State** | `output-<domain>/session.json` (gitignored) — resume-friendly scans |

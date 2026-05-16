@@ -108,5 +108,9 @@ report.html
 report.md
 temp/
 last_output.txt
+
+# Web app artifacts
+web/node_modules/
+web/dist/
 thumbnail-another.png
 thumbnail.png

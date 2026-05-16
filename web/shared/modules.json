@@ -1,0 +1,38 @@
+{
+  "modules": [
+    { "id": "subdomain", "step": 1, "phase": "Discovery", "label": "Subdomains", "tools": "Subfinder, Amass, Assetfinder", "output": "subdomains.txt", "tone": "cyan" },
+    { "id": "dns", "step": 2, "phase": "Discovery", "label": "DNS Resolution", "tools": "dnsx", "output": "dns_resolved.txt", "tone": "cyan" },
+    { "id": "alive", "step": 3, "phase": "Discovery", "label": "Alive Hosts", "tools": "httpx", "output": "alive.txt", "tone": "cyan" },
+    { "id": "ports", "step": 4, "phase": "Infrastructure", "label": "Fast Ports", "tools": "Naabu / Nmap", "output": "ports_fast.txt", "tone": "blue" },
+    { "id": "fullports", "step": 5, "phase": "Infrastructure", "label": "Full Ports", "tools": "Nmap -p-", "output": "ports_full.txt", "tone": "blue" },
+    { "id": "urls", "step": 6, "phase": "Content", "label": "URL Collection", "tools": "Katana, gau, waybackurls", "output": "urls_final.txt", "tone": "green" },
+    { "id": "waf", "step": 7, "phase": "Infrastructure", "label": "WAF Detection", "tools": "wafw00f", "output": "waf_summary.txt", "tone": "blue" },
+    { "id": "vuln", "step": 8, "phase": "Vulnerability", "label": "Nuclei Scan", "tools": "nuclei", "output": "findings.json", "tone": "red" },
+    { "id": "params", "step": 10, "phase": "Content", "label": "Parameters", "tools": "ParamSpider, Arjun", "output": "parameters/", "tone": "green" },
+    { "id": "js", "step": 11, "phase": "Content", "label": "JS Endpoints", "tools": "LinkFinder, Python", "output": "js_endpoints/", "tone": "green" },
+    { "id": "fuzz", "step": 12, "phase": "Vulnerability", "label": "Directory Fuzzing", "tools": "ffuf", "output": "fuzzing/", "tone": "red" },
+    { "id": "api", "step": 13, "phase": "Vulnerability", "label": "API Fuzzing", "tools": "Kiterunner", "output": "api_fuzzing/", "tone": "red" },
+    { "id": "takeover", "step": 14, "phase": "Content", "label": "Takeover", "tools": "subzy, dig", "output": "takeover/", "tone": "green" },
+    { "id": "hakrawler", "step": 15, "phase": "Content", "label": "Advanced URLs", "tools": "hakrawler", "output": "urls_final.txt", "tone": "green" },
+    { "id": "screenshots", "step": 16, "phase": "Infrastructure", "label": "Screenshots", "tools": "gowitness", "output": "screenshots/", "tone": "blue" },
+    { "id": "dnsbrute", "step": 17, "phase": "Discovery", "label": "DNS Bruteforce", "tools": "massdns", "output": "subdomains.txt", "tone": "cyan" },
+    { "id": "gf", "step": 18, "phase": "Vulnerability", "label": "GF Buckets", "tools": "gf", "output": "gf/*.txt", "tone": "red" },
+    { "id": "tech", "step": 19, "phase": "Infrastructure", "label": "Tech Scan", "tools": "whatweb", "output": "tech_scan/", "tone": "blue" },
+    { "id": "sqli", "step": 20, "phase": "Exploitation", "label": "SQLi", "tools": "sqlmap", "output": "sqlmap/", "tone": "violet" },
+    { "id": "xss", "step": 21, "phase": "Exploitation", "label": "XSS", "tools": "Dalfox", "output": "xss_findings/", "tone": "violet" },
+    { "id": "cors", "step": 22, "phase": "Exploitation", "label": "CORS", "tools": "Python", "output": "cors_findings/", "tone": "violet" },
+    { "id": "smuggling", "step": 23, "phase": "Exploitation", "label": "Smuggling", "tools": "smuggler", "output": "smuggling/", "tone": "violet" },
+    { "id": "asn", "step": 24, "phase": "Discovery", "label": "ASN Discovery", "tools": "asnmap", "output": "asn/", "tone": "cyan" },
+    { "id": "cloud", "step": 25, "phase": "Discovery", "label": "Cloud Assets", "tools": "Python", "output": "cloud/", "tone": "cyan" },
+    { "id": "github", "step": 26, "phase": "Discovery", "label": "GitHub Dorking", "tools": "GitHub API", "output": "github/", "tone": "cyan" },
+    { "id": "osint", "step": 27, "phase": "Discovery", "label": "OSINT", "tools": "theHarvester", "output": "osint/", "tone": "cyan" },
+    { "id": "shodan", "step": 28, "phase": "Discovery", "label": "Shodan", "tools": "Shodan API", "output": "shodan/", "tone": "cyan" },
+    { "id": "redirect", "step": 29, "phase": "Exploitation", "label": "Open Redirect", "tools": "Python", "output": "redirects/", "tone": "violet" }
+  ],
+  "modes": {
+    "custom": { "label": "Custom", "copy": "Pick exactly the modules you want.", "modules": ["subdomain", "dns", "alive", "ports", "urls", "waf", "vuln"] },
+    "recon": { "label": "Full Recon", "copy": "Core 1-8 pipeline for fast first-pass signal.", "flag": "--full-recon", "modules": ["subdomain", "dns", "alive", "ports", "urls", "waf", "vuln"] },
+    "deep": { "label": "Deep", "copy": "Advanced chain after alive hosts and URLs already exist.", "flag": "--deep", "modules": ["asn", "params", "js", "fuzz", "api", "takeover", "hakrawler", "screenshots", "gf", "tech", "xss", "cors", "smuggling", "sqli"] },
+    "spectrum": { "label": "Full Spectrum", "copy": "Every module across the 5-phase scheduler.", "flag": "--full-spectrum", "modules": ["subdomain", "dns", "alive", "ports", "fullports", "urls", "waf", "vuln", "params", "js", "fuzz", "api", "takeover", "hakrawler", "screenshots", "dnsbrute", "gf", "tech", "sqli", "xss", "cors", "smuggling", "asn", "cloud", "github", "osint", "shodan", "redirect"] }
+  }
+}
