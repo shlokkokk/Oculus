@@ -96,6 +96,7 @@ venv.bak/
 # Internal documentation (not for public repo)
 INTERNAL.md
 docs/INTERNAL.md
+_internal_docs/
 
 # Project artifacts
 output-*/
