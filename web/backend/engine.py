@@ -304,6 +304,9 @@ class ScanEngine:
         threads: int | None = None,
         rate_limit: int | None = None,
         timeout: int | None = None,
+        sqlmap_level: int | None = None,
+        sqlmap_risk: int | None = None,
+        sqlmap_threads: int | None = None,
         jitter: bool = False,
         severity: str | None = None,
     ) -> bool:
@@ -327,7 +330,7 @@ class ScanEngine:
 
         self._thread = threading.Thread(
             target=self._run_scan,
-            args=(domain, mode, modules or [], threads, rate_limit, timeout, jitter, severity),
+            args=(domain, mode, modules or [], threads, rate_limit, timeout, sqlmap_level, sqlmap_risk, sqlmap_threads, jitter, severity),
             daemon=True,
         )
         self._thread.start()
@@ -349,6 +352,9 @@ class ScanEngine:
         threads: int | None,
         rate_limit: int | None,
         timeout: int | None,
+        sqlmap_level: int | None,
+        sqlmap_risk: int | None,
+        sqlmap_threads: int | None,
         jitter: bool,
         severity: str | None,
     ):
@@ -362,6 +368,13 @@ class ScanEngine:
             config["rate_limit"] = rate_limit
         if timeout:
             config["timeout"] = timeout
+        sqlmap_config = config.setdefault("sqlmap", {})
+        if sqlmap_level is not None:
+            sqlmap_config["level"] = sqlmap_level
+        if sqlmap_risk is not None:
+            sqlmap_config["risk"] = sqlmap_risk
+        if sqlmap_threads is not None:
+            sqlmap_config["threads"] = sqlmap_threads
         config["jitter"] = jitter
         if severity:
             config.setdefault("nuclei", {})["severity"] = severity

@@ -59,6 +59,11 @@ DEFAULT_CONFIG = {
     'rate_limit': 150,
     'retry_count': 2,
     'retry_delay': 5,
+    'sqlmap': {
+        'level': 5,
+        'risk': 3,
+        'threads': 50,
+    },
     'wordlists': {
         'dns': '/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt',
         'dirs': '/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt',
@@ -411,6 +416,7 @@ class Oculus:
             if stream and not output_file:
                 proc = subprocess.Popen(
                     command, shell=True,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1, universal_newlines=True
                 )
@@ -451,13 +457,14 @@ class Oculus:
                 with open(output_file, 'w') as f:
                     result = subprocess.run(
                         command, shell=True, stdout=f, stderr=subprocess.STDOUT,
+                        stdin=subprocess.DEVNULL,
                         timeout=timeout, text=True
                     )
                 return result.returncode if get_code else (result.returncode == 0)
                 
             else:
                 result = subprocess.run(
-                    command, shell=True, capture_output=True,
+                    command, shell=True, stdin=subprocess.DEVNULL, capture_output=True,
                     timeout=timeout, text=True
                 )
                 return result.returncode if get_code else (result.returncode == 0)
@@ -2091,12 +2098,20 @@ class Oculus:
             print(f"{Colors.YELLOW}[!] No SQLi URLs match alive hosts — running full list as fallback{Colors.RESET}")
             filtered_sqli = gf_sqli
 
-        # Full-power SQLMap: level 5, risk 3, forms detection, crawl, tamper scripts
+        # Use configured SQLMap settings (defaults defined in DEFAULT_CONFIG)
+        sqlmap_cfg = self.config.get('sqlmap', {}) or {}
+        level = int(sqlmap_cfg.get('level', 5) or 5)
+        risk = int(sqlmap_cfg.get('risk', 3) or 3)
+        sqlmap_threads = int(sqlmap_cfg.get('threads', self.config.get('threads', 50)) or self.config.get('threads', 50) or 50)
+
+        # Full-power SQLMap: configurable level, risk, threads, forms detection, crawl, tamper scripts
         # Timeout 7200s (2hrs) — large target lists need time to run fully
-        cmd = (f"{self.get_tool('sqlmap')} -m {filtered_sqli} --batch --random-agent "
-               f"--level 5 --risk 3 --forms --crawl=3 "
-               f"--tamper=space2comment,between,charunicodeencode "
-               f"--output-dir={out_dir}")
+        cmd = (
+            f"{self.get_tool('sqlmap')} -m {filtered_sqli} --batch --random-agent "
+            f"--level {level} --risk {risk} --forms --crawl=3 --threads={sqlmap_threads} "
+            f"--tamper=space2comment,between,charunicodeencode "
+            f"--output-dir={out_dir}"
+        )
         if self.run_command(cmd, timeout=7200, label="sqlmap"):
             print(f"{Colors.GREEN}[✔] SQLMap scan completed{Colors.RESET}")
         else:

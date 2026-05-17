@@ -29,6 +29,9 @@ class ScanRequest(BaseModel):
     threads: Optional[int] = Field(None, ge=1, le=500)
     rate_limit: Optional[int] = Field(None, ge=1, le=10000)
     timeout: Optional[int] = Field(None, ge=10, le=7200)
+    sqlmap_level: Optional[int] = Field(None, ge=1, le=5)
+    sqlmap_risk: Optional[int] = Field(None, ge=1, le=3)
+    sqlmap_threads: Optional[int] = Field(None, ge=1, le=500)
     jitter: bool = False
     severity: Optional[str] = None
 
@@ -67,6 +70,9 @@ class ConfigResponse(BaseModel):
     rate_limit: int = 150
     retry_count: int = 2
     retry_delay: int = 5
+    sqlmap_level: int = 5
+    sqlmap_risk: int = 3
+    sqlmap_threads: int = 50
     parallel: bool = True
     jitter: bool = False
     nuclei_severity: str = "low,medium,high,critical"

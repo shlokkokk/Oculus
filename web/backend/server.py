@@ -12,6 +12,68 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Quer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import os
+import time
+import logging
+
+# Rate-limit only specific endpoints' access log appearances.
+# Configure per-endpoint intervals via environment variables (seconds):
+# - UVICORN_ACCESS_LOG_INTERVAL_HEALTH (default 600)
+# - UVICORN_ACCESS_LOG_INTERVAL_STATUS (default 60)
+ACCESS_LOG_INTERVAL_HEALTH = int(os.getenv("UVICORN_ACCESS_LOG_INTERVAL_HEALTH", "600"))
+ACCESS_LOG_INTERVAL_STATUS = int(os.getenv("UVICORN_ACCESS_LOG_INTERVAL_STATUS", "60"))
+
+class RateLimitFilter(logging.Filter):
+    def __init__(self, health_interval=ACCESS_LOG_INTERVAL_HEALTH, status_interval=ACCESS_LOG_INTERVAL_STATUS):
+        super().__init__()
+        self.intervals = {
+            "/api/health": health_interval,
+            "/api/scan/status": status_interval,
+        }
+        # track last emit time per-path
+        self._last_emit = {path: 0.0 for path in self.intervals}
+
+    def _extract_path(self, record):
+        # uvicorn access message contains the request line in quotes: '"GET /api/health HTTP/1.1"'
+        try:
+            msg = record.getMessage()
+            parts = msg.split('"')
+            if len(parts) > 1:
+                request_line = parts[1]
+                # request_line -> 'GET /api/health HTTP/1.1'
+                segs = request_line.split(' ')
+                if len(segs) >= 2:
+                    return segs[1]
+        except Exception:
+            pass
+        return None
+
+    def filter(self, record):
+        # Always allow warnings/errors/non-INFO
+        if record.levelno != logging.INFO:
+            return True
+
+        path = self._extract_path(record)
+        # If it's one of the endpoints we throttle, apply per-path interval.
+        if path in self.intervals:
+            now = time.time()
+            interval = self.intervals[path]
+            if now - self._last_emit[path] >= interval:
+                self._last_emit[path] = now
+                return True
+            return False
+
+        # For other paths, allow logs to pass through normally.
+        return True
+
+# Attach filter to uvicorn access logger
+access_logger = logging.getLogger("uvicorn.access")
+access_logger.setLevel(logging.INFO)
+access_logger.addFilter(RateLimitFilter())
+
+# Keep other uvicorn logs visible at warning+ level
+logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
+logging.getLogger("uvicorn").setLevel(logging.WARNING)
 
 from engine import engine, VERSION
 from models import (
@@ -73,6 +135,9 @@ async def get_config():
         rate_limit=config.get("rate_limit", 150),
         retry_count=config.get("retry_count", 2),
         retry_delay=config.get("retry_delay", 5),
+        sqlmap_level=config.get("sqlmap", {}).get("level", 5),
+        sqlmap_risk=config.get("sqlmap", {}).get("risk", 3),
+        sqlmap_threads=config.get("sqlmap", {}).get("threads", 50),
         parallel=config.get("parallel", True),
         jitter=config.get("jitter", False),
         nuclei_severity=config.get("nuclei", {}).get("severity", "low,medium,high,critical"),
@@ -95,6 +160,9 @@ async def start_scan(req: ScanRequest):
         threads=req.threads,
         rate_limit=req.rate_limit,
         timeout=req.timeout,
+        sqlmap_level=req.sqlmap_level,
+        sqlmap_risk=req.sqlmap_risk,
+        sqlmap_threads=req.sqlmap_threads,
         jitter=req.jitter,
         severity=req.severity,
     )

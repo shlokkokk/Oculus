@@ -15,6 +15,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
   const [timeout, setTimeout_] = useState(300);
   const [jitter, setJitter] = useState(false);
   const [severity, setSeverity] = useState('low,medium,high,critical');
+  const [sqlmapLevel, setSqlmapLevel] = useState(5);
+  const [sqlmapRisk, setSqlmapRisk] = useState(3);
+  const [sqlmapThreads, setSqlmapThreads] = useState(50);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -26,6 +29,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
       setTimeout_(cfg.timeout);
       setJitter(cfg.jitter);
       setSeverity(cfg.nuclei_severity);
+      setSqlmapLevel(cfg.sqlmap_level ?? 5);
+      setSqlmapRisk(cfg.sqlmap_risk ?? 3);
+      setSqlmapThreads(cfg.sqlmap_threads ?? cfg.threads ?? 50);
       setConfigLoaded(true);
     }).catch(() => setConfigLoaded(true));
   }, []);
@@ -43,6 +49,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
       threads: threads === '' ? null : Number(threads),
       rate_limit: rateLimit === '' ? null : Number(rateLimit),
       timeout: timeout === '' ? null : Number(timeout),
+      sqlmap_level: sqlmapLevel === '' ? null : Number(sqlmapLevel),
+      sqlmap_risk: sqlmapRisk === '' ? null : Number(sqlmapRisk),
+      sqlmap_threads: sqlmapThreads === '' ? null : Number(sqlmapThreads),
       jitter,
       severity,
     }).catch(err => setError(err.message));
@@ -170,6 +179,31 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
               </div>
             </div>
           </div>
+
+          <div className="input-group" style={{ marginBottom: 0 }}>
+            <label>SQLMap Level</label>
+            <input className="input" type="number" min="1" max="5" value={sqlmapLevel}
+              onChange={e => {
+                const val = e.target.value;
+                setSqlmapLevel(val === '' ? '' : Number(val));
+              }} disabled={scanState === 'running'} />
+          </div>
+          <div className="input-group" style={{ marginBottom: 0 }}>
+            <label>SQLMap Risk</label>
+            <input className="input" type="number" min="1" max="3" value={sqlmapRisk}
+              onChange={e => {
+                const val = e.target.value;
+                setSqlmapRisk(val === '' ? '' : Number(val));
+              }} disabled={scanState === 'running'} />
+          </div>
+          <div className="input-group" style={{ marginBottom: 0 }}>
+            <label>SQLMap Threads</label>
+            <input className="input" type="number" min="1" max="500" value={sqlmapThreads}
+              onChange={e => {
+                const val = e.target.value;
+                setSqlmapThreads(val === '' ? '' : Number(val));
+              }} disabled={scanState === 'running'} />
+          </div>
         </div>
 
         <div style={{ marginTop: '16px', borderTop: '1px dashed var(--border)', paddingTop: '16px' }}>
@@ -184,6 +218,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
                 setRateLimit(300);
                 setTimeout_(240);
                 setJitter(false);
+                setSqlmapLevel(5);
+                setSqlmapRisk(3);
+                setSqlmapThreads(100);
                 setSeverity('low,medium,high,critical');
               }}
               style={{
@@ -221,6 +258,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
                 setRateLimit(800);
                 setTimeout_(300);
                 setJitter(false);
+                setSqlmapLevel(5);
+                setSqlmapRisk(3);
+                setSqlmapThreads(200);
                 setSeverity('low,medium,high,critical');
               }}
               style={{
@@ -258,6 +298,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
                 setRateLimit(50);
                 setTimeout_(600);
                 setJitter(true);
+                setSqlmapLevel(3);
+                setSqlmapRisk(1);
+                setSqlmapThreads(15);
                 setSeverity('high,critical');
               }}
               style={{
@@ -297,6 +340,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
                   setRateLimit(cfg.rate_limit || 150);
                   setTimeout_(cfg.timeout || 300);
                   setJitter(cfg.jitter || false);
+                  setSqlmapLevel(cfg.sqlmap_level || 5);
+                  setSqlmapRisk(cfg.sqlmap_risk || 3);
+                  setSqlmapThreads(cfg.sqlmap_threads || cfg.threads || 50);
                   setSeverity(cfg.nuclei_severity || 'low,medium,high,critical');
                 });
               }}
