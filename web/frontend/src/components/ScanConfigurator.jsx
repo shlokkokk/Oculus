@@ -40,9 +40,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
       domain,
       mode,
       modules: mode === 'custom' ? modules : [],
-      threads,
-      rate_limit: rateLimit,
-      timeout: timeout,
+      threads: threads === '' ? null : Number(threads),
+      rate_limit: rateLimit === '' ? null : Number(rateLimit),
+      timeout: timeout === '' ? null : Number(timeout),
       jitter,
       severity,
     }).catch(err => setError(err.message));
@@ -110,17 +110,26 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label>Threads</label>
             <input className="input" type="number" min="1" max="500" value={threads}
-              onChange={e => setThreads(Number(e.target.value))} disabled={scanState === 'running'} />
+              onChange={e => {
+                const val = e.target.value;
+                setThreads(val === '' ? '' : Number(val));
+              }} disabled={scanState === 'running'} />
           </div>
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label>Rate Limit</label>
             <input className="input" type="number" min="1" max="10000" value={rateLimit}
-              onChange={e => setRateLimit(Number(e.target.value))} disabled={scanState === 'running'} />
+              onChange={e => {
+                const val = e.target.value;
+                setRateLimit(val === '' ? '' : Number(val));
+              }} disabled={scanState === 'running'} />
           </div>
           <div className="input-group" style={{ marginBottom: 0 }}>
             <label>Timeout (s)</label>
             <input className="input" type="number" min="10" max="7200" value={timeout}
-              onChange={e => setTimeout_(Number(e.target.value))} disabled={scanState === 'running'} />
+              onChange={e => {
+                const val = e.target.value;
+                setTimeout_(val === '' ? '' : Number(val));
+              }} disabled={scanState === 'running'} />
           </div>
 
           <div className="input-group" style={{ gridColumn: 'span 2', marginBottom: 0 }}>
@@ -133,10 +142,31 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
             </select>
           </div>
           <div className="input-group" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', marginBottom: 0 }}>
-            <div className="toggle-row" style={{ height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.01)', boxSizing: 'border-box' }}>
-              <span className="toggle-label" style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-dim)' }}>Jitter (stealth)</span>
-              <div className={`toggle ${jitter ? 'on' : ''}`} onClick={() => { if (scanState !== 'running') setJitter(!jitter); }} style={{ margin: 0 }}>
-                <div className="toggle-knob" />
+            <div className="toggle-row" style={{
+              height: '42px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 12px',
+              border: jitter ? '1px solid rgba(0, 212, 170, 0.35)' : '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              background: jitter ? 'rgba(0, 212, 170, 0.03)' : 'rgba(255,255,255,0.01)',
+              boxShadow: jitter ? '0 0 12px rgba(0, 212, 170, 0.08)' : 'none',
+              boxSizing: 'border-box',
+              transition: 'all 0.3s ease',
+              cursor: scanState === 'running' ? 'not-allowed' : 'pointer'
+            }} onClick={() => { if (scanState !== 'running') setJitter(!jitter); }}>
+              <span className="toggle-label" style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: jitter ? 'var(--accent)' : 'var(--text-dim)',
+                textShadow: jitter ? '0 0 6px rgba(0, 212, 170, 0.25)' : 'none',
+                transition: 'all 0.3s ease'
+              }}>
+                Jitter (stealth)
+              </span>
+              <div className={`toggle ${jitter ? 'on' : ''}`} style={{ margin: 0, transition: 'all 0.3s ease' }}>
+                <div className="toggle-knob" style={{ transition: 'all 0.3s ease' }} />
               </div>
             </div>
           </div>

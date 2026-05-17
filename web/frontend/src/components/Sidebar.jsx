@@ -1,5 +1,7 @@
-import { Eye, Crosshair, Radio, FolderOpen, FileText, Wrench, History } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Eye, Crosshair, Radio, FolderOpen, FileText, Wrench, History, Server } from 'lucide-react';
 import { VIEWS } from '../utils/constants';
+import { api } from '../api/client';
 
 function OculusLogo({ size = 20 }) {
   return (
@@ -28,9 +30,28 @@ const NAV_ITEMS = [
 
 export default function Sidebar({ activeView, onNavigate }) {
   let lastSection = '';
+  const [apiOnline, setApiOnline] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const checkHealth = async () => {
+      try {
+        await api.health();
+        if (active) setApiOnline(true);
+      } catch (err) {
+        if (active) setApiOnline(false);
+      }
+    };
+    checkHealth();
+    const interval = setInterval(checkHealth, 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column' }}>
       <div className="sidebar-brand">
         <div className="sidebar-brand-icon">
           <OculusLogo size={20} />
@@ -59,6 +80,28 @@ export default function Sidebar({ activeView, onNavigate }) {
           );
         })}
       </nav>
+
+      <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.8px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Server size={11} /> System Status
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: apiOnline ? 'var(--accent-green)' : 'var(--accent-red)',
+              boxShadow: apiOnline ? '0 0 8px var(--accent-green)' : '0 0 8px var(--accent-red)',
+              display: 'inline-block',
+              animation: 'pulse-dot 2s infinite ease-in-out'
+            }} />
+            <span style={{ fontSize: '10px', fontWeight: 700, color: apiOnline ? 'var(--accent-green)' : 'var(--accent-red)', fontFamily: 'var(--font-mono)', letterSpacing: '0.5px' }}>
+              {apiOnline ? 'ONLINE' : 'OFFLINE'}
+            </span>
+          </div>
+        </div>
+      </div>
     </aside>
   );
 }
