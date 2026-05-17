@@ -1,5 +1,5 @@
 #!/bin/bash
-# Oculus v3 — Professional Installation Engine
+# Oculus v4.1 — Professional Installation Engine
 # Hardened · Idempotent · Docker & CI Compatible
 
 # Failsafe: Ensure we are running in Bash
@@ -32,7 +32,7 @@ for arg in "$@"; do
         --update)          export UPDATE_MODE=true ;;
         --non-interactive) INTERACTIVE=false ;;
         --help|-h)
-            echo -e "${CYAN}Oculus v3 Installer${RESET}"
+            echo -e "${CYAN}Oculus v4.1 Installer${RESET}"
             echo ""
             echo "Usage: ./install.sh [OPTIONS]"
             echo ""
@@ -371,6 +371,7 @@ GO_TOOLS = [
     ("assetfinder", "github.com/tomnomnom/assetfinder@latest"),
     ("dnsx",        "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"),
     ("httpx",       "github.com/projectdiscovery/httpx/cmd/httpx@latest"),
+    ("httprobe",    "github.com/tomnomnom/httprobe@latest"),
     ("naabu",       "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"),
     ("katana",      "github.com/projectdiscovery/katana/cmd/katana@latest"),
     ("gau",         "github.com/lc/gau/v2/cmd/gau@latest"),
@@ -550,7 +551,7 @@ def install_recon_tool(name, repo, progress, tid):
 # Run Installation
 if HAS_RICH:
     console.print(Panel(
-        "[bold cyan]Oculus v3 — Tool Installation Engine[/]\n"
+        "[bold cyan]Oculus v4.1 — Tool Installation Engine[/]\n"
         f"[dim]Go tools: {len(GO_TOOLS)} · Recon tools: {len(RECON_TOOLS)} · "
         f"Mode: {'[yellow]Update[/]' if UPDATE_MODE else '[green]Fresh Install[/]'}[/dim]",
         border_style="cyan", padding=(1, 2)
@@ -836,14 +837,14 @@ fi
 echo ""
 if [ "${INSTALL_FAILED:-0}" -ne 0 ]; then
     echo -e "${YELLOW}${BOLD}╔═══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${YELLOW}${BOLD}║  Oculus v3 — Installed (with critical tool failures)  ║${RESET}"
+    echo -e "${YELLOW}${BOLD}║ Oculus v4.1 — Installed (with critical failures)      ║${RESET}"
     echo -e "${YELLOW}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
     echo ""
     echo -e "  ${RED}Some critical tools failed to install.${RESET}"
     echo -e "  ${DIM}Review install.log and re-run with:  ${YELLOW}./install.sh --update${RESET}"
 else
     echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${GREEN}${BOLD}║       Oculus v3 — Installation Complete! ✔            ║${RESET}"
+    echo -e "${GREEN}${BOLD}║       Oculus v4.1 — Installation Complete! ✔          ║${RESET}"
     echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
 fi
 echo ""

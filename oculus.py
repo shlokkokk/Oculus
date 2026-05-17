@@ -51,7 +51,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-VERSION = "4.0.0"
+VERSION = "4.1.0"
 
 DEFAULT_CONFIG = {
     'threads': 50,
@@ -676,6 +676,7 @@ class Oculus:
             ('assetfinder', 'go install github.com/tomnomnom/assetfinder@latest'),
             ('dnsx', 'go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest'),
             ('httpx', 'go install github.com/projectdiscovery/httpx/cmd/httpx@latest'),
+            ('httprobe', 'go install github.com/tomnomnom/httprobe@latest'),
             ('naabu', 'go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest'),
             ('nmap', 'sudo apt install nmap'),
             ('katana', 'go install github.com/projectdiscovery/katana/cmd/katana@latest'),
@@ -946,46 +947,83 @@ class Oculus:
     # CORE MODULE 3: ALIVE HOSTS CHECK (httpx JSON)
 
     def run_alive_hosts_check(self):
-        """Check which hosts are alive using HTTPx with JSON parsing"""
+        """Check which hosts are alive using HTTPx and httprobe concurrently for redundancy"""
         if not self._require_setup():
             return
         subs_file = f"{self.output_dir}/subdomains.txt"
         if not self._require_file(subs_file, "No subdomains found! Run subdomain enumeration first."):
             return
-        if not self._require_tool('httpx'):
+            
+        has_httpx = self.tools_status.get('httpx', {}).get('installed')
+        has_httprobe = self.tools_status.get('httprobe', {}).get('installed')
+        
+        if not has_httpx and not has_httprobe:
+            print(f"{Colors.RED}[!] No alive checking tools available (need httpx or httprobe).{Colors.RESET}")
             return
-        print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Alive Hosts...{Colors.RESET}\n")
-        raw_output = f"{self.output_dir}/httpx_raw.json"
-        httpx_bin = self.get_tool('httpx')
-        threads = self.config.get('threads', 50)
-        rl = self.config.get('rate_limit', 150)
-        cmd = (f"{httpx_bin} -l {subs_file} -sc -title -ip -cdn -json "
-               f"-threads {threads} -rl {rl} -timeout 10 -o {raw_output}")
-        if not self.run_command_with_retry(cmd, timeout=600, label="httpx"):
-            print(f"{Colors.RED}[!] HTTPx scan failed{Colors.RESET}")
-            return
-        clean_hosts = []
-        try:
-            for line in self.read_file_lines(raw_output):
-                try:
-                    j = json.loads(line)
-                    clean_hosts.append(j["url"])
-                except (json.JSONDecodeError, KeyError):
-                    continue
-        except Exception as e:
-            print(f"{Colors.RED}[!] Failed parsing HTTPx JSON: {e}{Colors.RESET}")
-            return
+            
+        print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Alive Hosts (Dual Engine)...{Colors.RESET}\n")
+        
+        def _run_httpx():
+            raw_output = f"{self.output_dir}/httpx_raw.json"
+            httpx_bin = self.get_tool('httpx')
+            threads = self.config.get('threads', 50)
+            rl = self.config.get('rate_limit', 150)
+            cmd = (f"{httpx_bin} -l {subs_file} -sc -title -ip -cdn -json "
+                   f"-threads {threads} -rl {rl} -timeout 10 -o {raw_output}")
+            self.run_command_with_retry(cmd, timeout=600, label="httpx")
+            
+        def _run_httprobe():
+            out_file = f"{self.output_dir}/httprobe_raw.txt"
+            probe_bin = self.get_tool('httprobe')
+            threads = self.config.get('threads', 50)
+            cmd = f"cat {shlex.quote(subs_file)} | {probe_bin} -c {threads} -t 10000 > {shlex.quote(out_file)}"
+            self.run_command_with_retry(cmd, timeout=600, label="httprobe")
+            
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            if has_httpx:
+                executor.submit(_run_httpx)
+            if has_httprobe:
+                executor.submit(_run_httprobe)
+
+        clean_hosts = set()
+        
+        # Parse HTTPx
+        if has_httpx:
+            raw_output = f"{self.output_dir}/httpx_raw.json"
+            try:
+                for line in self.read_file_lines(raw_output):
+                    try:
+                        j = json.loads(line)
+                        clean_hosts.add(j["url"])
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+            except Exception as e:
+                print(f"{Colors.RED}[!] Failed parsing HTTPx JSON: {e}{Colors.RESET}")
+                
+        # Parse HTTPProbe
+        if has_httprobe:
+            out_file = f"{self.output_dir}/httprobe_raw.txt"
+            try:
+                for line in self.read_file_lines(out_file):
+                    line = line.strip()
+                    if line.startswith("http://") or line.startswith("https://"):
+                        clean_hosts.add(line)
+            except Exception as e:
+                print(f"{Colors.RED}[!] Failed parsing httprobe output: {e}{Colors.RESET}")
+
         alive_file = f"{self.output_dir}/alive.txt"
         with open(alive_file, "w", encoding='utf-8') as f:
-            for h in sorted(set(clean_hosts)):
+            for h in sorted(clean_hosts):
                 f.write(h + "\n")
-        count = len(set(clean_hosts))
+                
+        count = len(clean_hosts)
         print(f"{Colors.GREEN}[✔] Found {count} alive hosts{Colors.RESET}")
         if count == 0:
             print(f"{Colors.YELLOW}[*] No alive hosts — will fallback to main domain for scanning{Colors.RESET}")
         else:
             print(f"\n{Colors.CYAN}[*] Sample alive hosts:{Colors.RESET}")
-            for h in list(set(clean_hosts))[:5]:
+            for h in list(clean_hosts)[:5]:
                 print(f"  {Colors.WHITE}• {h}{Colors.RESET}")
             if count > 5:
                 print(f"  {Colors.DIM}... and {count-5} more{Colors.RESET}")

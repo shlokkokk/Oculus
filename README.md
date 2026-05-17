@@ -2,7 +2,7 @@
   <br>
   <samp><b>O C U L U S</b></samp>
   <br><br>
-  <sub><i>v4 · one lens. full surface.</i></sub>
+  <sub><i>v4.1 · one lens. full surface.</i></sub>
   <br><br>
   <a href="#quick-start"><img alt="Quick start" src="https://img.shields.io/badge/setup-install.sh-00d4aa?style=flat-square"></a>
   <a href="#expandable-guides"><img alt="Guides" src="https://img.shields.io/badge/docs-expandable-9333ea?style=flat-square"></a>
@@ -37,7 +37,7 @@
 
 ## Run in Browser (New Web UI!)
 
-Oculus v4.0 now features a complete, real-time web interface. You can configure scans, monitor live terminal output, and view generated reports directly in your browser without ever touching the CLI.
+Oculus v4.1 now features a complete, real-time web interface. You can configure scans, monitor live terminal output, and view generated reports directly in your browser without ever touching the CLI.
 
 **Launch in Developer Mode (Standard / Live Reloading):**
 ```bash
@@ -99,7 +99,7 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 |:---:|:---|:---|:---|
 | **1** | `subdomain` | Subfinder, Amass, Assetfinder | Enum subs from several sources, validate in-scope hostnames, dedupe → **`subdomains.txt`** |
 | **2** | `dns` | dnsx | Resolve subs (A/AAAA/CNAME/NS/MX/etc.) with responses → **`dns_resolved.txt`** |
-| **3** | `alive` | httpx | Hit subs over HTTP(S); titles, status, IP, CDN hint; JSON → **`alive.txt`** |
+| **3** | `alive` | httpx, httprobe | Hit subs over HTTP(S) concurrently for dual-engine redundancy; JSON + raw formats merged → **`alive.txt`** |
 | **4** | `ports` | dig, whois, Naabu / Nmap | Guess CDN from DNS/WHOIS; **Naabu** syn scan or **Nmap** fallback if CDN → **`ports_fast.txt`** |
 | **5** | `fullports` | Nmap | All TCP ports **`-p-`**, scripts **`-sC`**, versions **`-sV`**, OS guess; parse XML → **`ports_full.txt`** |
 | **6** | `urls` | Katana, gau, waybackurls | Crawl + passive archives in parallel, strip noise, dedupe → **`urls.txt`** / **`urls_final.txt`** |
@@ -538,7 +538,7 @@ Runs all 29 modules across 5 phases with intelligent concurrency. See **[Automat
 |:---|:---:|:---|
 | `subdomain` | 1 | **Subfinder** (`-all -recursive`), **Amass** passive, **assetfinder** — merge, validate, dedupe → `subdomains.txt` |
 | `dns` | 2 | **dnsx** A/AAAA/CNAME/NS/PTR/MX/SOA on subdomain list |
-| `alive` | 3 | **httpx** with status, title, IP, CDN flag, JSON lines → `alive.txt` |
+| `alive` | 3 | **httpx** (JSON stats) + **httprobe** (lightweight fail-safe) in parallel → deduped `alive.txt` |
 | `ports` | 4 | **CDN hint** via dig+whois; **Naabu** (or **Nmap** if CDN) — configurable port range/rate → `ports_fast.txt` |
 | `fullports` | 5 | **Nmap** all ports **`-p-`** with **`-sV -sC -O`**, XML parse → `ports_full.txt` (+ `.xml` / `.gnmap` base) |
 | `urls` | 6 | **Katana**, **gau**, **waybackurls** in parallel → cleaned `urls.txt` + merged **`urls_final.txt`** |
@@ -693,7 +693,7 @@ Oculus/
 ├── config.yaml.example    # Template → ~/.config/oculus/config.yaml
 ├── Dockerfile             # Kali rolling + Go + install.sh --update
 ├── INSTALLATION.md        # Native / manual / Docker install guide
-├── CHANGELOG.md           # v3.0.0 release notes
+├── CHANGELOG.md           # v4.1.0 release notes
 └── LICENSE                # MIT — Copyright (c) 2025 Shlok Shah
 ```
 

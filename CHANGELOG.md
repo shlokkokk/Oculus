@@ -2,6 +2,17 @@
 
 All notable changes to the **Oculus** project will be documented in this file.
 
+## [4.1.0] - 2026-05-17
+### 🚀 Added
+- **Dual-Engine Probing:** Configured `httprobe` as a secondary, concurrent alive-checking engine alongside `httpx` to guarantee zero dropped targets.
+- **Zero-Block Background Nmap:** Decoupled slow Full Port Scans from the Phase 2 execution pool to run in a background daemon thread, eliminating UI lag.
+- **Smart Web Resume Selector:** Integrated session endpoints to detect previous scans and offer dynamic "Resume" vs "Start Fresh" toggle options directly in the configuration and abort screens.
+- **Force Dependency Refresh:** Added a cache-bypassing Refresh button to the Tool Status UI to force re-evaluation of installed systems.
+
+### 🐛 Fixed
+- **Active Targeting Suffix-Matching:** Fixed the strict filtering bug in Arjun/SQLMap where valid endpoints were dropped; replaced with dynamic suffix-matching.
+- **Resilient Report Generation:** Wrapped HTML report blocks in try/except boundaries to ensure aborted scans still write complete, clean partial reports.
+
 ## [4.0.0] - 2026-05-17
 ### 🚀 Added
 - **Web Cockpit:** A complete, real-time web interface built with FastAPI and React.

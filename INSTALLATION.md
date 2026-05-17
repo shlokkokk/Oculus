@@ -1,4 +1,4 @@
-# Oculus v3 — Installation Guide
+# Oculus v4.1 — Installation Guide
 
 Oculus is a Python recon orchestrator for **Kali / Debian-style** Linux. The supported path is **`./install.sh`** from your clone; use **Docker** if you are on macOS or do not want a full native toolchain.
 
@@ -37,7 +37,7 @@ Use **`./install.sh --update`** later to refresh Go tools and `/opt/recontools` 
 1. Verifies **Python ≥ 3.8** and **`go`** in `PATH` (offers to install the latest Go version if missing).
 2. **`apt-get install`**: `python3-pip`, `git`, `wget`, `curl`, `unzip`, `nmap`, `massdns`, `wafw00f`, `whatweb`, `sqlmap`, `jq`.
 3. **`pip3 install -r requirements.txt --break-system-packages`** (needed on newer Debian/Ubuntu PEP 668 environments).
-4. **`go install`** (see script for exact modules): subfinder, assetfinder, dnsx, httpx, naabu, katana, gau, waybackurls, nuclei, hakrawler, ffuf, dalfox, asnmap, gowitness, gf, amass, kr, subzy.
+4. **`go install`** (see script for exact modules): subfinder, assetfinder, dnsx, httpx, httprobe, naabu, katana, gau, waybackurls, nuclei, hakrawler, ffuf, dalfox, asnmap, gowitness, gf, amass, kr, subzy.
 5. Creates **`/opt/recontools`** and clones: **ParamSpider**, **Arjun**, **XSStrike**, **smuggler**, **LinkFinder**, **theHarvester** (with `pip install -r requirements.txt` per repo where present).
 6. Sets up **`~/.gf`** pattern JSONs (best-effort copy from `gf` examples + **Gf-Patterns**).
 7. If **`~/.config/oculus/config.yaml`** does not exist yet, copies **`config.yaml.example`** from the same directory as **`install.sh`** (the repo root).
@@ -135,6 +135,7 @@ go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 go install github.com/tomnomnom/assetfinder@latest
 go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
 go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install github.com/tomnomnom/httprobe@latest
 go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 go install github.com/projectdiscovery/katana/cmd/katana@latest
 go install github.com/lc/gau/v2/cmd/gau@latest
@@ -231,7 +232,7 @@ Or use a **venv** and run `oculus.py` with that interpreter (you must install CL
 Edit **`~/.config/oculus/config.yaml`** (`wordlists.*`, `resolvers`). Defaults point at SecLists and `/opt/recontools/massdns/resolvers.txt`. 
 
 > [!TIP]
-> **Auto-Healing DNS Resolvers (v4.0.0+)**: If your installer didn't run with root privileges or hit transient network errors (leaving `/usr/share/massdns/resolvers.txt` missing), **Oculus now dynamically heals itself**. It will automatically print a warning and generate a comprehensive `auto_resolvers.txt` in your session folder, containing **over 120+ un-nerfed premium public recursive DNS resolvers** (Google, Cloudflare, OpenDNS, Level3/CenturyLink, OpenNIC, etc.) to ensure concurrent bruteforcing runs at extreme speeds without any rate-limits.
+> **Auto-Healing DNS Resolvers (v4.1.0+)**: If your installer didn't run with root privileges or hit transient network errors (leaving `/usr/share/massdns/resolvers.txt` missing), **Oculus now dynamically heals itself**. It will automatically print a warning and generate a comprehensive `auto_resolvers.txt` in your session folder, containing **over 120+ un-nerfed premium public recursive DNS resolvers** (Google, Cloudflare, OpenDNS, Level3/CenturyLink, OpenNIC, etc.) to ensure concurrent bruteforcing runs at extreme speeds without any rate-limits.
 
 ### `massdns` / `dig` not found
 
@@ -299,7 +300,7 @@ Only use domains you are authorized to assess.
 
 ## Post-install checklist
 
-- [ ] `python3 oculus.py --version` prints **3.0**
+- [ ] `python3 oculus.py --version` prints **4.1**
 - [ ] `which subfinder httpx naabu nuclei` succeeds (after `PATH` includes `~/go/bin`)
 - [ ] `/opt/recontools/ParamSpider/paramspider.py` exists
 - [ ] `~/.config/oculus/config.yaml` exists and paths match your machine
