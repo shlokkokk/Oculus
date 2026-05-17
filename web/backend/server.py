@@ -316,9 +316,12 @@ async def websocket_scan(websocket: WebSocket):
             # Check for client messages (abort, etc.)
             try:
                 msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.5)
-                data = json.loads(msg)
-                if data.get("action") == "abort":
-                    engine.stop_scan()
+                try:
+                    data = json.loads(msg)
+                    if data.get("action") == "abort":
+                        engine.stop_scan()
+                except json.JSONDecodeError:
+                    pass
             except asyncio.TimeoutError:
                 pass
 
