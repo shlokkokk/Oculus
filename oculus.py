@@ -1201,6 +1201,11 @@ class Oculus:
             for fp in raw_files:
                 for line in self.read_file_lines(fp):
                     url = line.split('#')[0].strip()
+                    # Skip malformed/poisoned double-encoded URLs from Wayback
+                    url_lower = url.lower()
+                    if "25252f" in url_lower or "253d" in url_lower or "%2f" in url_lower or "%3d" in url_lower:
+                        continue
+                    # Match domain bounds and valid scheme
                     if url.startswith(('http://', 'https://')) and not url.endswith(('.jpg', '.png', '.gif', '.css', '.ico')):
                         unique_urls.add(url)
             with open(final_output, 'w', encoding='utf-8') as f:
@@ -1369,15 +1374,45 @@ class Oculus:
             ps_bin = self.get_tool('paramspider', 'paramspider')
             # Detect if it's a .py script or pip-installed binary
             if isinstance(ps_bin, str) and ps_bin.endswith('.py'):
-                cmd = f"python3 {ps_bin} -d {sd} -e woff,css,png,jpg,gif,svg -o {param_dir}/paramspider.txt"
+                cmd = f"python3 {ps_bin} -d {sd}"
             else:
-                cmd = f"{ps_bin} -d {sd} -e woff,css,png,jpg,gif,svg -o {param_dir}/paramspider.txt"
+                cmd = f"{ps_bin} -d {sd}"
+            
+            # ParamSpider v2+ auto-generates output file under results/domain.txt
+            ps_default = f"results/{self.domain}.txt"
+            # Ensure results directory exists in current working directory
+            Path("results").mkdir(exist_ok=True)
+            
             if self.run_command(cmd, timeout=500, label="paramspider"):
                 print(f"{Colors.GREEN}[✔] ParamSpider completed{Colors.RESET}")
-                # ParamSpider may output to results/ dir instead of -o path
-                ps_default = f"results/{self.domain}.txt"
-                if os.path.exists(ps_default) and not os.path.exists(f"{param_dir}/paramspider.txt"):
-                    shutil.move(ps_default, f"{param_dir}/paramspider.txt")
+                
+                # Get the absolute directory where oculus.py resides
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # Completely generic, dynamic path fallbacks
+                potential_paths = [
+                    os.path.join(os.getcwd(), "results", f"{self.domain}.txt"),
+                    os.path.join(script_dir, "results", f"{self.domain}.txt"),
+                    os.path.join(script_dir, "web", "backend", "results", f"{self.domain}.txt")
+                ]
+                
+                found_ps_file = None
+                for path in potential_paths:
+                    if os.path.exists(path):
+                        found_ps_file = path
+                        break
+                
+                if found_ps_file:
+                    shutil.move(found_ps_file, f"{param_dir}/paramspider.txt")
+                    # Clean up the empty results folder if it was created
+                    res_dir = os.path.dirname(found_ps_file)
+                    try:
+                        if not os.listdir(res_dir):
+                            os.rmdir(res_dir)
+                    except Exception:
+                        pass
+                else:
+                    self.logger.warning("ParamSpider completed but no output file was detected in any path.")
             else:
                 print(f"{Colors.RED}[!] ParamSpider failed{Colors.RESET}")
 
@@ -1407,14 +1442,55 @@ class Oculus:
         arjun_file = f"{param_dir}/arjun.json"
         if os.path.exists(arjun_file):
             try:
-                data = json.load(open(arjun_file, encoding='utf-8'))
-                for entry in data:
-                    url = entry.get("url", "")
-                    base = url.split("?")[0]
-                    for p in entry.get("params", []):
-                        found.add(f"{base}?{p}=FUZZ")
-            except Exception:
-                pass
+                with open(arjun_file, 'r', encoding='utf-8') as af:
+                    data = json.load(af)
+                
+                # Highly resilient parser helper to extract parameter names from any structure
+                def extract_params(struct):
+                    extracted = []
+                    if isinstance(struct, list):
+                        for item in struct:
+                            if isinstance(item, str):
+                                extracted.append(item)
+                            elif isinstance(item, dict):
+                                name = item.get("name") or item.get("parameter")
+                                if name:
+                                    extracted.append(str(name))
+                    elif isinstance(struct, dict):
+                        for k, v in struct.items():
+                            extracted.append(str(k))
+                    return extracted
+
+                # Process the root container based on its type
+                if isinstance(data, list):
+                    for entry in data:
+                        if isinstance(entry, dict):
+                            url = entry.get("url")
+                            if not url:
+                                # Try to discover any URL string
+                                for k, v in entry.items():
+                                    if isinstance(v, str) and v.startswith("http"):
+                                        url = v
+                                        break
+                            if url:
+                                base = url.split("?")[0]
+                                params_key = entry.get("params") or entry.get("parameters") or []
+                                for p in extract_params(params_key):
+                                    found.add(f"{base}?{p}=FUZZ")
+                elif isinstance(data, dict):
+                    for url, val in data.items():
+                        if not isinstance(url, str) or not url.startswith("http"):
+                            continue
+                        base = url.split("?")[0]
+                        if isinstance(val, list):
+                            for p in extract_params(val):
+                                found.add(f"{base}?{p}=FUZZ")
+                        elif isinstance(val, dict):
+                            params_struct = val.get("params") or val.get("parameters") or val
+                            for p in extract_params(params_struct):
+                                found.add(f"{base}?{p}=FUZZ")
+            except Exception as e:
+                self.logger.error(f"Arjun merge error: {e}")
         with open(final_output, 'w', encoding='utf-8') as f:
             for p in sorted(found):
                 f.write(p + "\n")
