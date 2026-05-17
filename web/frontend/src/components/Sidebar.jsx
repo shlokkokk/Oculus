@@ -43,7 +43,7 @@ export default function Sidebar({ activeView, onNavigate }) {
       }
     };
     checkHealth();
-    const interval = setInterval(checkHealth, 3000);
+    const interval = setInterval(checkHealth, 5000);
     return () => {
       active = false;
       clearInterval(interval);
