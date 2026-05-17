@@ -6,9 +6,9 @@ import ModuleSelector from './ModuleSelector';
 
 const ICONS = { Zap, Layers, Globe, Settings };
 
-export default function ScanConfigurator({ onStartScan, scanState }) {
-  const [domain, setDomain] = useState('');
-  const [mode, setMode] = useState('quick');
+export default function ScanConfigurator({ onStartScan, scanState, defaultDomain = '', defaultMode = 'quick' }) {
+  const [domain, setDomain] = useState(defaultDomain);
+  const [mode, setMode] = useState(defaultMode);
   const [modules, setModules] = useState([]);
   const [threads, setThreads] = useState(50);
   const [rateLimit, setRateLimit] = useState(150);
@@ -21,28 +21,11 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
   const [configLoaded, setConfigLoaded] = useState(false);
-  const [sessionInfo, setSessionInfo] = useState(null);
-  const [resumeScan, setResumeScan] = useState(true);
 
-  // Check for existing session when domain changes
   useEffect(() => {
-    if (!domain || !/^[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(domain)) {
-      setSessionInfo(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      api.getSession(domain)
-        .then(res => {
-           if (res.results && Object.keys(res.results).length > 0) {
-             setSessionInfo(res);
-           } else {
-             setSessionInfo(null);
-           }
-        })
-        .catch(() => setSessionInfo(null));
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [domain]);
+    if (defaultDomain) setDomain(defaultDomain);
+    if (defaultMode) setMode(defaultMode);
+  }, [defaultDomain, defaultMode]);
 
   useEffect(() => {
     api.getConfig().then(cfg => {
@@ -76,7 +59,7 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
       sqlmap_threads: sqlmapThreads === '' ? null : Number(sqlmapThreads),
       jitter,
       severity,
-      resume: resumeScan,
+      resume: false,
     }).catch(err => setError(err.message));
   };
 
@@ -102,27 +85,6 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
             <span style={{ fontSize: 11, color: 'var(--accent-red)', marginTop: 4, display: 'block' }}>
               Enter a valid domain (e.g. example.com)
             </span>
-          )}
-          {sessionInfo && (
-            <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(0, 212, 170, 0.05)', border: '1px solid rgba(0, 212, 170, 0.2)', borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}>
-                <Layers size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }}/>
-                Existing Scan Data Found
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                Previous scan completed {sessionInfo.completed_modules?.length || 0} modules.
-              </div>
-              <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginBottom: 0 }}>
-                  <input type="radio" checked={resumeScan} onChange={() => setResumeScan(true)} style={{ margin: 0 }} />
-                  Resume (skip completed steps)
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginBottom: 0 }}>
-                  <input type="radio" checked={!resumeScan} onChange={() => setResumeScan(false)} style={{ margin: 0 }} />
-                  Start Fresh (overwrite data)
-                </label>
-              </div>
-            </div>
           )}
         </div>
       </div>
@@ -429,9 +391,9 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
 
       <button
         className="btn btn-primary"
-        disabled={!canStart}
+        disabled={!canStart || scanState === 'running'}
         onClick={() => setShowConfirm(true)}
-        style={{ width: '100%', padding: '14px 20px', fontSize: 14 }}
+        style={{ width: '100%', padding: '14px 20px', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}
       >
         <Play size={16} />
         {scanState === 'running' ? 'Scan in Progress...' : 'Start Scan'}
@@ -442,22 +404,25 @@ export default function ScanConfigurator({ onStartScan, scanState }) {
           <div className="dialog" onClick={e => e.stopPropagation()}>
             <h3>Confirm Scan Launch</h3>
             <p>
-              You are about to scan <strong style={{ color: 'var(--accent)' }}>{domain}</strong> using{' '}
+              You are about to launch a completely fresh scan for <strong style={{ color: 'var(--accent)' }}>{domain}</strong> using{' '}
               <strong>{SCAN_MODES.find(m => m.id === mode)?.name}</strong> mode.
               {mode === 'custom' && ` (${modules.length} modules selected)`}
               <br /><br />
-              {sessionInfo && (
-                 <strong style={{ color: resumeScan ? 'var(--accent)' : 'var(--accent-amber)' }}>
-                   {resumeScan ? "Resuming from previous data." : "Starting fresh (will overwrite data)."}
-                   <br /><br />
-                 </strong>
-              )}
+              <strong style={{ color: 'var(--accent-amber)' }}>
+                Warning: This will start step 1 fresh. Any previous scan data for this target will be overwritten!
+              </strong>
+              <br /><br />
               Ensure you have authorization to scan this target.
             </p>
             <div className="dialog-actions">
               <button className="btn btn-ghost" onClick={() => setShowConfirm(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleStart}>
-                <Play size={14} /> Launch {resumeScan && sessionInfo ? 'Resume' : 'Scan'}
+              <button 
+                className="btn btn-primary" 
+                onClick={handleStart}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              >
+                <Play size={14} />
+                Launch Scan
               </button>
             </div>
           </div>

@@ -26,6 +26,7 @@ export const api = {
   getSession: (domain) => request(`/api/sessions/${encodeURIComponent(domain)}`),
 
   listResults: (domain) => request(`/api/results/${encodeURIComponent(domain)}`),
+  searchFiles: (domain, query) => request(`/api/results/${encodeURIComponent(domain)}/search?q=${encodeURIComponent(query)}`),
   getFile: (domain, path) => request(`/api/results/${encodeURIComponent(domain)}/file/${path}`),
 
   getReport: (domain, fmt) => request(`/api/reports/${encodeURIComponent(domain)}/${fmt}`),

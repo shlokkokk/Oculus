@@ -17,6 +17,8 @@ export default function App() {
   const ws = useWebSocket();
   const scan = useScan();
 
+  const [relaunchTarget, setRelaunchTarget] = useState(null);
+
   // Sync WS status into scan hook
   useEffect(() => {
     if (ws.status) scan.updateFromStatus(ws.status);
@@ -26,6 +28,7 @@ export default function App() {
   const handleStartScan = useCallback(async (config) => {
     ws.clearLogs();
     ws.connect();
+    setRelaunchTarget(null);
     const res = await scan.startScan(config);
     setView(VIEWS.LIVE);
     return res;
@@ -35,6 +38,11 @@ export default function App() {
     await scan.stopScan();
     ws.sendAbort();
   }, [scan, ws]);
+
+  const handleRelaunchFresh = useCallback((domain, mode) => {
+    setRelaunchTarget({ domain, mode });
+    setView(VIEWS.SCAN);
+  }, []);
 
   // Connect WS on mount if scan is already running
   useEffect(() => {
@@ -46,12 +54,20 @@ export default function App() {
   const renderView = () => {
     switch (view) {
       case VIEWS.SCAN:
-        return <ScanConfigurator onStartScan={handleStartScan} scanState={scan.scanState} />;
+        return (
+          <ScanConfigurator 
+            onStartScan={handleStartScan} 
+            scanState={scan.scanState} 
+            defaultDomain={relaunchTarget?.domain || ''}
+            defaultMode={relaunchTarget?.mode || 'quick'}
+          />
+        );
       case VIEWS.LIVE:
         return (
           <ScanProgress
             scanState={scan.scanState}
             scanMode={scan.scanMode}
+            scanDomain={scan.scanDomain}
             currentPhase={scan.currentPhase}
             currentModule={scan.currentModule}
             elapsed={scan.elapsed}
@@ -60,6 +76,8 @@ export default function App() {
             totalModules={scan.totalModules}
             logs={ws.logs}
             onStop={handleStopScan}
+            onStartScan={handleStartScan}
+            onRelaunchFresh={handleRelaunchFresh}
             onReconfigure={() => setView(VIEWS.SCAN)}
           />
         );

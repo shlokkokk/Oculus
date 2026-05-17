@@ -216,6 +216,16 @@ async def list_results(domain: str):
     return {"domain": domain, "artifacts": artifacts}
 
 
+@app.get("/api/results/{domain}/search")
+async def search_results(domain: str, q: str = Query(..., min_length=1)):
+    try:
+        results = engine.search_artifacts(domain, q)
+        return {"domain": domain, "query": q, "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @app.get("/api/results/{domain}/file/{file_path:path}")
 async def get_artifact_file(domain: str, file_path: str):
     resolved = engine.get_artifact_path(domain, file_path)

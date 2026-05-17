@@ -14,17 +14,50 @@ The **Oculus Web Interface** is a sleek, high-performance browser dashboard buil
 
 ## ✨ Key Features
 
-- **Zero-Latency Telemetry Streaming**: Low-latency WebSocket piping routes raw shell feeds directly from the underlying daemon execution processes straight into a reactive virtual terminal viewport in the browser.
-- **Interactive Configuration**: Form-based UI to build scan profiles, select modules (Nmap, Nuclei, Subfinder, etc.), and set flags without memorizing CLI syntax.
-- **Micro-Animated Cyber Toggles**: Full-width glassmorphic control containers (such as Jitter) featuring hardware-inspired responsive styling, CSS physics transitions (`0.3s`), translucent accents, active cyan glowing borders, and drop-shadow illumination.
-- **Out-of-Band Daemon Heartbeat**: Automated asynchronous multi-interval polling targeting `/api/health` that updates a breathing hardware-style LED keyframe indicator (ONLINE/OFFLINE) in the sidebar footer.
-- **Multi-Vector Battle Presets**: Injects optimized configurations (`🐉 Kali Linux Native` | `⚡ High Performance` | `🥷 Stealth Operations`) to instantly adapt thread limits, timeout delays, and module distributions based on the engagement landscape.
-- **Restorative System Synchronization**: Actionable resets that dynamically read configuration specs from the FastAPI backend to instantly wipe localized adjustments and restore raw system baselines.
-- **Interventionist Abort Protection**: A safety overlay warning modal armed with Lucide vector icons (`<ShieldAlert />`) that halts abort triggers to prevent premature process drops across active execution paths.
-- **Progress-Snap Integration**: Intelligently overrides mathematical parsing when a scan finishes or is resumed, immediately driving the visual progress indicators to `100%` and showing full step completion.
-- **Session Management**: Automatically reads the `session.json` state. Resume past scans, view artifact directories, and browse vulnerabilities cleanly.
-- **Stateless PARITY Architecture (Zero Database)**: Zero-database design that queries directly from `output-*/` session files, ensuring absolute synchronicity between CLI commands and browser operations.
-- **Operational Pre-flight Checks (Live Tool Status)**: Built-in diagnostics checking 29 system tools, matching exact Go directories, apt binaries, and `/opt/recontools/` Python modules to provide a full dependency status overview.
+### 📡 Real-Time Telemetry & Control
+
+#### ⚡ **Zero-Latency Telemetry Streaming**
+> Low-latency WebSocket piping routes raw shell feeds directly from the underlying daemon execution processes straight into a reactive virtual terminal viewport in the browser.
+
+#### 🎛️ **Interactive Configuration**
+> Form-based UI to build scan profiles, select modules (Nmap, Nuclei, Subfinder, etc.), and set flags without memorizing CLI syntax.
+
+#### 🕹️ **Micro-Animated Cyber Toggles**
+> Full-width glassmorphic control containers (such as Jitter) featuring hardware-inspired responsive styling, CSS physics transitions (`0.3s`), translucent accents, active cyan glowing borders, and drop-shadow illumination.
+
+<br>
+
+### 🛡️ System Integrity & Reliability
+
+#### 💓 **Out-of-Band Daemon Heartbeat**
+> Automated asynchronous multi-interval polling targeting `/api/health` that updates a breathing hardware-style LED keyframe indicator (**ONLINE**/**OFFLINE**) in the sidebar footer.
+
+#### ⚔️ **Multi-Vector Battle Presets**
+> Injects optimized configurations (`🐉 Kali Linux Native` | `⚡ High Performance` | `🥷 Stealth Operations`) to instantly adapt thread limits, timeout delays, and module distributions based on the engagement landscape.
+
+#### 🔄 **Restorative System Synchronization**
+> Actionable resets that dynamically read configuration specs from the FastAPI backend to instantly wipe localized adjustments and restore raw system baselines.
+
+#### 🛑 **Interventionist Abort Protection**
+> A safety overlay warning modal armed with Lucide vector icons (`<ShieldAlert />`) that halts abort triggers to prevent premature process drops across active execution paths.
+
+<br>
+
+### 📊 Scan Orchestration & Reporting
+
+#### ⚡ **Progress-Snap Integration**
+> Intelligently overrides mathematical parsing when a scan finishes or is resumed, immediately driving the visual progress indicators to `100%` and showing full step completion.
+
+#### 📂 **Session Management**
+> Automatically reads the `session.json` state. Resume past scans, view artifact directories, and browse vulnerabilities cleanly.
+
+#### 🏛️ **Stateless PARITY Architecture (Zero Database)**
+> Zero-database design that queries directly from `output-*/` session files, ensuring absolute synchronicity between CLI commands and browser operations.
+
+#### 🩺 **Operational Pre-flight Checks (Live Tool Status)**
+> Built-in diagnostics checking 29 system tools, matching exact Go directories, apt binaries, and `/opt/recontools/` Python modules to provide a full dependency status overview.
+
+<br>
 
 ---
 

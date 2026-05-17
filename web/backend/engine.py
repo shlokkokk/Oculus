@@ -285,6 +285,68 @@ class ScanEngine:
 
         return _scan_dir(output_dir, output_dir)
 
+    def search_artifacts(self, domain: str, query: str) -> list[dict]:
+        """Search recursively inside all text-like artifacts for a given string query."""
+        output_dir = Path(_project_root) / f"output-{domain}"
+        if not output_dir.is_dir():
+            return []
+
+        text_extensions = {
+            ".txt", ".json", ".jsonl", ".md", ".log", ".csv", ".xml",
+            ".yaml", ".yml", ".html", ".htm", ".cfg", ".conf", ".ini",
+        }
+        
+        results = []
+        
+        def _search_dir(path: Path):
+            try:
+                for item in sorted(path.iterdir()):
+                    if item.is_dir():
+                        _search_dir(item)
+                    elif item.is_file() and item.suffix.lower() in text_extensions:
+                        # Skip massive files to prevent CPU/RAM denial of service
+                        try:
+                            if item.stat().st_size > 10 * 1024 * 1024:  # 10MB limit
+                                continue
+                        except OSError:
+                            continue
+                            
+                        try:
+                            content = item.read_text(encoding="utf-8", errors="replace")
+                            if query.lower() in content.lower():
+                                rel_path = str(item.relative_to(output_dir)).replace("\\", "/")
+                                
+                                # Extract matching line snippets
+                                lines = content.splitlines()
+                                snippets = []
+                                matches_count = 0
+                                for idx, line in enumerate(lines):
+                                    if query.lower() in line.lower():
+                                        matches_count += 1
+                                        if len(snippets) < 5:  # Keep payloads lightweight (max 5 snippets)
+                                            # Clean up line snippets from binary/strange characters
+                                            snippets.append({
+                                                "line": idx + 1,
+                                                "text": line.strip()[:200]  # Limit length of snippet text
+                                            })
+                                
+                                results.append({
+                                    "name": item.name,
+                                    "path": rel_path,
+                                    "size": len(content),
+                                    "matches": matches_count,
+                                    "snippets": snippets
+                                })
+                        except Exception:
+                            pass
+            except PermissionError:
+                pass
+
+        _search_dir(output_dir)
+        # Sort by highest matches count first
+        results.sort(key=lambda x: x["matches"], reverse=True)
+        return results
+
     def get_artifact_path(self, domain: str, file_path: str) -> Optional[Path]:
         """Resolve and validate an artifact file path (prevent traversal)."""
         output_dir = Path(_project_root) / f"output-{domain}"
