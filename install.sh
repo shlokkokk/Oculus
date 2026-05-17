@@ -515,6 +515,19 @@ def install_recon_tool(name, repo, progress, tid):
                 log_failure(name, "pip install from clone failed")
 
         if cli_available(cli_name):
+            if name_lower == "massdns":
+                # Ensure the resolvers list is present
+                res_dir = "/usr/share/massdns"
+                res_file = os.path.join(res_dir, "resolvers.txt")
+                if not os.path.exists(res_file):
+                    progress.update(tid, description=f"[bold cyan]➤ {name}[/] (Downloading resolvers...)")
+                    try:
+                        subprocess.run(["sudo", "mkdir", "-p", res_dir], capture_output=True, timeout=30)
+                        subprocess.run(["sudo", "wget", "-q", "https://raw.githubusercontent.com/trickest/resolvers/main/resolvers-trusted.txt", "-O", res_file], capture_output=True, timeout=60)
+                        subprocess.run(["sudo", "chmod", "644", res_file], capture_output=True, timeout=30)
+                        py_log(f"Successfully downloaded massdns resolvers to {res_file}")
+                    except Exception as e:
+                        py_log(f"Failed to download massdns resolvers: {e}")
             progress.update(tid, description=f"[bold green]✔ {name}[/] (Ready)", completed=100)
             results[name] = ("success", f"{cli_name} on PATH")
         elif name_lower in SCRIPT_BASED_TOOLS and recon_script_exists(name_lower, opt):

@@ -1676,7 +1676,7 @@ class Oculus:
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Capturing Screenshots...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/screenshots"
         Path(out_dir).mkdir(exist_ok=True)
-        cmd = f"{self.get_tool('gowitness')} file -f {alive_file} --screenshot-path {out_dir} --timeout 15"
+        cmd = f"{self.get_tool('gowitness')} scan file -f {alive_file} --screenshot-path {out_dir} --timeout 15"
         if self.run_command(cmd, timeout=600, label="gowitness"):
             imgs = len(list(Path(out_dir).glob("*.png")))
             print(f"{Colors.GREEN}[✔] Captured {imgs} screenshots in {out_dir}{Colors.RESET}")
