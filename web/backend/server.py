@@ -13,8 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .engine import engine, VERSION
-from .models import (
+from engine import engine, VERSION
+from models import (
     ScanRequest,
     ScanStatusResponse,
     HealthResponse,

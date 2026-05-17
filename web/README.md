@@ -37,14 +37,24 @@ Browser (React SPA)
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Complete Setup Guide (From Scratch)
 
 ### Prerequisites
 - Python 3.8+ (with `pip`)
 - Node.js 18+ (with `npm`)
-- Native Linux environment (Kali/Ubuntu/WSL) with Oculus recon dependencies installed.
+- Native Linux environment (Kali/Ubuntu/WSL).
 
-### 1. Install Dependencies
+### Step 0: Install Core Oculus Binaries (Crucial)
+The Web UI is just a frontend. It relies on the native security binaries (`nmap`, `nuclei`, `subfinder`, etc.) to actually perform the scans. You **must** run the main installer first.
+
+From the **project root** (`Oculus/`):
+```bash
+chmod +x install.sh
+./install.sh
+```
+*(This installs all 29+ required tools into your system path and `/opt/recontools/`)*.
+
+### Step 1: Install Web Dependencies
 
 **Backend:**
 ```bash
@@ -54,13 +64,29 @@ pip install -r requirements.txt
 
 **Frontend:**
 ```bash
-cd web/frontend
+cd ../frontend
 npm install
 ```
 
-### 2. Launch Development Servers
+### Step 2: Build & Launch (Single-Port Production Mode)
+This is the recommended, most robust way to run the Web Interface. You compile the React frontend into static assets, and the FastAPI backend serves both the API and the UI on a single port.
 
-You will need two terminal windows for development mode.
+```bash
+# 1. Build the React frontend
+cd web/frontend
+npm run build
+
+# 2. Start the FastAPI backend
+cd ../backend
+python -m uvicorn server:app --host 127.0.0.1 --port 8000
+```
+Navigate to **http://localhost:8000** in your browser. The FastAPI server is now handling everything!
+
+---
+
+## 🛠️ Alternative: Developer Mode (Live Reloading)
+
+If you are modifying the React code and want instant hot-reloading in the browser, you must run two separate terminals:
 
 **Terminal 1 (Backend):**
 ```bash
@@ -74,24 +100,7 @@ cd web/frontend
 npm run dev
 ```
 
-Navigate to **http://localhost:5173** to access the cockpit. The Vite dev server will automatically proxy `/api/*` and `/ws/*` requests to your FastAPI backend.
-
----
-
-## 📦 Production Deployment
-
-For a seamless, single-port deployment, you can compile the React frontend into static assets and let FastAPI serve everything.
-
-```bash
-# 1. Build the frontend
-cd web/frontend
-npm run build
-
-# 2. Start the backend
-cd ../backend
-python -m uvicorn server:app --host 0.0.0.0 --port 8000
-```
-Navigate to **http://localhost:8000**. The FastAPI server is now handling both the API endpoints and the compiled React UI.
+Navigate to **http://localhost:5173**. The Vite dev server will automatically proxy `/api/*` and `/ws/*` requests to your FastAPI backend.
 
 ---
 
