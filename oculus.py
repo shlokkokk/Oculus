@@ -161,7 +161,24 @@ class Oculus:
         self.session_file = ""
         self._path_augmented = False
         self._session_lock = threading.Lock()
+        self.active_processes = []
+        self._proc_lock = threading.Lock()
         self._augment_path()
+
+    def kill_all_active_processes(self):
+        """Kill all child processes that are currently running"""
+        with self._proc_lock:
+            for proc in self.active_processes:
+                try:
+                    if proc.poll() is None:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=1.0)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                except Exception:
+                    pass
+            self.active_processes.clear()
 
     def _augment_path(self, force=False):
         """Ensure common tool install locations are on PATH (pip --user, Go, etc.)."""
@@ -418,8 +435,10 @@ class Oculus:
                     command, shell=True,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1, universal_newlines=True
+                    text=True, bufsize=1
                 )
+                with self._proc_lock:
+                    self.active_processes.append(proc)
                 output_lines = []
                 done_evt = threading.Event()
                 
@@ -450,9 +469,15 @@ class Oculus:
                     reader.join(timeout=5)
                     print(f"{Colors.RED}[!] Command timed out after {timeout}s{Colors.RESET}")
                     self.logger.error(f"Timeout: {command}")
+                    with self._proc_lock:
+                        if proc in self.active_processes:
+                            self.active_processes.remove(proc)
                     return -1 if get_code else False
                 
                 proc.wait()
+                with self._proc_lock:
+                    if proc in self.active_processes:
+                        self.active_processes.remove(proc)
                 return proc.returncode if get_code else (proc.returncode == 0)
                 
             elif output_file:
@@ -474,10 +499,18 @@ class Oculus:
         except subprocess.TimeoutExpired:
             print(f"{Colors.RED}[!] Command timed out after {timeout} seconds{Colors.RESET}")
             self.logger.error(f"Timeout: {command}")
+            if 'proc' in locals():
+                with self._proc_lock:
+                    if proc in self.active_processes:
+                        self.active_processes.remove(proc)
             return -1 if get_code else False
         except Exception as e:
             print(f"{Colors.RED}[!] Command failed: {e}{Colors.RESET}")
             self.logger.error(f"Command failed: {e}")
+            if 'proc' in locals():
+                with self._proc_lock:
+                    if proc in self.active_processes:
+                        self.active_processes.remove(proc)
             return -1 if get_code else False
 
     def run_command_with_retry(self, command, output_file=None, timeout=300, retries=None, label=None):
@@ -3661,35 +3694,47 @@ def main():
         recon.setup_complete = True
         recon.load_session()
 
-        if args.full_recon and args.full_spectrum:
-            print(f"{Colors.YELLOW}[!] Both --full-recon and --full-spectrum set; running full spectrum.{Colors.RESET}")
-        if args.full_spectrum:
-            recon.run_full_spectrum_scan()
-        elif args.full_recon:
-            recon.run_full_automated_recon()
-        elif args.deep:
-            recon.run_deep_recon_mode()
-        elif args.module:
-            modules = [m.strip() for m in args.module.split(',')]
-            for mod in modules:
-                method = MODULE_MAP.get(mod)
-                if method and hasattr(recon, method):
-                    print(f"\n{Colors.CYAN}[*] Running module: {mod}{Colors.RESET}")
-                    getattr(recon, method)()
-                else:
-                    print(f"{Colors.RED}[!] Unknown module: {mod}{Colors.RESET}")
-                    print(f"    Available: {', '.join(MODULE_MAP.keys())}")
-        else:
-            recon.run()
+        # Run CLI with automatic process termination on Interrupt
+        try:
+            if args.full_recon and args.full_spectrum:
+                print(f"{Colors.YELLOW}[!] Both --full-recon and --full-spectrum set; running full spectrum.{Colors.RESET}")
+            if args.full_spectrum:
+                recon.run_full_spectrum_scan()
+            elif args.full_recon:
+                recon.run_full_automated_recon()
+            elif args.deep:
+                recon.run_deep_recon_mode()
+            elif args.module:
+                modules = [m.strip() for m in args.module.split(',')]
+                for mod in modules:
+                    method = MODULE_MAP.get(mod)
+                    if method and hasattr(recon, method):
+                        print(f"\n{Colors.CYAN}[*] Running module: {mod}{Colors.RESET}")
+                        getattr(recon, method)()
+                    else:
+                        print(f"{Colors.RED}[!] Unknown module: {mod}{Colors.RESET}")
+                        print(f"    Available: {', '.join(MODULE_MAP.keys())}")
+            else:
+                recon.run()
+        except KeyboardInterrupt:
+            print(f"\n\n{Colors.YELLOW}[!] Ctrl+C detected. Terminating active scanner processes...{Colors.RESET}")
+            recon.kill_all_active_processes()
+            sys.exit(130)
+        except Exception as e:
+            print(f"\n{Colors.RED}[!] Fatal error: {e}{Colors.RESET}")
+            recon.kill_all_active_processes()
+            sys.exit(1)
     else:
         # Interactive mode
         try:
             recon.run()
         except KeyboardInterrupt:
-            print(f"\n\n{Colors.YELLOW}[!] Interrupted. Goodbye!{Colors.RESET}")
-            sys.exit(0)
+            print(f"\n\n{Colors.YELLOW}[!] Interrupted. Terminating active scanner processes...{Colors.RESET}")
+            recon.kill_all_active_processes()
+            sys.exit(130)
         except Exception as e:
             print(f"\n{Colors.RED}[!] Fatal error: {e}{Colors.RESET}")
+            recon.kill_all_active_processes()
             sys.exit(1)
 
 

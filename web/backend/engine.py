@@ -29,6 +29,22 @@ def strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
+def kill_zombie_scanners():
+    """Kill any stray orphaned scanner processes inside WSL/Linux to prevent resource locking"""
+    try:
+        import subprocess
+        # Terminate any stray processes of tools wrapped by Oculus
+        tools = ["dalfox", "sqlmap", "theHarvester", "nuclei", "naabu", "gowitness", "ffuf", "subfinder", "massdns", "dnsx"]
+        pattern = "|".join(tools)
+        # Using WSL if on Windows, or direct call on Linux
+        if os.name == 'nt':
+            subprocess.run(f'wsl -e bash -c "pkill -f \\"{pattern}\\""', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run(f'pkill -f "{pattern}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 class OutputCapture:
     """Thread-safe stdout capture that feeds lines to a queue."""
 
@@ -406,6 +422,8 @@ class ScanEngine:
         self._abort_flag.set()
         if self._oculus:
             self._oculus.abort_requested = True
+            self._oculus.kill_all_active_processes()
+        kill_zombie_scanners()
         self._state = "aborted"
         return True
 
@@ -425,6 +443,8 @@ class ScanEngine:
         resume: bool,
     ):
         """Background thread: configure Oculus and run the scan."""
+        # Clean up any leftover duplicate scanner processes first
+        kill_zombie_scanners()
         # Build config
         config = load_config()
         config["auto_confirm"] = True
