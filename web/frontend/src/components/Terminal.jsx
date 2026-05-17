@@ -33,8 +33,8 @@ export default function Terminal({ lines, title }) {
   };
 
   return (
-    <div className="terminal">
-      <div className="terminal-header">
+    <div className="terminal" style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
+      <div className="terminal-header" style={{ flexShrink: 0 }}>
         <div className="terminal-dots">
           <span className="terminal-dot red" />
           <span className="terminal-dot yellow" />
@@ -45,7 +45,7 @@ export default function Terminal({ lines, title }) {
           <Copy size={12} />
         </button>
       </div>
-      <div className="terminal-body" ref={bodyRef} onScroll={handleScroll}>
+      <div className="terminal-body" ref={bodyRef} onScroll={handleScroll} style={{ flexGrow: 1, height: '100%', maxHeight: 'none', overflowY: 'auto' }}>
         {lines.length === 0 ? (
           <div style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>Waiting for output...</div>
         ) : (

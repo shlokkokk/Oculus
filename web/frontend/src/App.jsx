@@ -51,6 +51,8 @@ export default function App() {
         return (
           <ScanProgress
             scanState={scan.scanState}
+            scanMode={scan.scanMode}
+            currentPhase={scan.currentPhase}
             currentModule={scan.currentModule}
             elapsed={scan.elapsed}
             modulesCompleted={scan.modulesCompleted}

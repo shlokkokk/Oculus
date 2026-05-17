@@ -2586,8 +2586,8 @@ class Oculus:
 
         # Thread-safe tracking lists
         _lock = threading.Lock()
-        failed_steps = []
-        completed_steps = []
+        self.failed_modules = []
+        self.completed_modules = []
         skipped_steps = []
         aborted = False
 
@@ -2621,14 +2621,14 @@ class Oculus:
                 print(f"{'='*60}{Colors.RESET}")
                 func()
                 with _lock:
-                    completed_steps.append(name)
+                    self.completed_modules.append(name)
             except KeyboardInterrupt:
                 with _lock:
                     aborted = True
                 print(f"\n{Colors.YELLOW}[!] Ctrl+C detected during: {name} -- aborting pipeline{Colors.RESET}")
             except Exception as e:
                 with _lock:
-                    failed_steps.append((name, str(e)))
+                    self.failed_modules.append((name, str(e)))
                 self.logger.error(f"Full Spectrum step failed [{name}]: {e}")
                 print(f"{Colors.RED}[!] STEP FAILED: {name} -- {e}{Colors.RESET}")
 
@@ -2681,6 +2681,7 @@ class Oculus:
 
         try:
             # PHASE 1: DISCOVERY
+            self.current_phase = "Phase 1/5: Discovery"
             print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 1/5: DISCOVERY ---{Colors.RESET}")
 
             step("Subdomain Enumeration", self.run_subdomain_enumeration, result_key="subdomains")
@@ -2705,6 +2706,7 @@ class Oculus:
 
             # PHASE 2: INFRASTRUCTURE
             if not aborted:
+                self.current_phase = "Phase 2/5: Infrastructure"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
 
                 _run_concurrent([
@@ -2720,6 +2722,7 @@ class Oculus:
 
             # PHASE 3: CONTENT DISCOVERY
             if not aborted:
+                self.current_phase = "Phase 3/5: Content Discovery"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 3/5: CONTENT DISCOVERY ---{Colors.RESET}")
 
                 step("URL Collection", self.run_url_collection, result_key="urls")
@@ -2738,6 +2741,7 @@ class Oculus:
 
             # PHASE 4: VULNERABILITY ANALYSIS
             if not aborted:
+                self.current_phase = "Phase 4/5: Vulnerability Analysis"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 4/5: VULNERABILITY ANALYSIS ---{Colors.RESET}")
 
                 step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, result_key="vulnerabilities")
@@ -2752,6 +2756,7 @@ class Oculus:
 
             # PHASE 5: TARGETED EXPLOITATION
             if not aborted:
+                self.current_phase = "Phase 5/5: Targeted Exploitation"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 5/5: TARGETED EXPLOITATION ---{Colors.RESET}")
 
                 _run_concurrent([
@@ -2794,12 +2799,12 @@ class Oculus:
         print(f"   FULL SPECTRUM SCAN {status} -- {self.domain}")
         print(f"======================================================================{Colors.RESET}")
         print(f"\n  {Colors.WHITE}Duration    : {duration_str}{Colors.RESET}")
-        print(f"  {Colors.GREEN}Completed   : {len(completed_steps)} steps{Colors.RESET}")
+        print(f"  {Colors.GREEN}Completed   : {len(self.completed_modules)} steps{Colors.RESET}")
         if skipped_steps:
             print(f"  {Colors.BLUE}Resumed     : {len(skipped_steps)} steps skipped (data kept){Colors.RESET}")
-        if failed_steps:
-            print(f"  {Colors.RED}Failed      : {len(failed_steps)} steps{Colors.RESET}")
-            for name, err in failed_steps:
+        if self.failed_modules:
+            print(f"  {Colors.RED}Failed      : {len(self.failed_modules)} steps{Colors.RESET}")
+            for name, err in self.failed_modules:
                 print(f"    {Colors.RED}- {name}: {err[:80]}{Colors.RESET}")
         print(f"  {Colors.CYAN}Output Dir  : {self.output_dir}/{Colors.RESET}")
         print(f"  {Colors.CYAN}Reports     : HTML, JSON, Markdown{Colors.RESET}")

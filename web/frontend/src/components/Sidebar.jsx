@@ -1,5 +1,21 @@
-import { Crosshair, ScanLine, Radio, FolderOpen, FileText, Wrench, History } from 'lucide-react';
+import { Eye, Crosshair, Radio, FolderOpen, FileText, Wrench, History } from 'lucide-react';
 import { VIEWS } from '../utils/constants';
+
+function OculusLogo({ size = 20 }) {
+  return (
+    <>
+      <svg width="0" height="0" style={{ position: 'absolute' }}>
+        <defs>
+          <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#00D4AA"/>
+            <stop offset="100%" stopColor="#3B82F6"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <Eye size={size} stroke="url(#logo-gradient)" strokeWidth={2} />
+    </>
+  );
+}
 
 const NAV_ITEMS = [
   { id: VIEWS.SCAN, label: 'New Scan', icon: Crosshair, section: 'Operations' },
@@ -17,11 +33,11 @@ export default function Sidebar({ activeView, onNavigate }) {
     <aside className="sidebar">
       <div className="sidebar-brand">
         <div className="sidebar-brand-icon">
-          <ScanLine size={18} color="#0B0E14" />
+          <OculusLogo size={20} />
         </div>
         <div>
           <h1>OCULUS</h1>
-          <span>Recon Framework</span>
+          <span style={{ fontSize: '9px', letterSpacing: '0.8px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-dim)', display: 'block', marginTop: '2px' }}>Offensive Operations</span>
         </div>
       </div>
       <nav className="sidebar-nav">

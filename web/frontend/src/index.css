@@ -89,10 +89,11 @@ html, body, #root {
 }
 
 .sidebar-brand-icon {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-blue));
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -433,7 +434,8 @@ select.input {
 
 .terminal-body {
   padding: 12px 16px;
-  height: 400px;
+  min-height: 150px;
+  max-height: 400px;
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: 12px;

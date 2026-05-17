@@ -96,14 +96,29 @@ class ScanEngine:
 
     def get_status(self) -> dict:
         self._drain_queue()
+        completed = list(self._modules_completed)
+        failed = list(self._modules_failed)
+        
+        current_phase = None
+        # Merge tracking from full spectrum scan
+        if self._oculus and hasattr(self._oculus, "completed_modules"):
+            # Use dict.fromkeys to keep order and deduplicate
+            completed = list(dict.fromkeys(completed + self._oculus.completed_modules))
+        if self._oculus and hasattr(self._oculus, "failed_modules"):
+            failed_names = [f[0] for f in self._oculus.failed_modules]
+            failed = list(dict.fromkeys(failed + failed_names))
+        if self._oculus and hasattr(self._oculus, "current_phase"):
+            current_phase = self._oculus.current_phase
+            
         return {
             "state": self._state,
             "domain": self._domain,
             "mode": self._mode,
             "current_module": self._current_module,
+            "current_phase": current_phase,
             "elapsed_seconds": self.elapsed,
-            "modules_completed": list(self._modules_completed),
-            "modules_failed": list(self._modules_failed),
+            "modules_completed": completed,
+            "modules_failed": failed,
             "total_modules": self._total_modules,
             "log_line_count": len(self._log_lines),
         }
@@ -365,11 +380,11 @@ class ScanEngine:
             self._current_module = "Initializing tools"
             oc.initialize_tools()
 
-            # Setup domain
+            # Setup domain and use absolute path for output to prevent cwd mismatch
             oc.domain = domain
-            oc.output_dir = f"output-{domain}"
-            Path(oc.output_dir).mkdir(exist_ok=True)
-            Path(f"{oc.output_dir}/logs").mkdir(exist_ok=True)
+            oc.output_dir = str(Path(_project_root) / f"output-{domain}")
+            Path(oc.output_dir).mkdir(exist_ok=True, parents=True)
+            Path(f"{oc.output_dir}/logs").mkdir(exist_ok=True, parents=True)
             oc._setup_logging_full()
             oc.setup_complete = True
             oc.load_session()

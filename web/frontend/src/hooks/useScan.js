@@ -6,6 +6,7 @@ export function useScan() {
   const [scanDomain, setScanDomain] = useState(null);
   const [scanMode, setScanMode] = useState(null);
   const [currentModule, setCurrentModule] = useState(null);
+  const [currentPhase, setCurrentPhase] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [modulesCompleted, setModulesCompleted] = useState([]);
   const [modulesFailed, setModulesFailed] = useState([]);
@@ -18,6 +19,7 @@ export function useScan() {
     setScanDomain(data.domain || null);
     setScanMode(data.mode || null);
     setCurrentModule(data.current_module || null);
+    setCurrentPhase(data.current_phase || null);
     setElapsed(data.elapsed_seconds || 0);
     setModulesCompleted(data.modules_completed || []);
     setModulesFailed(data.modules_failed || []);
@@ -69,7 +71,7 @@ export function useScan() {
   }, [scanState, startPolling, stopPolling]);
 
   return {
-    scanState, scanDomain, scanMode, currentModule,
+    scanState, scanDomain, scanMode, currentModule, currentPhase,
     elapsed, modulesCompleted, modulesFailed, totalModules,
     startScan, stopScan, pollStatus, updateFromStatus,
   };
