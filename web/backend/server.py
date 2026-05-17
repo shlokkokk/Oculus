@@ -291,6 +291,18 @@ async def websocket_scan(websocket: WebSocket):
     cursor = 0
     try:
         while True:
+            # Send status update
+            status = engine.get_status()
+            await websocket.send_json({
+                "type": "status",
+                "data": status,
+            })
+
+            # If logs were reset/cleared (e.g. due to a new or resumed scan), reset cursor to 0
+            log_count = status.get("log_line_count", 0)
+            if cursor > log_count:
+                cursor = 0
+
             # Send new log lines
             lines = engine.get_logs(since=cursor)
             if lines:
@@ -300,13 +312,6 @@ async def websocket_scan(websocket: WebSocket):
                     "lines": lines,
                     "total": cursor,
                 })
-
-            # Send status update
-            status = engine.get_status()
-            await websocket.send_json({
-                "type": "status",
-                "data": status,
-            })
 
             # Check for client messages (abort, etc.)
             try:

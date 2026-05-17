@@ -432,8 +432,10 @@ class Oculus:
                             if stripped:
                                 output_lines.append(stripped)
                                 prefix = f"[{label}] " if label else ""
-                                if len(output_lines) <= 50 or len(output_lines) % 100 == 0:
-                                    print(f"  {Colors.DIM}{prefix}{stripped[:120]}{Colors.RESET}")
+                                # Stream all command output lines to standard output for rich, real-time Web UI scrolling.
+                                # (For pure CLI use, to throttle log flooding on the console, you can uncomment the following condition):
+                                # if len(output_lines) <= 50 or len(output_lines) % 100 == 0:
+                                print(f"  {Colors.DIM}{prefix}{stripped[:120]}{Colors.RESET}")
                                 self.logger.debug(stripped)
                     except Exception:
                         pass
@@ -2157,6 +2159,8 @@ class Oculus:
         level = int(sqlmap_cfg.get('level', 5) or 5)
         risk = int(sqlmap_cfg.get('risk', 3) or 3)
         sqlmap_threads = int(sqlmap_cfg.get('threads', self.config.get('threads', 50)) or self.config.get('threads', 50) or 50)
+        # SQLMap strictly enforces a maximum of 10 threads to avoid connection issues and startup crashes
+        sqlmap_threads = min(sqlmap_threads, 10)
 
         # Full-power SQLMap: configurable level, risk, threads, forms detection, crawl, tamper scripts
         # Timeout 7200s (2hrs) — large target lists need time to run fully
@@ -2765,6 +2769,7 @@ class Oculus:
                 print(f"\n{Colors.BLUE}[SKIP] {name} -- already completed ({hint}){Colors.RESET}")
                 with _lock:
                     skipped_steps.append(name)
+                    self.completed_modules.append(name)
                 return
             try:
                 print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*60}")
@@ -2965,9 +2970,9 @@ class Oculus:
         print(f"   FULL SPECTRUM SCAN {status} -- {self.domain}")
         print(f"======================================================================{Colors.RESET}")
         print(f"\n  {Colors.WHITE}Duration    : {duration_str}{Colors.RESET}")
-        print(f"  {Colors.GREEN}Completed   : {len(self.completed_modules)} steps{Colors.RESET}")
+        print(f"  {Colors.GREEN}Completed   : {len(self.completed_modules) - len(skipped_steps)} steps run{Colors.RESET}")
         if skipped_steps:
-            print(f"  {Colors.BLUE}Resumed     : {len(skipped_steps)} steps skipped (data kept){Colors.RESET}")
+            print(f"  {Colors.BLUE}Resumed     : {len(skipped_steps)} steps skipped (already completed){Colors.RESET}")
         if self.failed_modules:
             print(f"  {Colors.RED}Failed      : {len(self.failed_modules)} steps{Colors.RESET}")
             for name, err in self.failed_modules:

@@ -11,7 +11,7 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
   const [severity, setSeverity] = useState('low,medium,high,critical');
   const [sqlmapLevel, setSqlmapLevel] = useState(5);
   const [sqlmapRisk, setSqlmapRisk] = useState(3);
-  const [sqlmapThreads, setSqlmapThreads] = useState(50);
+  const [sqlmapThreads, setSqlmapThreads] = useState(10);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
         setSeverity(cfg.nuclei_severity || 'low,medium,high,critical');
         setSqlmapLevel(cfg.sqlmap_level ?? 5);
         setSqlmapRisk(cfg.sqlmap_risk ?? 3);
-        setSqlmapThreads(cfg.sqlmap_threads ?? cfg.threads ?? 50);
+        setSqlmapThreads(Math.min(cfg.sqlmap_threads ?? cfg.threads ?? 10, 10));
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -165,7 +165,7 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
               </div>
               <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>SQLMap Threads</label>
-                <input className="input" type="number" value={sqlmapThreads} onChange={e => setSqlmapThreads(e.target.value)} style={{ padding: '10px 14px', fontSize: '13px', height: '38px' }} />
+                <input className="input" type="number" min="1" max="10" value={sqlmapThreads} onChange={e => { const val = e.target.value; setSqlmapThreads(val === '' ? '' : Math.min(Number(val), 10)); }} style={{ padding: '10px 14px', fontSize: '13px', height: '38px' }} />
               </div>
             </div>
           </div>
