@@ -6,15 +6,15 @@ export default function ToolStatus() {
   const [tools, setTools] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const loadTools = () => {
+  const loadTools = (force = false) => {
     setLoading(true);
-    api.getTools()
+    api.getTools(force)
       .then(r => setTools(r.tools || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(loadTools, []);
+  useEffect(() => loadTools(), []);
 
   const installed = tools.filter(t => t.installed).length;
   const total = tools.length;
@@ -36,7 +36,7 @@ export default function ToolStatus() {
             <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Tools Available</div>
           </div>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={loadTools} disabled={loading}>
+        <button className="btn btn-ghost btn-sm" onClick={() => loadTools(true)} disabled={loading}>
           <RefreshCw size={14} className={loading ? 'spinning' : ''} /> Refresh
         </button>
       </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StopCircle, CheckCircle2, XCircle, Loader, ShieldCheck, ShieldAlert } from 'lucide-react';
 import Terminal from './Terminal';
 
-export default function ScanProgress({ scanState, scanMode, currentPhase, currentModule, elapsed, modulesCompleted, modulesFailed, totalModules, logs, onStop }) {
+export default function ScanProgress({ scanState, scanMode, currentPhase, currentModule, elapsed, modulesCompleted, modulesFailed, totalModules, logs, onStop, onReconfigure }) {
   const [showConfirmAbort, setShowConfirmAbort] = useState(false);
   const isCompleted = scanState === 'completed';
   const progress = isCompleted ? 100 : (totalModules > 0 ? Math.round((modulesCompleted.length / totalModules) * 100) : 0);
@@ -36,6 +36,11 @@ export default function ScanProgress({ scanState, scanMode, currentPhase, curren
               {isRunning && (
                 <button className="btn btn-danger btn-sm" onClick={() => setShowConfirmAbort(true)}>
                   <StopCircle size={14} /> Abort
+                </button>
+              )}
+              {!isRunning && onReconfigure && (
+                <button className="btn btn-ghost btn-sm" onClick={onReconfigure} style={{ color: scanState === 'aborted' ? 'var(--accent)' : 'var(--text)' }}>
+                   {scanState === 'aborted' ? 'Resume / New Scan' : 'New Scan'}
                 </button>
               )}
             </div>

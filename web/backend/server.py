@@ -119,8 +119,8 @@ async def health():
 # ─── Tools ────────────────────────────────────────────────────────────
 
 @app.get("/api/tools")
-async def get_tools():
-    tools = engine.check_tools()
+async def get_tools(force: bool = False):
+    tools = engine.check_tools(force=force)
     return {"tools": list(tools.values())}
 
 
@@ -165,6 +165,7 @@ async def start_scan(req: ScanRequest):
         sqlmap_threads=req.sqlmap_threads,
         jitter=req.jitter,
         severity=req.severity,
+        resume=req.resume,
     )
     if not ok:
         raise HTTPException(status_code=409, detail="A scan is already running")

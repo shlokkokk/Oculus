@@ -14,7 +14,7 @@ async function request(path, options = {}) {
 
 export const api = {
   health: () => request('/api/health'),
-  getTools: () => request('/api/tools'),
+  getTools: (force = false) => request(force ? '/api/tools?force=true' : '/api/tools'),
   getConfig: () => request('/api/config'),
 
   startScan: (data) => request('/api/scan/start', { method: 'POST', body: JSON.stringify(data) }),

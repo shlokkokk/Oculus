@@ -34,6 +34,7 @@ class ScanRequest(BaseModel):
     sqlmap_threads: Optional[int] = Field(None, ge=1, le=500)
     jitter: bool = False
     severity: Optional[str] = None
+    resume: bool = True
 
 
 class ScanStatusResponse(BaseModel):

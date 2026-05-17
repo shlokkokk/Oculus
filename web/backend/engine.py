@@ -139,9 +139,9 @@ class ScanEngine:
                 except queue.Empty:
                     break
 
-    def check_tools(self) -> dict:
+    def check_tools(self, force: bool = False) -> dict:
         """Run tool initialization and cache the results."""
-        if self._tools_checked and self._tools_status:
+        if not force and self._tools_checked and self._tools_status:
             return self._tools_status
 
         config = load_config()
@@ -309,6 +309,7 @@ class ScanEngine:
         sqlmap_threads: int | None = None,
         jitter: bool = False,
         severity: str | None = None,
+        resume: bool = True,
     ) -> bool:
         """Start a scan in a background thread. Returns False if already running."""
         if self._state == "running":
@@ -330,7 +331,7 @@ class ScanEngine:
 
         self._thread = threading.Thread(
             target=self._run_scan,
-            args=(domain, mode, modules or [], threads, rate_limit, timeout, sqlmap_level, sqlmap_risk, sqlmap_threads, jitter, severity),
+            args=(domain, mode, modules or [], threads, rate_limit, timeout, sqlmap_level, sqlmap_risk, sqlmap_threads, jitter, severity, resume),
             daemon=True,
         )
         self._thread.start()
@@ -341,6 +342,8 @@ class ScanEngine:
         if self._state != "running":
             return False
         self._abort_flag.set()
+        if self._oculus:
+            self._oculus.abort_requested = True
         self._state = "aborted"
         return True
 
@@ -357,6 +360,7 @@ class ScanEngine:
         sqlmap_threads: int | None,
         jitter: bool,
         severity: str | None,
+        resume: bool,
     ):
         """Background thread: configure Oculus and run the scan."""
         # Build config
@@ -440,9 +444,10 @@ class ScanEngine:
                 self._total_modules = 29
                 # Use the built-in full spectrum method
                 self._current_module = "Full Spectrum Scan"
-                oc.run_full_spectrum_scan()
-                self._modules_completed.append("Full Spectrum Scan")
-                self._state = "completed"
+                oc.run_full_spectrum_scan(force_fresh=not resume)
+                if not self._abort_flag.is_set():
+                    self._modules_completed.append("Full Spectrum Scan")
+                    self._state = "completed"
                 return
             elif mode == "custom" and modules:
                 steps = []

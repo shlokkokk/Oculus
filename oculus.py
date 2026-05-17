@@ -1465,7 +1465,15 @@ class Oculus:
                         host = parsed.netloc.split(':')[0].lower()
                         
                         # SILENTLY DISCARD dead subdomains / Wayback typos
-                        if alive_domains and host not in alive_domains:
+                        def is_alive(h):
+                            if h in alive_domains:
+                                return True
+                            for ah in alive_domains:
+                                if h.endswith("." + ah) or ah.endswith("." + h):
+                                    return True
+                            return False
+                            
+                        if alive_domains and not is_alive(host):
                             continue
                         
                         base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
@@ -2061,13 +2069,21 @@ class Oculus:
             _shutil.copy2(input_file, output_file)
             return len(all_urls), len(all_urls)
 
+        def is_alive(h):
+            if h in alive_hosts:
+                return True
+            for ah in alive_hosts:
+                if h.endswith("." + ah) or ah.endswith("." + h):
+                    return True
+            return False
+
         filtered = []
         skipped = 0
         for url in all_urls:
             try:
                 parsed = urllib.parse.urlparse(url)
                 host = parsed.netloc.split(':')[0].lower()
-                if host in alive_hosts:
+                if is_alive(host):
                     filtered.append(url)
                 else:
                     skipped += 1
@@ -2615,12 +2631,15 @@ class Oculus:
         self.generate_summary()
         print(f"\n{Colors.GREEN}{Colors.BOLD}[+] DEEP RECON COMPLETED!{Colors.RESET}\n")
 
-    def run_full_spectrum_scan(self):
+    def run_full_spectrum_scan(self, force_fresh=False):
         """Run every single Oculus module in perfect dependency order with concurrency where safe.
         Supports smart resume: if previous data exists, user can skip completed steps.
         """
         if not self._require_setup():
             return
+        
+        # Initialize abort_requested flag for Web API
+        self.abort_requested = getattr(self, 'abort_requested', False)
 
         # Detect existing scan data
         scan_keys = {
@@ -2635,8 +2654,13 @@ class Oculus:
         skip_completed = False
 
         if existing:
-            if self.config.get('auto_confirm', False):
-                skip_completed = True  # CI mode: default to resume
+            if force_fresh:
+                skip_completed = False
+                self.results.clear()
+                self._prev_results = {}
+                print(f"{Colors.YELLOW}[*] Force fresh scan — previous result counters cleared.{Colors.RESET}")
+            elif self.config.get('auto_confirm', False):
+                skip_completed = True  # CI mode / Web default: resume
             else:
                 parts = " | ".join(f"{k}: {v}" for k, v in existing.items())
                 print(f"\n{Colors.YELLOW}[!] Existing scan data detected for {self.domain}:{Colors.RESET}")
@@ -2696,7 +2720,7 @@ class Oculus:
         def _run_step(name, func, result_key=None, marker_files=None):
             """Run a single step with skip-check, error handling, and thread-safe tracking."""
             nonlocal aborted
-            if aborted:
+            if aborted or getattr(self, 'abort_requested', False):
                 return
             done, hint = _step_already_done(result_key, marker_files)
             if done:
@@ -2737,11 +2761,11 @@ class Oculus:
         def _run_concurrent(step_list):
             """Run multiple steps concurrently (each entry from cstep())."""
             nonlocal aborted
-            if aborted:
+            if aborted or getattr(self, 'abort_requested', False):
                 return
             if not self.config.get('parallel', True) or len(step_list) <= 1:
                 for spec in step_list:
-                    if aborted:
+                    if aborted or getattr(self, 'abort_requested', False):
                         break
                     _run_step(
                         spec['name'], spec['func'],
@@ -2794,13 +2818,17 @@ class Oculus:
             self.save_session()
 
             # PHASE 2: INFRASTRUCTURE
-            if not aborted:
+            if not aborted and not getattr(self, 'abort_requested', False):
                 self.current_phase = "Phase 2/5: Infrastructure"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
 
+                # Start Nmap in the background to not block the rest of the scan
+                self._nmap_thread = threading.Thread(target=self.run_full_port_scan, daemon=True)
+                self._nmap_thread.start()
+                self.logger.info("[*] Full Port Scan (Nmap) started in background. It will not block other tools.")
+
                 _run_concurrent([
                     cstep("Fast Port Scan", self.run_fast_port_scan, result_key="fast_ports"),
-                    cstep("Full Port Scan", self.run_full_port_scan, result_key="full_ports"),
                     cstep("Tech Scan", self.run_tech_scan,
                           marker_files=["tech_scan/whatweb_results.json"]),
                     cstep("WAF Detection", self.run_waf_detection, result_key="waf_detected"),
@@ -2810,7 +2838,7 @@ class Oculus:
                 self.save_session()
 
             # PHASE 3: CONTENT DISCOVERY
-            if not aborted:
+            if not aborted and not getattr(self, 'abort_requested', False):
                 self.current_phase = "Phase 3/5: Content Discovery"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 3/5: CONTENT DISCOVERY ---{Colors.RESET}")
 
@@ -2829,7 +2857,7 @@ class Oculus:
                 self.save_session()
 
             # PHASE 4: VULNERABILITY ANALYSIS
-            if not aborted:
+            if not aborted and not getattr(self, 'abort_requested', False):
                 self.current_phase = "Phase 4/5: Vulnerability Analysis"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 4/5: VULNERABILITY ANALYSIS ---{Colors.RESET}")
 
@@ -2844,7 +2872,7 @@ class Oculus:
                 self.save_session()
 
             # PHASE 5: TARGETED EXPLOITATION
-            if not aborted:
+            if not aborted and not getattr(self, 'abort_requested', False):
                 self.current_phase = "Phase 5/5: Targeted Exploitation"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 5/5: TARGETED EXPLOITATION ---{Colors.RESET}")
 
@@ -2864,6 +2892,17 @@ class Oculus:
         except KeyboardInterrupt:
             aborted = True
             print(f"\n{Colors.YELLOW}[!] Scan aborted by user (Ctrl+C){Colors.RESET}")
+            
+        if getattr(self, 'abort_requested', False):
+            aborted = True
+            print(f"\n{Colors.YELLOW}[!] Scan aborted via API request{Colors.RESET}")
+            
+        if not aborted and hasattr(self, '_nmap_thread') and self._nmap_thread.is_alive():
+            msg = "[*] All phases complete. Waiting for Nmap background scan to finish..."
+            print(f"\n{Colors.CYAN}{msg}{Colors.RESET}")
+            self.logger.info(msg)
+            self._nmap_thread.join()
+            self.logger.info("[✔] Nmap background scan completed.")
 
         # FINAL: REPORTING (always runs, even on abort)
         duration = int(time.time() - start_time)
@@ -3113,17 +3152,23 @@ function sortTable(n) {
         
         for title, data, limit in sections:
             if data:
-                html += f'<details><summary>{title} ({len(data)})</summary><div class="card">'
-                for item in data[:limit]:
-                    html += f'{item}<br>'
-                if len(data) > limit:
-                    html += f'<br><i>... and {len(data)-limit} more</i>'
-                html += '</div></details>'
+                try:
+                    html += f'<details><summary>{title} ({len(data)})</summary><div class="card">'
+                    for item in data[:limit]:
+                        html += f'{item}<br>'
+                    if len(data) > limit:
+                        html += f'<br><i>... and {len(data)-limit} more</i>'
+                    html += '</div></details>'
+                except Exception as e:
+                    self.logger.error(f"Error appending HTML section {title}: {e}")
 
         html += f'<p style="color:#333;margin-top:40px;text-align:center">Generated by Oculus v{VERSION}</p></div></body></html>'
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(html)
-        print(f"{Colors.GREEN}[✔] Enhanced HTML report: {report_path}{Colors.RESET}")
+        try:
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(html)
+            print(f"{Colors.GREEN}[✔] Enhanced HTML report: {report_path}{Colors.RESET}")
+        except Exception as e:
+            print(f"{Colors.RED}[!] Failed to write HTML report: {e}{Colors.RESET}")
 
     def generate_json_report(self):
         """Generate machine-readable JSON report"""

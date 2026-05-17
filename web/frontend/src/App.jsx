@@ -60,6 +60,7 @@ export default function App() {
             totalModules={scan.totalModules}
             logs={ws.logs}
             onStop={handleStopScan}
+            onReconfigure={() => setView(VIEWS.SCAN)}
           />
         );
       case VIEWS.RESULTS:
