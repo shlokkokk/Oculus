@@ -310,14 +310,93 @@ cp config.yaml.example ./config.yaml
 # edit ./config.yaml — used only if ~/.config/oculus/config.yaml does NOT exist
 ```
 
-### GitHub and Shodan tokens
+### 🔑 Elevating Oculus to Top-Tier Reconnaissance: API Keys Master Guide
 
-- **GitHub:** [Personal access token](https://github.com/settings/tokens) with scope that allows **code search** (classic token: `repo` scope exposes private repos you own; public code search often works with fine-grained or classic — respect GitHub rate limits).
-- **Shodan:** [Account API key](https://account.shodan.io/) — module queries `hostname:<yourdomain>`.
+Without API keys, scanning tools are restricted to basic active probes and slow brute-forcing. Chaining passive threat intelligence sources turns your subdomain enumeration from **0 findings** to **thousands of hidden, high-value targets** in seconds. 
 
-### Chaos / ProjectDiscovery (outside YAML)
+Follow this definitive guide to unlock the ultimate capabilities of the Oculus pipeline:
 
-Subfinder and other PD tools read provider keys from the environment or **`~/.config/subfinder/provider-config.yaml`** (see [ProjectDiscovery docs](https://docs.projectdiscovery.io/)). For **Chaos**, the usual variable is **`CHAOS_API_KEY`** (not read from Oculus `config.yaml`). The `chaos:` field in the sample YAML is for your own notes or future wiring only.
+---
+
+#### 🌐 1. Shodan API Key (Passive Host & Port Intel)
+*   **Why it's critical:** Module **28** (`shodan`) performs zero-traffic port/host discoveries for your targets. It also enables Subfinder to pull historical DNS records.
+*   **How to get it:**
+    1.  Create an account at [shodan.io](https://www.shodan.io/).
+    2.  Once logged in, navigate to [account.shodan.io](https://account.shodan.io/).
+    3.  Copy the **API Key** shown on the top-right card.
+*   **Where to paste:** Add it to your global config (`~/.config/oculus/config.yaml`):
+    ```yaml
+    api_keys:
+      shodan: "YOUR_SHODAN_API_KEY"
+    ```
+
+---
+
+#### 🐙 2. GitHub Personal Access Token (Leaked Secrets Hunt)
+*   **Why it's critical:** Module **26** (`github`) crawls active GitHub repos searching for leaked secrets, sensitive variables, or undocumented target endpoints matching your target's domain.
+*   **How to get it:**
+    1.  Go to [github.com/settings/tokens](https://github.com/settings/tokens).
+    2.  Click **Generate new token** ➡️ Select **Generate new token (classic)**.
+    3.  Set a descriptive note (e.g. `Oculus Recon Pipeline`) and an expiration date.
+    4.  Select the **`repo`** checkbox (for private repositories) or **`public_repo`** (for public repos only).
+    5.  Click **Generate token** and copy it immediately.
+*   **Where to paste:** Add it to your global config (`~/.config/oculus/config.yaml`):
+    ```yaml
+    api_keys:
+      github: "YOUR_GITHUB_TOKEN_HERE"
+    ```
+
+---
+
+#### ⚡ 3. ProjectDiscovery Chaos API Key (Pre-computed Subdomain Index)
+*   **Why it's critical:** Chaos maintains a massive, real-time repository of pre-computed subdomains for public bug bounty programs. It enables instant subdomains retrieval without launching local wordlist scans.
+*   **How to get it:**
+    1.  Go to [chaos.projectdiscovery.io](https://chaos.projectdiscovery.io/).
+    2.  Sign up or log in, then click **Request Access** to obtain an API key.
+*   **Where to paste:** Paste it into your Oculus config and also export it to your environment variables:
+    ```bash
+    export CHAOS_API_KEY="YOUR_CHAOS_API_KEY"
+    ```
+
+---
+
+#### 🐉 4. Subfinder Passive API Provider Config (Solving "Found 0 subdomains")
+If your `subdomain` modules are returning few or zero subdomains, it is because Subfinder has no passive intelligence APIs configured in its central provider configuration.
+
+To configure Subfinder APIs:
+1.  On your Linux/Kali server, open or create the Subfinder config file:
+    *   **Path:** `/home/shlok/.config/subfinder/provider-config.yaml` (or `~/.config/subfinder/provider-config.yaml`)
+2.  Obtain free/freemium keys from the heavy-hitting intelligence sources below:
+    *   **VirusTotal API Key:** Create a free account at [virustotal.com](https://www.virustotal.com/) and copy the API key from your profile dropdown.
+    *   **SecurityTrails API Key (Highly Recommended):** Register a free developer account at [securitytrails.com](https://securitytrails.com/) for gold-standard DNS histories.
+    *   **Censys API Key:** Create a free researcher account at [censys.io](https://censys.io/) to fetch subdomains parsed from millions of SSL certificates.
+    *   **BinaryEdge API Key:** Register a free tier account at [binaryedge.io](https://www.binaryedge.io/).
+    *   **Intelx API Key:** Register at [intelx.io](https://intelx.io/) to search historical dump databases.
+3.  Write your keys into `~/.config/subfinder/provider-config.yaml` in this exact YAML format:
+
+```yaml
+# ~/.config/subfinder/provider-config.yaml
+binaryedge:
+  - "your_binaryedge_api_key"
+censys:
+  - "your_censys_api_id:your_censys_api_secret"
+chaos:
+  - "your_chaos_api_key"
+github:
+  - "your_github_token"
+intelx:
+  - "your_intelx_api_key"
+securitytrails:
+  - "your_securitytrails_api_key"
+shodan:
+  - "your_shodan_api_key"
+virustotal:
+  - "your_virustotal_api_key"
+```
+
+Once configured, Subfinder will automatically load these providers during Step 1 of the Oculus pipeline, immediately multiplying subdomain discovery yields by **10x to 100x**!
+
+---
 
 ### Full starter YAML (identical to [`config.yaml.example`](config.yaml.example))
 

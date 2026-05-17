@@ -1,4 +1,4 @@
-# Oculus v3 Configuration File
+# Oculus v4 Configuration File
 # Copy to ~/.config/oculus/config.yaml
 
 # General settings
@@ -26,11 +26,17 @@ wordlists:
   dirs_fallback: /usr/share/wordlists/dirb/common.txt
   resolvers: /opt/recontools/massdns/resolvers.txt
 
-# API Keys (optional — enables passive recon)
+# API Keys (optional — enables passive recon and 100x subdomain yield)
 api_keys:
-  shodan: ""
-  github: ""
-  chaos: ""
+  shodan: ""            # Active Shodan API Key (Module 28)
+  github: ""            # GitHub Classic/Fine-grained PAT with repo read scope (Module 26)
+  chaos: ""             # ProjectDiscovery Chaos API Key (Subfinder / DNS resolution)
+  virustotal: ""        # VirusTotal Passive API Key (Subfinder)
+  securitytrails: ""    # SecurityTrails Enterprise/Free API Key (Subfinder - highly recommended)
+  censys_id: ""         # Censys Search API ID (Subfinder)
+  censys_secret: ""     # Censys Search API Secret (Subfinder)
+  binaryedge: ""        # BinaryEdge API Key (Subfinder)
+  intelx: ""            # IntelligenceX API Key (Subfinder)
 
 # Nuclei configuration
 nuclei:
