@@ -14,11 +14,17 @@ The **Oculus Web Interface** is a sleek, high-performance browser dashboard buil
 
 ## ✨ Key Features
 
-- **Real-Time Log Streaming:** WebSocket integration streams terminal output directly to your browser with zero latency.
-- **Interactive Configuration:** Form-based UI to build scan profiles, select modules (Nmap, Nuclei, Subfinder, etc.), and set flags without memorizing CLI syntax.
-- **Session Management:** Automatically reads the `session.json` state. Resume past scans, view artifact directories, and browse vulnerabilities cleanly.
-- **Live Tool Status:** Built-in system check that instantly validates which of the 29+ required tools are installed on your Linux host.
-- **Zero Database:** Fully stateless backend. It reads directly from the existing `output-*/` directories to ensure perfect parity with the CLI.
+- **Zero-Latency Telemetry Streaming**: Low-latency WebSocket piping routes raw shell feeds directly from the underlying daemon execution processes straight into a reactive virtual terminal viewport in the browser.
+- **Interactive Configuration**: Form-based UI to build scan profiles, select modules (Nmap, Nuclei, Subfinder, etc.), and set flags without memorizing CLI syntax.
+- **Micro-Animated Cyber Toggles**: Full-width glassmorphic control containers (such as Jitter) featuring hardware-inspired responsive styling, CSS physics transitions (`0.3s`), translucent accents, active cyan glowing borders, and drop-shadow illumination.
+- **Out-of-Band Daemon Heartbeat**: Automated asynchronous multi-interval polling targeting `/api/health` that updates a breathing hardware-style LED keyframe indicator (ONLINE/OFFLINE) in the sidebar footer.
+- **Multi-Vector Battle Presets**: Injects optimized configurations (`🐉 Kali Linux Native` | `⚡ High Performance` | `🥷 Stealth Operations`) to instantly adapt thread limits, timeout delays, and module distributions based on the engagement landscape.
+- **Restorative System Synchronization**: Actionable resets that dynamically read configuration specs from the FastAPI backend to instantly wipe localized adjustments and restore raw system baselines.
+- **Interventionist Abort Protection**: A safety overlay warning modal armed with Lucide vector icons (`<ShieldAlert />`) that halts abort triggers to prevent premature process drops across active execution paths.
+- **Progress-Snap Integration**: Intelligently overrides mathematical parsing when a scan finishes or is resumed, immediately driving the visual progress indicators to `100%` and showing full step completion.
+- **Session Management**: Automatically reads the `session.json` state. Resume past scans, view artifact directories, and browse vulnerabilities cleanly.
+- **Stateless PARITY Architecture (Zero Database)**: Zero-database design that queries directly from `output-*/` session files, ensuring absolute synchronicity between CLI commands and browser operations.
+- **Operational Pre-flight Checks (Live Tool Status)**: Built-in diagnostics checking 29 system tools, matching exact Go directories, apt binaries, and `/opt/recontools/` Python modules to provide a full dependency status overview.
 
 ---
 
@@ -68,39 +74,40 @@ cd ../frontend
 npm install
 ```
 
-### Step 2: Build & Launch (Single-Port Production Mode)
-This is the recommended, most robust way to run the Web Interface. You compile the React frontend into static assets, and the FastAPI backend serves both the API and the UI on a single port.
+### Step 2: Launch in Developer Mode (Standard / Live Reloading)
+This is the standard and most productive way to run the interface during active operational usage. The React dev server provides hot-reloading and proxies API/WS requests seamlessly to your backend.
 
-```bash
-# 1. Build the React frontend
-cd web/frontend
-npm run build
+Open **two separate terminals** to start both systems:
 
-# 2. Start the FastAPI backend
-cd ../backend
-python -m uvicorn server:app --host 127.0.0.1 --port 8000
-```
-Navigate to **http://localhost:8000** in your browser. The FastAPI server is now handling everything!
-
----
-
-## 🛠️ Alternative: Developer Mode (Live Reloading)
-
-If you are modifying the React code and want instant hot-reloading in the browser, you must run two separate terminals:
-
-**Terminal 1 (Backend):**
+**Terminal 1 (Backend Daemon):**
 ```bash
 cd web/backend
+pip3 install -r requirements.txt --break-system-packages
 python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-**Terminal 2 (Frontend):**
+**Terminal 2 (Frontend Interface):**
 ```bash
 cd web/frontend
 npm run dev
 ```
+Navigate to **http://localhost:5173** to launch the operational control HUD.
 
-Navigate to **http://localhost:5173**. The Vite dev server will automatically proxy `/api/*` and `/ws/*` requests to your FastAPI backend.
+---
+
+## 📦 Alternative: Single-Port Production Mode (Build & Host)
+If you want to bundle the React frontend into static assets and let the FastAPI backend serve both the client interface and API on a single port:
+
+```bash
+# 1. Compile the React frontend assets
+cd web/frontend
+npm run build
+
+# 2. Spin up the unified FastAPI server
+cd ../backend
+python -m uvicorn server:app --host 127.0.0.1 --port 8000
+```
+Navigate to **http://localhost:8000** in your browser.
 
 ---
 
@@ -109,6 +116,8 @@ Navigate to **http://localhost:5173**. The Vite dev server will automatically pr
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET`  | `/api/tools` | System check for tool installation status |
+| `GET`  | `/api/health` | Lightweight system health check (used by Web UI sidebar polling) |
+| `GET`  | `/api/config` | Retrieve current backend default configuration settings |
 | `POST` | `/api/scan/start` | Trigger the Oculus scanning engine |
 | `POST` | `/api/scan/stop` | Safely abort an active scan |
 | `GET`  | `/api/scan/status` | Fetch current execution state |

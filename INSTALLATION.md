@@ -228,7 +228,10 @@ Or use a **venv** and run `oculus.py` with that interpreter (you must install CL
 
 ### Missing wordlists or resolvers
 
-Edit **`~/.config/oculus/config.yaml`** (`wordlists.*`, `resolvers`). Defaults point at SecLists and `/opt/recontools/massdns/resolvers.txt` if you add massdns resolvers there.
+Edit **`~/.config/oculus/config.yaml`** (`wordlists.*`, `resolvers`). Defaults point at SecLists and `/opt/recontools/massdns/resolvers.txt`. 
+
+> [!TIP]
+> **Auto-Healing DNS Resolvers (v4.0.0+)**: If your installer didn't run with root privileges or hit transient network errors (leaving `/usr/share/massdns/resolvers.txt` missing), **Oculus now dynamically heals itself**. It will automatically print a warning and generate a comprehensive `auto_resolvers.txt` in your session folder, containing **over 120+ un-nerfed premium public recursive DNS resolvers** (Google, Cloudflare, OpenDNS, Level3/CenturyLink, OpenNIC, etc.) to ensure concurrent bruteforcing runs at extreme speeds without any rate-limits.
 
 ### `massdns` / `dig` not found
 

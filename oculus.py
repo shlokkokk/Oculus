@@ -1860,8 +1860,82 @@ class Oculus:
         if not self._require_setup() or not self._require_tool('massdns'):
             return
         resolvers = self.config.get('wordlists', {}).get('resolvers')
-        if not os.path.exists(resolvers):
+        if not resolvers or not os.path.exists(resolvers):
             resolvers = self.config.get('wordlists', {}).get('resolvers_fallback', '/usr/share/massdns/resolvers.txt')
+        if not os.path.exists(resolvers):
+            auto_resolvers = os.path.join(self.output_dir, "auto_resolvers.txt")
+            print(f"{Colors.YELLOW}[*] Resolvers file not found. Generating high-performance public resolvers list...{Colors.RESET}")
+            trusted_resolvers = [
+                # 1. Cloudflare (Standard, Security, Family)
+                "1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3",
+                # 2. Google Public DNS
+                "8.8.8.8", "8.8.4.4",
+                # 3. Quad9 (Filtered, Unfiltered, ECS)
+                "9.9.9.9", "149.112.112.112", "9.9.9.10", "149.112.112.10", "9.9.9.11", "149.112.112.11", "9.9.9.99", "149.112.112.99",
+                # 4. Cisco OpenDNS (Standard & Family)
+                "208.67.222.222", "208.67.220.220", "208.67.222.220", "208.67.220.222", "208.67.220.123", "208.67.222.123",
+                # 5. CenturyLink / Level3 (Legends of brute-force speed)
+                "4.2.2.1", "4.2.2.2", "4.2.2.3", "4.2.2.4", "4.2.2.5", "4.2.2.6", "209.244.0.3", "209.244.0.4",
+                # 6. AdGuard DNS (Standard, Family, Non-filtered)
+                "94.140.14.14", "94.140.15.15", "94.140.14.15", "94.140.15.16", "94.140.14.140", "94.140.14.141",
+                # 7. CleanBrowsing (Security, Family, Adult)
+                "185.228.168.9", "185.228.169.9", "185.228.168.168", "185.228.169.168", "185.228.168.10", "185.228.169.11",
+                # 8. Comodo Secure DNS / Sectigo
+                "8.26.56.26", "8.20.247.20",
+                # 9. DNS.WATCH
+                "84.200.69.80", "84.200.70.40",
+                # 10. Verisign Public DNS
+                "64.6.64.6", "64.6.65.6",
+                # 11. Neustar UltraDNS (Standard, Threat, Family)
+                "156.154.70.1", "156.154.71.1", "156.154.70.2", "156.154.71.2", "156.154.70.3", "156.154.71.3", "156.154.70.4", "156.154.71.4", "156.154.70.5", "156.154.71.5",
+                # 12. Freenom World
+                "80.80.80.80", "80.80.81.81",
+                # 13. Hurricane Electric
+                "74.82.42.42",
+                # 14. Yandex.DNS (Standard, Safe, Family)
+                "77.88.8.8", "77.88.8.1", "77.88.8.2", "77.88.8.3", "77.88.8.7", "77.88.8.88",
+                # 15. Dyn / Oracle DNS
+                "216.146.35.35", "216.146.36.36",
+                # 16. Control D (Uncensored, Standard)
+                "76.76.2.0", "76.76.10.0", "76.76.2.1", "76.76.10.1", "76.76.2.2", "76.76.10.2", "76.76.2.3", "76.76.10.3",
+                # 17. Gandi DNS
+                "217.70.186.1", "217.70.186.2",
+                # 18. AliDNS (Alibaba)
+                "223.5.5.5", "223.6.6.6",
+                # 19. NextDNS Premium Nodes
+                "45.90.28.0", "45.90.30.0", "45.90.28.1", "45.90.30.1", "45.90.28.2", "45.90.30.2",
+                # 20. DNS.SB
+                "185.222.222.222", "45.11.45.11", "185.222.222.223", "185.222.222.9",
+                # 21. OpenNIC (Decentralized, Trusted DNS Nodes)
+                "193.183.98.154", "172.104.136.243", "87.98.175.85", "94.130.180.225", "185.121.177.177", "185.121.177.53", "209.141.53.53", "51.75.173.177", "185.19.105.6", "142.4.204.111", "142.4.205.47",
+                # 22. Surfshark Secure DNS
+                "162.252.172.57", "149.154.159.92",
+                # 23. NordVPN Secure DNS
+                "103.86.96.100", "103.86.99.100",
+                # 24. UncensoredDNS (Denmark Premium Nodes)
+                "91.239.100.100", "89.233.43.71",
+                # 25. GreenTeamDNS
+                "81.218.119.11", "209.88.198.133",
+                # 26. CyberGhost Private DNS
+                "38.132.106.139", "194.187.251.67",
+                # 27. Mullvad Secure DNS
+                "194.242.2.2", "194.242.2.3", "194.242.2.4", "194.242.2.9",
+                # 28. FreeDNS (Premium Uncensored)
+                "37.235.1.174", "37.235.1.177",
+                # 29. SafeDNS
+                "195.46.39.39", "195.46.39.40",
+                # 30. Quad101 (Taiwan High Speed)
+                "101.101.101.101", "101.102.103.104",
+                # 31. UUNET / Verizon Global Backbone (Legendary speed & availability)
+                "198.6.1.4", "198.6.1.5"
+            ]
+            try:
+                with open(auto_resolvers, 'w') as rf:
+                    rf.write("\n".join(trusted_resolvers) + "\n")
+                resolvers = auto_resolvers
+                print(f"{Colors.GREEN}[✔] Temporary resolvers list successfully created!{Colors.RESET}")
+            except Exception as e:
+                print(f"{Colors.RED}[!] Failed to generate fallback resolvers: {e}{Colors.RESET}")
         if not self._require_file(resolvers, "Resolvers list not found!"):
             return
         wordlist = self.config.get('wordlists', {}).get('dns')

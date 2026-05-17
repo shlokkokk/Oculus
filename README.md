@@ -37,14 +37,26 @@
 
 ## Run in Browser (New Web UI!)
 
-Oculus v4.0 now features a complete, real-time web interface. You can now configure scans, monitor live terminal output, and view generated reports directly in your browser without ever touching the CLI.
+Oculus v4.0 now features a complete, real-time web interface. You can configure scans, monitor live terminal output, and view generated reports directly in your browser without ever touching the CLI.
 
+**Launch in Developer Mode (Standard / Live Reloading):**
 ```bash
-cd web/backend && pip install -r requirements.txt
-cd ../frontend && npm install && npm run build
-cd ../backend && python -m uvicorn server:app --host 127.0.0.1 --port 8000
-# Open http://localhost:8000
+# Terminal 1: Start Backend Daemon
+cd web/backend && pip3 install -r requirements.txt --break-system-packages
+python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+
+# Terminal 2: Start Frontend Dev Server
+cd web/frontend && npm install
+npm run dev # Open http://localhost:5173
 ```
+
+### ⚡ Tactical Control & High-End UX Highlights:
+*   🟢 **Out-of-Band Heartbeat Monitor**: Sidebar integrates an asynchronous `3-second` non-blocking telemetry link to `/api/health`, utilizing custom breathing hardware-style keyframe glow animations to visually reflect real-time daemon state (`ONLINE` / `OFFLINE`).
+*   🐉 **Operational Battle Presets**: Instant, single-click profile injection loaded with custom vector iconography (`🐉 Kali Linux Native` | `⚡ High Performance` | `🥷 Stealth Operations`), instantly re-mapping concurrency structures, timeouts, and target severities in real time.
+*   🔄 **Zero-Latency Reset Core**: Instantly purges and re-syncs state configurations to pristine system baselines, eliminating static parameters via recursive async calls directly to the FastAPI config registry.
+*   🛡️ **Accidental Abort Interception Layer**: Replaced fragile, instantly destructive termination calls with a threat-crimson modal warning engine. Leverages SVG `<ShieldAlert />` vector isolation, preventing accidental process interrupts on parallel scanning threads.
+*   🎨 **Interactive Cyan Cyber-Glow Aesthetics**: The Jitter element has been elevated into a 100% clickable glassmorphic telemetry container. Uses fluid `0.3s` ease transitions, active micro-animations, glowing borders, active text shadows, and custom cyberpunk neon accents.
+*   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `29/29 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
 
 See the **[Web README](web/README.md)** for full details.
 
@@ -482,6 +494,7 @@ Everything below is implemented in [`oculus.py`](oculus.py) today. Open the sect
 | **Logging** | `output-<domain>/logs/oculus.log` (debug) and `errors.log` (errors only) |
 | **Rich UI** | Optional **rich** panels, tables, and banner; graceful ANSI fallback if `rich` is not installed |
 | **Self-update** | `--update` runs `git pull` and `sudo ./install.sh --update` from the repo root |
+| **Auto-Healing Resolvers** | If standard massdns resolvers files are missing, dynamically generates a colossal list of **120+ un-nerfed, highly responsive global recursive DNS resolvers** (representing 31 premium carriers) on the fly in `output-<domain>/auto_resolvers.txt` to guarantee unthrottled concurrent DNS brute-forcing! |
 
 ### Preset pipelines
 
