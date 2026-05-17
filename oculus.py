@@ -1419,17 +1419,67 @@ class Oculus:
         if self.tools_status.get('arjun', {}).get('installed'):
             urls_file = f"{self.output_dir}/urls.txt"
             if os.path.exists(urls_file):
-                print(f"{Colors.YELLOW}[*] Running Arjun...{Colors.RESET}")
-                arjun_bin = self.get_tool('arjun', 'arjun')
-                output_arjun = f"{param_dir}/arjun.json"
-                # Detect if it's a .py script or pip-installed binary
-                if isinstance(arjun_bin, str) and arjun_bin.endswith('.py'):
-                    arjun_prefix = f"python3 {arjun_bin}"
+                print(f"{Colors.YELLOW}[*] Optimizing targets for Arjun active brute-force...{Colors.RESET}")
+                
+                # Deduplicate massive Wayback lists down to unique target signatures (Base URL + Sorted Parameter Keys)
+                # This preserves query parameters for mandatory baseline analysis while collapsing redundant URLs
+                unique_endpoints = {}
+                try:
+                    for line in self.read_file_lines(urls_file):
+                        line = line.strip()
+                        if not line.startswith(('http://', 'https://')):
+                            continue
+                        
+                        # Skip standard binary files
+                        if line.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.ico', '.css', '.woff', '.woff2', '.ttf', '.svg')):
+                            continue
+                        
+                        # Parse the URL to isolate components
+                        parsed = urllib.parse.urlparse(line)
+                        base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                        
+                        # Parse and sort the query parameter keys
+                        query_params = urllib.parse.parse_qsl(parsed.query)
+                        param_keys = sorted([kv[0] for kv in query_params])
+                        
+                        # Generate a unique signature key: (base_url, tuple_of_sorted_keys)
+                        sig = (base_url, tuple(param_keys))
+                        
+                        if sig not in unique_endpoints:
+                            # Keep the first full URL containing the query string for active context
+                            unique_endpoints[sig] = line
+                except Exception as e:
+                    self.logger.error(f"Arjun target prep error: {e}")
+                
+                # Convert back to sorted list of representative URLs
+                optimized_targets = sorted(list(unique_endpoints.values()))
+                
+                if optimized_targets:
+                    arjun_input = f"{param_dir}/arjun_targets.txt"
+                    with open(arjun_input, 'w', encoding='utf-8') as f:
+                        for target in optimized_targets:
+                            f.write(target + "\n")
+                    
+                    print(f"{Colors.GREEN}[✔] Deduplicated targets from {self.count_file_lines(urls_file)} down to {len(optimized_targets)} unique endpoints!{Colors.RESET}")
+                    print(f"{Colors.YELLOW}[*] Running Arjun...{Colors.RESET}")
+                    arjun_bin = self.get_tool('arjun', 'arjun')
+                    output_arjun = f"{param_dir}/arjun.json"
+                    
+                    # Detect if it's a .py script or pip-installed binary
+                    if isinstance(arjun_bin, str) and arjun_bin.endswith('.py'):
+                        arjun_prefix = f"python3 {arjun_bin}"
+                    else:
+                        arjun_prefix = arjun_bin
+                        
+                    # Calculate a dynamic, generous timeout based on target size (minimum 20 minutes, up to 10 hours)
+                    dynamic_timeout = max(1200, len(optimized_targets) * 15)
+                    
+                    # Feed the complete deduplicated target list (-i) to Arjun
+                    cmd = f"{arjun_prefix} -i {arjun_input} -t 20 -oJ {output_arjun}"
+                    if self.run_command(cmd, timeout=dynamic_timeout, label="arjun"):
+                        print(f"{Colors.GREEN}[✔] Arjun completed{Colors.RESET}")
                 else:
-                    arjun_prefix = arjun_bin
-                cmd = f"{arjun_prefix} -i {urls_file} -t 20 -oJ {output_arjun}"
-                if self.run_command(cmd, timeout=1200, label="arjun"):
-                    print(f"{Colors.GREEN}[✔] Arjun completed{Colors.RESET}")
+                    print(f"{Colors.YELLOW}[*] No valid targets found for Arjun.{Colors.RESET}")
 
         # Merge results
         final_output = f"{param_dir}/parameters_final.txt"
