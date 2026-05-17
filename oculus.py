@@ -1201,13 +1201,20 @@ class Oculus:
             for fp in raw_files:
                 for line in self.read_file_lines(fp):
                     url = line.split('#')[0].strip()
-                    # Skip malformed/poisoned double-encoded URLs from Wayback
-                    url_lower = url.lower()
-                    if "25252f" in url_lower or "253d" in url_lower or "%2f" in url_lower or "%3d" in url_lower:
+                    try:
+                        parsed = urllib.parse.urlparse(url)
+                        netloc = parsed.netloc.lower()
+                        # Only skip if the actual domain/hostname is corrupted by double-encoded slop
+                        if "25252f" in netloc or "253d" in netloc or "%2f" in netloc or "%3d" in netloc or "252f" in netloc:
+                            continue
+                    except Exception:
                         continue
+                    
                     # Match domain bounds and valid scheme
-                    if url.startswith(('http://', 'https://')) and not url.endswith(('.jpg', '.png', '.gif', '.css', '.ico')):
-                        unique_urls.add(url)
+                    if url.startswith(('http://', 'https://')):
+                        path_lower = parsed.path.lower()
+                        if not path_lower.endswith(('.jpg', '.jpeg', '.png', '.gif', '.ico', '.css', '.woff', '.woff2', '.ttf', '.svg')):
+                            unique_urls.add(url)
             with open(final_output, 'w', encoding='utf-8') as f:
                 for url in sorted(unique_urls):
                     f.write(f"{url}\n")
@@ -1270,7 +1277,6 @@ class Oculus:
         with open(output_file, 'w', encoding='utf-8') as f:
             for r in results:
                 f.write(f"{r}\n")
-        waf_count = len([r for r in results if 'WAF' not in r or 'No WAF' in r])
         waf_found = len([r for r in results if ':' in r and 'No WAF' not in r and 'Unknown' not in r and 'Error' not in r and 'Timeout' not in r])
         print(f"{Colors.GREEN}[✔] WAF detection completed{Colors.RESET}")
         print(f"  {Colors.RED}• Hosts with WAF: {waf_found}{Colors.RESET}")
@@ -1421,6 +1427,19 @@ class Oculus:
             if os.path.exists(urls_file):
                 print(f"{Colors.YELLOW}[*] Optimizing targets for Arjun active brute-force...{Colors.RESET}")
                 
+                # Load confirmed active hosts from alive.txt to discard dead/non-existent domains
+                alive_domains = set()
+                alive_file = f"{self.output_dir}/alive.txt"
+                if os.path.exists(alive_file):
+                    try:
+                        for line in self.read_file_lines(alive_file):
+                            # Extract hostname without protocol/port
+                            host = re.sub(r'^https?://', '', line.strip()).split(':')[0].split('/')[0]
+                            if host:
+                                alive_domains.add(host.lower())
+                    except Exception as e:
+                        self.logger.error(f"Failed to load alive hosts: {e}")
+
                 # Deduplicate massive Wayback lists down to unique target signatures (Base URL + Sorted Parameter Keys)
                 # This preserves query parameters for mandatory baseline analysis while collapsing redundant URLs
                 unique_endpoints = {}
@@ -1434,8 +1453,14 @@ class Oculus:
                         if line.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.ico', '.css', '.woff', '.woff2', '.ttf', '.svg')):
                             continue
                         
-                        # Parse the URL to isolate components
+                        # Parse the URL to check host state
                         parsed = urllib.parse.urlparse(line)
+                        host = parsed.netloc.split(':')[0].lower()
+                        
+                        # SILENTLY DISCARD dead subdomains / Wayback typos
+                        if alive_domains and host not in alive_domains:
+                            continue
+                        
                         base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
                         
                         # Parse and sort the query parameter keys
@@ -1472,7 +1497,8 @@ class Oculus:
                         arjun_prefix = arjun_bin
                         
                     # Calculate a dynamic, generous timeout based on target size (minimum 20 minutes, up to 10 hours)
-                    dynamic_timeout = max(1200, len(optimized_targets) * 15)
+                    # Give Arjun generous time: minimum 3600s (1hr), scaled by target count
+                    dynamic_timeout = max(3600, len(optimized_targets) * 30)
                     
                     # Feed the complete deduplicated target list (-i) to Arjun
                     cmd = f"{arjun_prefix} -i {arjun_input} -t 20 -oJ {output_arjun}"
@@ -1580,13 +1606,27 @@ class Oculus:
             lf_bin = self.get_tool('linkfinder', "/opt/recontools/LinkFinder/linkfinder.py")
             endpoints_output = f"{js_dir}/endpoints.txt"
             Path(endpoints_output).touch()
-            cmd = f"python3 {lf_bin} -i {js_urls_file} -o cli"
-            if self.run_command(cmd, output_file=endpoints_output, timeout=600, label="linkfinder"):
-                count = self.count_file_lines(endpoints_output)
-                print(f"{Colors.GREEN}[✔] LinkFinder extracted {count} endpoints{Colors.RESET}")
-                self.results['js_endpoints'] = count
-            else:
-                print(f"{Colors.RED}[!] LinkFinder failed{Colors.RESET}")
+            # LinkFinder -i expects a single URL, not a file of URLs.
+            # Loop through each JS URL individually (capped at 200) and append results.
+            js_urls = self.read_file_lines(js_urls_file)[:200]
+            total_endpoints = 0
+            for js_url in js_urls:
+                tmp_out = f"{js_dir}/_lf_tmp.txt"
+                cmd = f"python3 {lf_bin} -i {shlex.quote(js_url)} -o cli"
+                self.run_command(cmd, output_file=tmp_out, timeout=30, stream=False, label="linkfinder")
+                if os.path.exists(tmp_out):
+                    lines = self.read_file_lines(tmp_out)
+                    total_endpoints += len(lines)
+                    with open(endpoints_output, 'a', encoding='utf-8') as ef:
+                        for ep in lines:
+                            ef.write(ep + '\n')
+                    try:
+                        os.remove(tmp_out)
+                    except Exception:
+                        pass
+            count = self.count_file_lines(endpoints_output)
+            print(f"{Colors.GREEN}[✔] LinkFinder extracted {count} endpoints{Colors.RESET}")
+            self.results['js_endpoints'] = count
         # Secret extraction
         print(f"{Colors.YELLOW}[*] Scanning JS files for secrets...{Colors.RESET}")
         secrets_file = f"{js_dir}/secrets.txt"
@@ -1654,14 +1694,19 @@ class Oculus:
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Directory Fuzzing on {len(hosts_to_scan)} hosts...{Colors.RESET}\n")
 
         conf = self.config.get('ffuf', {})
-        ext = conf.get('extensions', '.php,.html,.txt')
+        # Ensure each extension has a leading dot (FFUF requires .ext format)
+        raw_ext = conf.get('extensions', 'php,html,js,json,txt,bak,old')
+        ext = ','.join(
+            e if e.startswith('.') else f'.{e}'
+            for e in raw_ext.split(',')
+        )
         status = conf.get('status_filter', '200,204,301,302,307,401,403')
-        depth = conf.get('recursion_depth', 1)
-        wordlist = self.config.get('wordlists', {}).get('dirs')
-        if not os.path.exists(wordlist):
-            wordlist = self.config.get('wordlists', {}).get('dirs_fallback')
-        if not os.path.exists(wordlist):
-            print(f"{Colors.RED}[!] Wordlist not found at {wordlist}!{Colors.RESET}")
+        depth = conf.get('recursion_depth', 2)
+        wordlist = self.config.get('wordlists', {}).get('dirs') or ''
+        if not wordlist or not os.path.exists(wordlist):
+            wordlist = self.config.get('wordlists', {}).get('dirs_fallback') or ''
+        if not wordlist or not os.path.exists(wordlist):
+            print(f"{Colors.RED}[!] Wordlist not found! Tried primary and fallback paths.{Colors.RESET}")
             return
 
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -1915,6 +1960,45 @@ class Oculus:
 
     # MODULE 20: SQLI SCAN (SQLMap)
 
+    def _filter_to_alive_hosts(self, input_file, output_file):
+        """Filter a URL list to only include URLs whose host is in alive.txt.
+        Returns (filtered_count, original_count) tuple.
+        Dead Wayback subdomains waste 90%+ of scan time on non-existent hosts."""
+        alive_file = f"{self.output_dir}/alive.txt"
+        alive_hosts = set()
+        if os.path.exists(alive_file):
+            for line in self.read_file_lines(alive_file):
+                host = re.sub(r'^https?://', '', line.strip()).split(':')[0].split('/')[0].lower()
+                if host:
+                    alive_hosts.add(host)
+
+        all_urls = self.read_file_lines(input_file)
+        if not alive_hosts:
+            # No alive.txt — can't filter, use all URLs as-is
+            print(f"{Colors.YELLOW}[*] No alive.txt found — skipping host pre-filter (will test all {len(all_urls)} URLs){Colors.RESET}")
+            import shutil as _shutil
+            _shutil.copy2(input_file, output_file)
+            return len(all_urls), len(all_urls)
+
+        filtered = []
+        skipped = 0
+        for url in all_urls:
+            try:
+                parsed = urllib.parse.urlparse(url)
+                host = parsed.netloc.split(':')[0].lower()
+                if host in alive_hosts:
+                    filtered.append(url)
+                else:
+                    skipped += 1
+            except Exception:
+                skipped += 1
+
+        with open(output_file, 'w', encoding='utf-8') as f:
+            for url in filtered:
+                f.write(url + '\n')
+
+        return len(filtered), len(all_urls)
+
     def run_sqlmap_scan(self):
         if not self._require_setup() or not self._require_tool('sqlmap'):
             return
@@ -1923,8 +2007,23 @@ class Oculus:
             return
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting SQLMap Scan...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/sqlmap"
-        cmd = f"{self.get_tool('sqlmap')} -m {gf_sqli} --batch --random-agent --level 1 --risk 1 --output-dir={out_dir}"
-        if self.run_command(cmd, timeout=1200, label="sqlmap"):
+        Path(out_dir).mkdir(exist_ok=True)
+
+        # Pre-filter to alive hosts — dead Wayback subdomains waste all scan time
+        filtered_sqli = f"{out_dir}/sqli_alive.txt"
+        kept, total = self._filter_to_alive_hosts(gf_sqli, filtered_sqli)
+        print(f"{Colors.GREEN}[✔] Pre-filter: {kept}/{total} SQLi URLs are on alive hosts{Colors.RESET}")
+        if kept == 0:
+            print(f"{Colors.YELLOW}[!] No SQLi URLs match alive hosts — running full list as fallback{Colors.RESET}")
+            filtered_sqli = gf_sqli
+
+        # Full-power SQLMap: level 5, risk 3, forms detection, crawl, tamper scripts
+        # Timeout 7200s (2hrs) — large target lists need time to run fully
+        cmd = (f"{self.get_tool('sqlmap')} -m {filtered_sqli} --batch --random-agent "
+               f"--level 5 --risk 3 --forms --crawl=3 "
+               f"--tamper=space2comment,between,charunicodeencode "
+               f"--output-dir={out_dir}")
+        if self.run_command(cmd, timeout=7200, label="sqlmap"):
             print(f"{Colors.GREEN}[✔] SQLMap scan completed{Colors.RESET}")
         else:
             print(f"{Colors.RED}[!] SQLMap scan failed{Colors.RESET}")
@@ -1933,7 +2032,7 @@ class Oculus:
     # MODULE 21: XSS SCAN (Dalfox)
 
     def run_xss_scan(self):
-        """Automated XSS scanning using Dalfox"""
+        """Automated XSS scanning using Dalfox — pre-filtered to alive hosts"""
         if not self._require_setup() or not self._require_tool('dalfox'):
             return
         gf_xss = f"{self.output_dir}/gf/xss.txt"
@@ -1947,9 +2046,26 @@ class Oculus:
         Path(out_dir).mkdir(exist_ok=True)
         out_file = f"{out_dir}/dalfox_results.txt"
 
+        # Pre-filter to alive hosts — dead Wayback subdomains cause mass connection failures
+        filtered_xss = f"{out_dir}/xss_alive.txt"
+        kept, total = self._filter_to_alive_hosts(gf_xss, filtered_xss)
+        print(f"{Colors.GREEN}[✔] Pre-filter: {kept}/{total} XSS URLs are on alive hosts{Colors.RESET}")
+        if kept == 0:
+            print(f"{Colors.YELLOW}[!] No XSS URLs match alive hosts — running full list as fallback{Colors.RESET}")
+            filtered_xss = gf_xss
+
         dalfox_bin = self.get_tool('dalfox')
-        cmd = f"{dalfox_bin} file {gf_xss} -b hahwul.xss.ht --skip-bav -o {out_file}"
-        if self.run_command(cmd, timeout=1800, label="dalfox"):
+        # Full-power Dalfox: 100 workers, DOM mining, blind XSS callback, 15s timeout per request
+        cmd = (f"{dalfox_bin} file {filtered_xss} "
+               f"-b hahwul.xss.ht "
+               f"--worker 100 "
+               f"--timeout 15 "
+               f"--delay 0 "
+               f"--mining-dom "
+               f"--deep-domxss "
+               f"--follow-redirects "
+               f"-o {out_file}")
+        if self.run_command(cmd, timeout=3600, label="dalfox"):
             count = self.count_file_lines(out_file)
             print(f"{Colors.GREEN}[✔] Dalfox XSS scan completed — {count} potential findings{Colors.RESET}")
             self.results['xss_findings'] = count
@@ -2242,7 +2358,7 @@ class Oculus:
     # MODULE 29: OPEN REDIRECT SCANNER
 
     def run_open_redirect_scan(self):
-        """Scan for open redirects using GF filtered URLs"""
+        """Scan for open redirects using GF filtered URLs — pre-filtered to alive hosts"""
         if not self._require_setup():
             return
         gf_redirect = f"{self.output_dir}/gf/redirect.txt"
@@ -2256,9 +2372,12 @@ class Oculus:
         Path(out_dir).mkdir(exist_ok=True)
         out_file = f"{out_dir}/open_redirects.txt"
 
-        # Basic fuzzing for redirects using standard payload
-        # This could be improved with a full tool like Oralyzer, but simple requests work well too.
-        urls = self.read_file_lines(gf_redirect)
+        # Pre-filter to alive hosts — dead subdomains produce only false negatives
+        filtered_redirect = f"{out_dir}/redirect_alive.txt"
+        kept, total = self._filter_to_alive_hosts(gf_redirect, filtered_redirect)
+        print(f"{Colors.GREEN}[✔] Pre-filter: {kept}/{total} redirect URLs are on alive hosts{Colors.RESET}")
+        src = filtered_redirect if kept > 0 else gf_redirect
+        urls = self.read_file_lines(src)
         payloads = ["https://evil.com", "//evil.com", "/\\evil.com"]
         found = []
         def check_redirect(url):
@@ -2697,7 +2816,7 @@ class Oculus:
         try:
             with open(summary_file, 'w', encoding='utf-8') as f:
                 f.write("=" * 80 + "\n")
-                f.write("                        OCULUS v3 SUMMARY REPORT\n")
+                f.write(f"                        OCULUS v{VERSION} SUMMARY REPORT\n")
                 f.write("=" * 80 + "\n\n")
                 f.write(f"Target Domain: {self.domain}\n")
                 f.write(f"Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
