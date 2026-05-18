@@ -13,8 +13,8 @@
   --accent-green: #10B981;
   --accent-purple: #8B5CF6;
   --text-primary: #E2E8F0;
-  --text-secondary: #94A3B8;
-  --text-dim: #64748B;
+  --text-secondary: #CBD5E1;
+  --text-dim: #8F9CAE;
   --border: #1E293B;
   --border-focus: #334155;
   --radius-sm: 6px;
@@ -389,7 +389,7 @@ select.input {
 
 .module-info { flex: 1; min-width: 0; }
 .module-name { font-size: 12px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.module-tool { font-size: 10px; color: var(--text-dim); }
+.module-tool { font-size: 11.5px; color: var(--text-secondary); opacity: 0.85; }
 
 .phase-header {
   font-size: 11px;
@@ -1268,3 +1268,47 @@ select.input {
   border-radius: 2px;
   border: 1px solid rgba(245, 158, 11, 0.45);
 }
+
+/* Premium Sidebar Navigation Rail */
+.results-rail {
+  width: 60px;
+  background: #0B0E14;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.results-rail-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  gap: 3px;
+  transition: all var(--transition);
+  outline: none;
+}
+
+.results-rail-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.results-rail-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+

@@ -342,83 +342,40 @@ export default function ResultsViewer({ domain }) {
         <h2>Results — {activeDomain}</h2>
         <p>Browse all scan artifacts and output files.</p>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '290px 1fr', gap: 16, flex: 1, minHeight: 0, marginBottom: 16 }}>
-        <div className="card" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '12px', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '330px 1fr', gap: 16, flex: 1, minHeight: 0, marginBottom: 16 }}>
+        <div className="card" style={{ height: '100%', display: 'flex', flexDirection: 'row', padding: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
           
-          {/* Tab Selector */}
-          <div style={{ display: 'flex', borderBottom: '1px solid rgba(0, 212, 170, 0.18)', marginBottom: 12 }}>
-            <button 
-              className={`btn btn-sm ${activeTab === 'explorer' ? 'active-tab' : ''}`}
-              style={{ 
-                flex: 1, 
-                borderRadius: 0, 
-                background: 'none', 
-                border: 'none', 
-                borderBottom: activeTab === 'explorer' ? '2.5px solid var(--accent)' : 'none', 
-                color: activeTab === 'explorer' ? 'var(--accent)' : 'var(--text-dim)',
-                padding: '8px 4px',
-                fontSize: 11,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                cursor: 'pointer'
-              }}
+          {/* Modern Sidebar Navigation Rail */}
+          <div className="results-rail">
+            <button
+              className={`results-rail-btn ${activeTab === 'explorer' ? 'active' : ''}`}
               onClick={() => setActiveTab('explorer')}
+              title="File Explorer"
             >
-              <FolderOpen size={13} />
-              Explorer
-            </button>
-            <button 
-              className={`btn btn-sm ${activeTab === 'search' ? 'active-tab' : ''}`}
-              style={{ 
-                flex: 1, 
-                borderRadius: 0, 
-                background: 'none', 
-                border: 'none', 
-                borderBottom: activeTab === 'search' ? '2.5px solid var(--accent)' : 'none', 
-                color: activeTab === 'search' ? 'var(--accent)' : 'var(--text-dim)',
-                padding: '8px 4px',
-                fontSize: 11,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                cursor: 'pointer'
-              }}
-              onClick={() => setActiveTab('search')}
-            >
-              <Search size={13} />
-              Global Search
+              <FolderOpen size={16} />
+              <span style={{ fontSize: 9, fontWeight: 600 }}>Files</span>
             </button>
             <button
-              className={`btn btn-sm ${activeTab === 'screenshots' ? 'active-tab' : ''}`}
-              style={{
-                flex: 1,
-                borderRadius: 0,
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === 'screenshots' ? '2.5px solid var(--accent)' : 'none',
-                color: activeTab === 'screenshots' ? 'var(--accent)' : 'var(--text-dim)',
-                padding: '8px 4px',
-                fontSize: 11,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                cursor: 'pointer'
-              }}
-              onClick={() => setActiveTab('screenshots')}
+              className={`results-rail-btn ${activeTab === 'search' ? 'active' : ''}`}
+              onClick={() => setActiveTab('search')}
+              title="Search Logs"
             >
-              <ImageIcon size={13} />
-              Screenshots
+              <Search size={16} />
+              <span style={{ fontSize: 9, fontWeight: 600 }}>Search</span>
+            </button>
+            <button
+              className={`results-rail-btn ${activeTab === 'screenshots' ? 'active' : ''}`}
+              onClick={() => setActiveTab('screenshots')}
+              title="Screenshots"
+            >
+              <ImageIcon size={16} />
+              <span style={{ fontSize: 9, fontWeight: 600 }}>Shots</span>
             </button>
           </div>
 
-          {activeTab === 'explorer' ? (
+          {/* Sidebar Inner Content Pane */}
+          <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+            {activeTab === 'explorer' ? (
             <>
               <div className="card-title" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700 }}><FolderOpen size={14} /> File Tree</span>
@@ -451,6 +408,9 @@ export default function ResultsViewer({ domain }) {
             </>
           ) : activeTab === 'search' ? (
             <>
+              <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700 }}>
+                <Search size={14} /> Global Search
+              </div>
               <div className="search-container" style={{ marginBottom: 12 }}>
                 <Search size={13} className="search-icon-inside" />
                 <input
@@ -556,6 +516,7 @@ export default function ResultsViewer({ domain }) {
               </div>
             </>
           )}
+          </div>
         </div>
         <div className="card" style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           {activeTab === 'screenshots' ? (
