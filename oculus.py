@@ -2079,7 +2079,8 @@ class Oculus:
         if not self._require_setup():
             return
         alive_file = f"{self.output_dir}/alive.txt"
-        if not self._require_file(alive_file):
+        has_alive = os.path.exists(alive_file) and os.path.getsize(alive_file) > 0
+        if not has_alive:
             fallback_file = f"{self.output_dir}/screenshot_targets.txt"
             hosts = self._get_hosts(prefer_alive=True)
             targets = set()
