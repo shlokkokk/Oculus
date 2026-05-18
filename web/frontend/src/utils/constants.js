@@ -121,15 +121,31 @@ export function computeDependencyState(manualIds) {
 
 /**
  * Given an auto ID, return the human-readable names of the manual modules
- * that depend on it (used for tooltip text).
+ * that depend on it (either directly or transitively, used for tooltip text).
  */
 export function getAutoReason(autoId, manualIds) {
   const reasons = [];
+
+  const isDependent = (startId, targetId, visited = new Set()) => {
+    if (startId === targetId) return true;
+    if (visited.has(startId)) return false;
+    visited.add(startId);
+
+    const deps = MODULE_DEPENDENCIES[startId] || [];
+    for (const dep of deps) {
+      if (isDependent(dep, targetId, visited)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   for (const mid of manualIds) {
-    const deps = MODULE_DEPENDENCIES[mid] || [];
-    if (deps.includes(autoId)) {
-      const mod = MODULES.find(m => m.id === mid);
-      if (mod) reasons.push(mod.name);
+    if (mid !== autoId) {
+      if (isDependent(mid, autoId)) {
+        const mod = MODULES.find(m => m.id === mid);
+        if (mod) reasons.push(mod.name);
+      }
     }
   }
   return reasons;

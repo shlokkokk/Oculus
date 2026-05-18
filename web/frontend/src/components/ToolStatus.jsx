@@ -5,6 +5,7 @@ import { api } from '../api/client';
 export default function ToolStatus() {
   const [tools, setTools] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [hoveredTool, setHoveredTool] = useState(null);
 
   const loadTools = (force = false) => {
     setLoading(true);
@@ -45,18 +46,57 @@ export default function ToolStatus() {
         <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner" /></div>
       ) : (
         <div className="tool-grid">
-          {tools.map(tool => (
-            <div key={tool.name} className="tool-item">
-              <div className={`tool-status-dot ${tool.installed ? 'installed' : 'missing'}`} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="tool-name">{tool.name}</div>
-                {tool.installed && tool.path && <div className="tool-path">{tool.path}</div>}
-                {!tool.installed && tool.install_command && (
-                  <div className="tool-path" style={{ color: 'var(--accent-amber)' }}>{tool.install_command}</div>
+          {tools.map(tool => {
+            const isHovered = hoveredTool === tool.name;
+            const displayPath = tool.path || tool.install_command || 'No path available';
+
+            return (
+              <div 
+                key={tool.name} 
+                className="tool-item"
+                onMouseEnter={() => setHoveredTool(tool.name)}
+                onMouseLeave={() => setHoveredTool(null)}
+                style={{ position: 'relative' }}
+              >
+                <div className={`tool-status-dot ${tool.installed ? 'installed' : 'missing'}`} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="tool-name">{tool.name}</div>
+                  {tool.installed && tool.path && <div className="tool-path">{tool.path}</div>}
+                  {!tool.installed && tool.install_command && (
+                    <div className="tool-path" style={{ color: 'var(--accent-amber)' }}>{tool.install_command}</div>
+                  )}
+                </div>
+
+                {/* Premium Monospace Path Tooltip */}
+                {isHovered && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 6px)',
+                    left: 0,
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--accent)',
+                    borderRadius: 6,
+                    padding: '8px 12px',
+                    fontSize: 10.5,
+                    lineHeight: 1.4,
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-all',
+                    width: '240px',
+                    zIndex: 50,
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                    pointerEvents: 'none',
+                  }}>
+                    <span style={{ color: 'var(--accent)', fontWeight: 600, display: 'block', marginBottom: 2, fontFamily: 'var(--font-sans)', fontSize: 10 }}>
+                      {tool.installed ? 'FULL PATH' : 'INSTALL COMMAND'}
+                    </span>
+                    {displayPath}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -96,6 +96,7 @@ export default function ModuleSelector({ selected = [], manuallySelected = [], o
                     style={{
                       cursor: disabled ? 'not-allowed' : 'pointer',
                       position: 'relative',
+                      paddingRight: isAuto ? 48 : 12, // Prevent label text overlapping with AUTO badge
                       // Auto-added modules get a subtler accent glow so they're
                       // visually distinct from manually-selected ones
                       boxShadow: isAuto
@@ -139,23 +140,23 @@ export default function ModuleSelector({ selected = [], manuallySelected = [], o
                     {/* Tooltip explaining why this module was auto-added */}
                     {isAuto && isHovered && reasons.length > 0 && (
                       <div style={{
-                        position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%',
-                        transform: 'translateX(-50%)',
+                        position: 'absolute', bottom: 'calc(100% + 6px)', left: 0,
                         background: 'var(--bg-secondary)',
                         border: '1px solid var(--accent)',
                         borderRadius: 6,
-                        padding: '6px 10px',
+                        padding: '8px 12px',
                         fontSize: 11, lineHeight: 1.4,
                         color: 'var(--text-primary)',
-                        whiteSpace: 'nowrap',
+                        whiteSpace: 'normal',
+                        width: '260px',
                         zIndex: 50,
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
                         pointerEvents: 'none',
                       }}>
                         <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Required by:</span>{' '}
                         {reasons.join(', ')}
                         <br />
-                        <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>
+                        <span style={{ color: 'var(--text-dim)', fontSize: 10, marginTop: 4, display: 'inline-block' }}>
                           Click to pin as manual selection
                         </span>
                       </div>

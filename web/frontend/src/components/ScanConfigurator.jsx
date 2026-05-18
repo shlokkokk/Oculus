@@ -36,6 +36,7 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
   const [sqlmapThreads,  setSqlmapThreads]  = useState(10);
 
   /* ── UI ── */
+  const [activePreset, setActivePreset] = useState(null); // Tracing selected optimization preset!
   const [showConfirm, setShowConfirm] = useState(false);
   const [error,       setError]       = useState('');
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -128,6 +129,7 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
     setThreads(p.threads); setRateLimit(p.rateLimit); setTimeout_(p.timeout_);
     setJitter(p.jitter); setSqlmapLevel(p.sqlmapLevel); setSqlmapRisk(p.sqlmapRisk);
     setSqlmapThreads(p.sqlmapThreads); setSeverity(p.severity);
+    setActivePreset(preset);
   };
 
   const resetToDefaults = () => {
@@ -138,12 +140,14 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       setSeverity(cfg.nuclei_severity || 'low,medium,high,critical');
       setSqlmapLevel(cfg.sqlmap_level || 5); setSqlmapRisk(cfg.sqlmap_risk || 3);
       setSqlmapThreads(cfg.sqlmap_threads || 10);
+      setActivePreset(null);
     });
   };
 
   const inputNum = (setter, min, max) => (e) => {
     const v = e.target.value;
     setter(v === '' ? '' : Math.min(Math.max(Number(v), min), max));
+    setActivePreset(null); // Reset preset selection on custom change!
   };
 
   /* ───────────────────────────────────────────────────────────────── */
@@ -314,7 +318,7 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
             <div className="input-group" style={{ marginBottom: 0 }}>
               <label>Nuclei Severity</label>
-              <select className="input" value={severity} onChange={e => setSeverity(e.target.value)} disabled={scanState === 'running'}>
+              <select className="input" value={severity} onChange={e => { setSeverity(e.target.value); setActivePreset(null); }} disabled={scanState === 'running'}>
                 <option value="low,medium,high,critical">All (Low → Critical)</option>
                 <option value="medium,high,critical">Medium+</option>
                 <option value="high,critical">High + Critical</option>
@@ -325,7 +329,7 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
               <label>Stealth Jitter</label>
               <div
                 className="toggle-row"
-                onClick={() => { if (scanState !== 'running') setJitter(!jitter); }}
+                onClick={() => { if (scanState !== 'running') { setJitter(!jitter); setActivePreset(null); } }}
                 style={{
                   height: 42,
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -435,20 +439,50 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
                 fg: 'var(--accent-amber)', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.15)',
                 bgHov: 'rgba(245,158,11,0.14)', borderHov: 'rgba(245,158,11,0.35)',
               },
-            ].map(({ key, label, Icon, fg, bg, border, bgHov, borderHov }) => (
-              <button
-                key={key}
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={scanState === 'running'}
-                onClick={() => applyPreset(key)}
-                style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, borderRadius: 6, background: bg, border: `1px solid ${border}`, color: fg, transition: 'all 0.2s' }}
-                onMouseEnter={e => { e.currentTarget.style.background = bgHov; e.currentTarget.style.borderColor = borderHov; e.currentTarget.style.boxShadow = `0 0 12px ${bg}`; }}
-                onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.borderColor = border; e.currentTarget.style.boxShadow = 'none'; }}
-              >
-                <Icon size={12} /> {label}
-              </button>
-            ))}
+            ].map(({ key, label, Icon, fg, bg, border, bgHov, borderHov }) => {
+              const isActive = activePreset === key;
+              const btnBg = isActive ? bg : 'rgba(255,255,255,0.01)';
+              const btnBorder = isActive ? `1px solid ${border}` : '1px solid var(--border)';
+              const btnColor = isActive ? fg : 'var(--text-secondary)';
+              const btnShadow = isActive ? `0 0 12px ${bg}` : 'none';
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={scanState === 'running'}
+                  onClick={() => applyPreset(key)}
+                  style={{
+                    fontSize: 11,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    borderRadius: 6,
+                    background: btnBg,
+                    border: btnBorder,
+                    color: btnColor,
+                    boxShadow: btnShadow,
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = bgHov;
+                    e.currentTarget.style.borderColor = borderHov;
+                    e.currentTarget.style.boxShadow = `0 0 12px ${bg}`;
+                    e.currentTarget.style.color = fg;
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = btnBg;
+                    e.currentTarget.style.borderColor = isActive ? border : 'var(--border)';
+                    e.currentTarget.style.boxShadow = btnShadow;
+                    e.currentTarget.style.color = btnColor;
+                  }}
+                >
+                  <Icon size={12} style={{ opacity: isActive ? 1 : 0.6, transition: 'opacity 0.2s' }} /> {label}
+                </button>
+              );
+            })
+            }
 
             <button
               type="button"
