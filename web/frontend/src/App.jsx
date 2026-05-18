@@ -40,7 +40,9 @@ export default function App() {
   }, [scan, ws]);
 
   const handleRelaunchFresh = useCallback((domain, mode) => {
-    setRelaunchTarget({ domain, mode });
+    // Carry the domain + mode so the Configurator pre-populates them.
+    // The `fresh` flag is informational; ScanConfigurator always sends resume:false.
+    setRelaunchTarget({ domain, mode: mode || 'quick', fresh: true });
     setView(VIEWS.SCAN);
   }, []);
 

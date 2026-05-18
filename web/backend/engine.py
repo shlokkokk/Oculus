@@ -161,14 +161,36 @@ class ScanEngine:
                     break
 
     def _prepare_web_output_dir(self, output_dir: Path, resume: bool):
-        """Prepare scan output directory for web flows without changing CLI behavior."""
+        """Prepare scan output directory for web flows without changing CLI behavior.
+
+        Fresh scan strategy:
+          - Move the existing output-<domain>/ directory to backup-<domain>/
+            (overwriting any previous backup) so the user's prior data is
+            preserved, not silently destroyed.
+          - Create a clean, empty output-<domain>/ for the new scan.
+
+        Resume strategy:
+          - Simply ensure the directory exists; no data is touched.
+        """
         if resume:
             output_dir.mkdir(exist_ok=True, parents=True)
             (output_dir / "logs").mkdir(exist_ok=True, parents=True)
             return
 
+        # Fresh scan — rotate old output into a backup directory
         if output_dir.exists():
-            shutil.rmtree(output_dir, ignore_errors=True)
+            backup_dir = output_dir.parent / f"backup-{output_dir.name.replace('output-', '', 1)}"
+            # Remove any stale backup from a prior fresh scan
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir, ignore_errors=True)
+            try:
+                shutil.move(str(output_dir), str(backup_dir))
+                self._log_queue.put(f"[*] Previous output backed up → {backup_dir.name}/")
+            except Exception as e:
+                # Move failed (e.g. cross-device) — fall back to deletion with a warning
+                shutil.rmtree(output_dir, ignore_errors=True)
+                self._log_queue.put(f"[!] Could not back up previous output ({e}); data was cleared.")
+
         output_dir.mkdir(exist_ok=True, parents=True)
         (output_dir / "logs").mkdir(exist_ok=True, parents=True)
 
@@ -229,9 +251,12 @@ class ScanEngine:
             if d.is_dir():
                 session_file = d / "session.json"
                 domain = d.name.replace("output-", "", 1)
+                backup_dir = cwd / f"backup-{domain}"
                 info = {
                     "domain": domain,
                     "output_dir": str(d),
+                    "backup_dir": str(backup_dir) if backup_dir.exists() else None,
+                    "has_backup": backup_dir.exists(),
                     "timestamp": None,
                     "version": None,
                     "results": {},
@@ -258,10 +283,13 @@ class ScanEngine:
         output_dir = Path(_project_root) / f"output-{domain}"
         if not output_dir.is_dir():
             return None
+        backup_dir  = output_dir.parent / f"backup-{domain}"
         session_file = output_dir / "session.json"
         info = {
             "domain": domain,
             "output_dir": str(output_dir),
+            "backup_dir": str(backup_dir) if backup_dir.exists() else None,
+            "has_backup": backup_dir.exists(),
             "timestamp": None,
             "version": None,
             "results": {},
@@ -557,9 +585,15 @@ class ScanEngine:
                 # Use the built-in full spectrum method
                 self._current_module = "Full Spectrum Scan"
                 oc.run_full_spectrum_scan(force_fresh=not resume)
-                if not self._abort_flag.is_set():
+                # State was already set to "aborted" by stop_scan() if the user
+                # aborted. Only override it here on a clean completion.
+                if not self._abort_flag.is_set() and self._state != "aborted":
                     self._modules_completed.append("Full Spectrum Scan")
                     self._state = "completed"
+                elif self._state != "aborted":
+                    # Scan exited for a non-abort reason (exception inside)
+                    self._state = "failed"
+                self._current_module = None
                 return
             elif mode == "custom" and modules:
                 steps = []

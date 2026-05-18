@@ -63,6 +63,9 @@ class SessionInfo(BaseModel):
     results: dict = Field(default_factory=dict)
     completed_modules: list[str] = Field(default_factory=list)
     output_dir: str = ""
+    backup_dir: Optional[str] = None
+    has_backup: bool = False
+
 
 
 class ConfigResponse(BaseModel):

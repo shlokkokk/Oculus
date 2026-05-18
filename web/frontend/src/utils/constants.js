@@ -83,6 +83,58 @@ export function expandModuleDependencies(selectedIds) {
   return { resolved, autoAdded };
 }
 
+/**
+ * Two-set dependency model.
+ * Given only the IDs the user explicitly selected (manualIds),
+ * computes which additional IDs must be auto-added as dependencies.
+ *
+ * Deselecting a manual module removes it from manualIds, then this
+ * function is called again — auto modules with no remaining manual
+ * dependant are automatically dropped from autoIds.
+ *
+ * Returns: { manualIds, autoIds, resolved }
+ *   - manualIds: normalised version of the input
+ *   - autoIds: dependencies that were added automatically
+ *   - resolved: full ordered list (manual ∪ auto) to send to the backend
+ */
+export function computeDependencyState(manualIds) {
+  const manual = new Set(manualIds);
+  const auto = new Set();
+  const queue = [...manualIds];
+
+  while (queue.length) {
+    const id = queue.shift();
+    const deps = MODULE_DEPENDENCIES[id] || [];
+    for (const dep of deps) {
+      if (!manual.has(dep) && !auto.has(dep)) {
+        auto.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+
+  const manualOrdered = normalizeModuleOrder([...manual]);
+  const autoOrdered   = normalizeModuleOrder([...auto]);
+  const resolved      = normalizeModuleOrder([...manual, ...auto]);
+  return { manualIds: manualOrdered, autoIds: autoOrdered, resolved };
+}
+
+/**
+ * Given an auto ID, return the human-readable names of the manual modules
+ * that depend on it (used for tooltip text).
+ */
+export function getAutoReason(autoId, manualIds) {
+  const reasons = [];
+  for (const mid of manualIds) {
+    const deps = MODULE_DEPENDENCIES[mid] || [];
+    if (deps.includes(autoId)) {
+      const mod = MODULES.find(m => m.id === mid);
+      if (mod) reasons.push(mod.name);
+    }
+  }
+  return reasons;
+}
+
 export const PHASES = {
   1: { name: 'Discovery', color: '#00D4AA' },
   2: { name: 'Infrastructure', color: '#3B82F6' },

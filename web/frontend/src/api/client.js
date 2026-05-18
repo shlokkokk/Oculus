@@ -32,7 +32,15 @@ export const api = {
   getReport: (domain, fmt) => request(`/api/reports/${encodeURIComponent(domain)}/${fmt}`),
 };
 
-export function createScanSocket(onMessage) {
+/**
+ * Creates a managed WebSocket wrapper with automatic reconnection.
+ *
+ * @param {function} onMessage  - called with parsed JSON messages
+ * @param {object}   socketRef  - React ref whose .current will be updated
+ *                                whenever the underlying socket reconnects,
+ *                                so callers always send on the live socket.
+ */
+export function createScanSocket(onMessage, socketRef) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
   const ws = new WebSocket(`${protocol}//${host}/ws/scan`);
@@ -45,16 +53,21 @@ export function createScanSocket(onMessage) {
   };
 
   ws.onerror = () => {};
+
   ws.onclose = () => {
     setTimeout(() => {
       if (ws._shouldReconnect !== false) {
-        createScanSocket(onMessage);
+        // Reconnect and update the caller's ref so send() stays live
+        const newSock = createScanSocket(onMessage, socketRef);
+        if (socketRef) socketRef.current = newSock;
       }
     }, 2000);
   };
 
-  return {
+  const wrapper = {
     close: () => { ws._shouldReconnect = false; ws.close(); },
-    send: (data) => { if (ws.readyState === 1) ws.send(JSON.stringify(data)); },
+    send: (data) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); },
   };
+
+  return wrapper;
 }

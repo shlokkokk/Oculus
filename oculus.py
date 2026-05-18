@@ -290,6 +290,54 @@ class Oculus:
         eh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
         self.logger.addHandler(eh)
 
+    def _rotate_output_to_backup(self):
+        """Move output-<domain>/ to backup-<domain>/, preserving previous scan data.
+
+        Safe to call any time before starting a fresh scan.  The method:
+          1. Closes any open file-log handlers so the directory can be moved.
+          2. Moves output-<domain>/ → backup-<domain>/ (replacing any prior backup).
+          3. Re-creates a clean output-<domain>/logs/ tree.
+          4. Re-attaches file logging to the new directory.
+
+        If the move fails (e.g. cross-device filesystem), it falls back to a
+        plain deletion with a clearly visible warning.
+        """
+        if not self.output_dir or not os.path.isdir(self.output_dir):
+            return
+
+        # 1. Detach file logging handlers before touching the directory
+        if self.logger:
+            for handler in list(self.logger.handlers):
+                if isinstance(handler, logging.FileHandler):
+                    try:
+                        handler.close()
+                    except Exception:
+                        pass
+                    self.logger.removeHandler(handler)
+
+        # 2. Determine backup path (sibling of output_dir)
+        output_path = Path(self.output_dir).resolve()
+        backup_path = output_path.parent / f"backup-{self.domain}"
+
+        try:
+            if backup_path.exists():
+                shutil.rmtree(str(backup_path))
+            shutil.move(str(output_path), str(backup_path))
+            print(f"{Colors.CYAN}[*] Previous output backed up → {backup_path.name}/{Colors.RESET}")
+        except Exception as e:
+            # Fall back: delete in-place with a visible warning
+            print(f"{Colors.YELLOW}[!] Could not back up previous output ({e}). Deleting instead.{Colors.RESET}")
+            if self.logger:
+                self.logger.warning(f"Backup rotation failed: {e}")
+            shutil.rmtree(str(output_path), ignore_errors=True)
+
+        # 3. Re-create fresh output directory
+        output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / 'logs').mkdir(parents=True, exist_ok=True)
+
+        # 4. Re-attach file logging to the new directory
+        self._setup_logging_full()
+
     def find_tool(self, name):
         """Unified cross-platform path detection with intelligent priority"""
         name_lower = name.lower()
@@ -857,9 +905,11 @@ class Oculus:
         for src in sources:
             hosts = self.read_file_lines(src)
             if hosts:
-                # Scope enforcement
+                # Scope enforcement — exact match or valid subdomain suffix only
+                # (prevents "evil-example.com" matching when domain="example.com")
                 for h in hosts:
-                    if self.domain in h:
+                    bare = h.replace('https://', '').replace('http://', '').split('/')[0]
+                    if bare == self.domain or bare.endswith('.' + self.domain):
                         final_hosts.append(h)
                 break
         return final_hosts if final_hosts else [self.domain]
@@ -1211,7 +1261,7 @@ class Oculus:
         nmap_bin = self.get_tool('nmap')
         cmd = (
             f"{shlex.quote(nmap_bin)} -iL {shlex.quote(final_input)} "
-            f"-p- -sV -sC -O --open -T4 -oA {shlex.quote(output_base)}"
+            f"-p- -sV -sC --open -T4 -oA {shlex.quote(output_base)}"
         )
         if self.run_command(cmd, timeout=timeout, label="nmap"):
             xml_file = f"{output_base}.xml"
@@ -2070,10 +2120,10 @@ class Oculus:
         print(f"{Colors.CYAN}[*] EyeWitness script: {script}{Colors.RESET}")
         print(f"{Colors.CYAN}[*] EyeWitness output: {target_dir}{Colors.RESET}")
         cmd = (
-            f"printf 'n\\n' | {shlex.quote(str(venv_python))} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
-            f"-d {shlex.quote(str(target_dir))} --timeout 15"
+            f"{shlex.quote(str(venv_python))} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
+            f"-d {shlex.quote(str(target_dir))} --timeout 15 --no-prompt"
         )
-        return self.run_command(cmd, timeout=1800, label='eyewitness')
+        return self.run_command(cmd, timeout=self.get_timeout(), label='eyewitness')
 
     def run_screenshot_capture(self):
         if not self._require_setup():
@@ -2562,7 +2612,7 @@ class Oculus:
         asnmap_bin = self.get_tool('asnmap')
         sd = self.safe_domain()
         cmd = f"{asnmap_bin} -d {sd} -silent"
-        if self.run_command(cmd, output_file=f"{out_dir}/asn_ranges.txt", timeout=120, label="asnmap"):
+        if self.run_command(cmd, output_file=f"{out_dir}/asn_ranges.txt", timeout=self.get_timeout(), label="asnmap"):
             count = self.count_file_lines(f"{out_dir}/asn_ranges.txt")
             print(f"{Colors.GREEN}[✔] ASN Discovery completed — found {count} CIDR ranges{Colors.RESET}")
             if count > 0:
@@ -2828,6 +2878,10 @@ class Oculus:
         existing = self._detect_existing_data(core_keys)
         if not self._warn_existing_data(existing, "Full Auto Recon"):
             return
+        # User confirmed overwrite — back up previous output first
+        if existing:
+            self._rotate_output_to_backup()
+            self.results.clear()
 
         print(f"\n{Colors.MAGENTA}{Colors.BOLD}╔══════════════════════════════════════════════════════╗")
         print(f"║          STARTING FULL AUTOMATED RECON (CORE)        ║")
@@ -2876,6 +2930,10 @@ class Oculus:
             yn = input(f"{Colors.YELLOW}[!] Launch Deep Recon on {self.domain}? (y/n): {Colors.RESET}")
             if yn.lower().strip() != 'y':
                 return
+            # Back up previous output before overwriting
+            if existing:
+                self._rotate_output_to_backup()
+                self.results.clear()
 
         print(f"\n{Colors.MAGENTA}{Colors.BOLD}╔══════════════════════════════════════════════════════╗")
         print(f"║               STARTING DEEP RECON MODE               ║")
@@ -2934,7 +2992,7 @@ class Oculus:
                 self._prev_results = {}
                 print(f"{Colors.YELLOW}[*] Force fresh scan — previous result counters cleared.{Colors.RESET}")
             elif self.config.get('auto_confirm', False):
-                skip_completed = True  # CI mode / Web default: resume
+                skip_completed = True  # CI / Web default: resume without prompting
             else:
                 parts = " | ".join(f"{k}: {v}" for k, v in existing.items())
                 print(f"\n{Colors.YELLOW}[!] Existing scan data detected for {self.domain}:{Colors.RESET}")
@@ -2947,9 +3005,11 @@ class Oculus:
                     skip_completed = True
                 elif choice == '2':
                     skip_completed = False
+                    # Rotate old output to backup-<domain>/ so data is never lost
+                    self._rotate_output_to_backup()
                     self.results.clear()
                     self._prev_results = {}
-                    print(f"{Colors.YELLOW}[*] Fresh scan — previous result counters cleared.{Colors.RESET}")
+                    print(f"{Colors.YELLOW}[*] Fresh scan — previous data backed up to backup-{self.domain}/.{Colors.RESET}")
                 else:
                     return
         else:

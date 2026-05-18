@@ -12,23 +12,26 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
   const [sqlmapLevel, setSqlmapLevel] = useState(5);
   const [sqlmapRisk, setSqlmapRisk] = useState(3);
   const [sqlmapThreads, setSqlmapThreads] = useState(10);
-  const [loading, setLoading] = useState(true);
+  const [sessionData, setSessionData] = useState(null);
 
   useEffect(() => {
-    api.getConfig()
-      .then(cfg => {
-        setThreads(cfg.threads || 50);
-        setRateLimit(cfg.rate_limit || 150);
-        setTimeout_(cfg.timeout || 300);
-        setJitter(cfg.jitter || false);
-        setSeverity(cfg.nuclei_severity || 'low,medium,high,critical');
-        setSqlmapLevel(cfg.sqlmap_level ?? 5);
-        setSqlmapRisk(cfg.sqlmap_risk ?? 3);
-        setSqlmapThreads(Math.min(cfg.sqlmap_threads ?? cfg.threads ?? 10, 10));
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+    // Fetch both config and session state in parallel
+    Promise.all([
+      api.getConfig(),
+      api.getSession(domain).catch(() => null)
+    ]).then(([cfg, sess]) => {
+      setThreads(cfg.threads || 50);
+      setRateLimit(cfg.rate_limit || 150);
+      setTimeout_(cfg.timeout || 300);
+      setJitter(cfg.jitter || false);
+      setSeverity(cfg.nuclei_severity || 'low,medium,high,critical');
+      setSqlmapLevel(cfg.sqlmap_level ?? 5);
+      setSqlmapRisk(cfg.sqlmap_risk ?? 3);
+      setSqlmapThreads(Math.min(cfg.sqlmap_threads ?? cfg.threads ?? 10, 10));
+      setSessionData(sess);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [domain]);
 
   const handleLaunch = () => {
     onLaunch({
@@ -79,6 +82,39 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
         }}>
           ⚠️ <strong>Operational Notice:</strong> Completed modules are locked and will be skipped. Changing parameters (like Nuclei severity or SQLMap risk) for already completed modules will not re-run them. To apply new parameters to completed phases, cancel this and select <strong>Start Fresh</strong> instead.
         </div>
+
+        {/* Completed Modules List */}
+        {!loading && sessionData?.completed_modules && sessionData.completed_modules.length > 0 && (
+          <div style={{
+            background: 'var(--bg-primary)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '12px 16px',
+            maxHeight: '120px',
+            overflowY: 'auto'
+          }}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>
+              Already Completed ({sessionData.completed_modules.length})
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {sessionData.completed_modules.map(mod => (
+                <span key={mod} style={{
+                  fontSize: '11px',
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  color: 'var(--accent-green)',
+                  border: '1px solid rgba(16, 185, 129, 0.2)',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <CheckCircle2 size={10} /> {mod}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Form Inputs Grid */}
         {loading ? (
@@ -276,7 +312,7 @@ export default function ScanProgress({
                     </button>
                   )}
                   <button 
-                    className="btn btn-primary" 
+                    className={`btn ${scanState === 'completed' ? 'btn-ghost' : 'btn-primary'}`}
                     onClick={() => setShowConfirmFresh(true)} 
                     style={{ 
                       padding: '6px 12px', 
@@ -284,10 +320,14 @@ export default function ScanProgress({
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      ...(scanState === 'completed' ? {
+                        border: '1.5px solid var(--border)',
+                        color: 'var(--text-secondary)',
+                      } : {}),
                     }}
                   >
-                    <Play size={12} /> Start Fresh
+                    <Play size={12} /> {scanState === 'completed' ? 'New Scan' : 'Start Fresh'}
                   </button>
                 </div>
               )}
@@ -346,15 +386,43 @@ export default function ScanProgress({
 
       {showConfirmFresh && (
         <div className="overlay" onClick={() => setShowConfirmFresh(false)} style={{ zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(5, 10, 20, 0.75)', backdropFilter: 'blur(6px)' }}>
-          <div className="dialog" style={{ width: '480px', padding: '28px', background: 'var(--bg-secondary)', border: '1px solid var(--accent-amber)', borderRadius: 'var(--radius-md)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: 0, color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 700 }}>
-              <ShieldAlert size={20} /> Relaunch Fresh Scan?
+          <div className="dialog" style={{ width: '500px', padding: '28px', background: 'var(--bg-secondary)', border: `1px solid ${scanState === 'completed' ? 'var(--border)' : 'var(--accent-amber)'}`, borderRadius: 'var(--radius-md)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: 0, color: scanState === 'completed' ? 'var(--text-primary)' : 'var(--accent-amber)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 700 }}>
+              <ShieldAlert size={20} /> {scanState === 'completed' ? 'Start a New Scan?' : 'Start Fresh Scan?'}
             </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.6', margin: 0 }}>
-              You are about to discard the current live session output. 
-              <br /><br />
-              Oculus will redirect you to the <strong>Scan Configurator</strong> page, pre-populating <strong style={{ color: 'var(--accent)' }}>{scanDomain}</strong> in <strong>{scanMode === 'full_spectrum' ? 'Full Spectrum' : scanMode + ' recon'}</strong> mode so you can customize and launch a fully fresh run from Step 1.
-            </p>
+
+            {scanState === 'completed' ? (
+              /* ── Completed → light "New Scan" dialog ── */
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.6', margin: 0 }}>
+                You will be taken to the <strong>Scan Configurator</strong>, pre-populated with{' '}
+                <strong style={{ color: 'var(--accent)' }}>{scanDomain}</strong> in{' '}
+                <strong>{scanMode === 'full_spectrum' ? 'Full Spectrum' : (scanMode || 'quick') + ' recon'}</strong> mode.
+                <br /><br />
+                Your completed results are safely stored in{' '}
+                <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>output-{scanDomain}/</code>.
+              </p>
+            ) : (
+              /* ── Aborted / Failed → warning "Start Fresh" dialog ── */
+              <>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.6', margin: 0 }}>
+                  You will be taken to the <strong>Scan Configurator</strong> to launch a fully fresh run
+                  for <strong style={{ color: 'var(--accent)' }}>{scanDomain}</strong> from Step 1.
+                </p>
+                <div style={{
+                  padding: '10px 14px', borderRadius: 6,
+                  background: 'rgba(245,158,11,0.06)',
+                  border: '1px solid rgba(245,158,11,0.2)',
+                  fontSize: 12, color: 'var(--accent-amber)', lineHeight: 1.6,
+                }}>
+                  ⚠️ Your partial output in{' '}
+                  <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>output-{scanDomain}/</code>{' '}
+                  will be <strong>automatically backed up</strong> to{' '}
+                  <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>backup-{scanDomain}/</code>{' '}
+                  before the fresh scan begins — nothing is permanently deleted.
+                </div>
+              </>
+            )}
+
             <div className="dialog-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '4px' }}>
               <button className="btn btn-ghost" onClick={() => setShowConfirmFresh(false)} style={{ fontSize: '12px', padding: '8px 16px', height: '36px' }}>
                 Cancel
@@ -368,8 +436,8 @@ export default function ScanProgress({
                 style={{ 
                   fontSize: '12px', 
                   padding: '8px 18px', 
-                  background: 'var(--accent-amber)', 
-                  borderColor: 'var(--accent-amber)',
+                  background: scanState === 'completed' ? 'var(--accent)' : 'var(--accent-amber)', 
+                  borderColor: scanState === 'completed' ? 'var(--accent)' : 'var(--accent-amber)',
                   color: 'var(--bg-primary)',
                   fontWeight: 600,
                   display: 'flex',
@@ -379,7 +447,7 @@ export default function ScanProgress({
                   cursor: 'pointer'
                 }}
               >
-                <Play size={12} /> Proceed to Configurator
+                <Play size={12} /> {scanState === 'completed' ? 'Go to Configurator' : 'Proceed to Configurator'}
               </button>
             </div>
           </div>
