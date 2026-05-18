@@ -2070,7 +2070,7 @@ class Oculus:
         print(f"{Colors.CYAN}[*] EyeWitness script: {script}{Colors.RESET}")
         print(f"{Colors.CYAN}[*] EyeWitness output: {target_dir}{Colors.RESET}")
         cmd = (
-            f"{shlex.quote(str(venv_python))} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
+            f"printf 'n\\n' | {shlex.quote(str(venv_python))} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
             f"-d {shlex.quote(str(target_dir))} --timeout 15"
         )
         return self.run_command(cmd, timeout=1800, label='eyewitness')
