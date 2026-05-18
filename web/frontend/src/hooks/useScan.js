@@ -11,6 +11,7 @@ export function useScan() {
   const [modulesCompleted, setModulesCompleted] = useState([]);
   const [modulesFailed, setModulesFailed] = useState([]);
   const [totalModules, setTotalModules] = useState(0);
+  const [progressPercent, setProgressPercent] = useState(0);
   const pollRef = useRef(null);
 
   const updateFromStatus = useCallback((data) => {
@@ -24,6 +25,7 @@ export function useScan() {
     setModulesCompleted(data.modules_completed || []);
     setModulesFailed(data.modules_failed || []);
     setTotalModules(data.total_modules || 0);
+    setProgressPercent(data.progress_percent ?? 0);
   }, []);
 
   const pollStatus = useCallback(async () => {
@@ -72,7 +74,7 @@ export function useScan() {
 
   return {
     scanState, scanDomain, scanMode, currentModule, currentPhase,
-    elapsed, modulesCompleted, modulesFailed, totalModules,
+    elapsed, modulesCompleted, modulesFailed, totalModules, progressPercent,
     startScan, stopScan, pollStatus, updateFromStatus,
   };
 }

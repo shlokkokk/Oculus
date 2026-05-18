@@ -246,6 +246,7 @@ export default function ScanProgress({
   modulesCompleted, 
   modulesFailed, 
   totalModules, 
+  progressPercent,
   logs, 
   onStop, 
   onStartScan, 
@@ -257,7 +258,7 @@ export default function ScanProgress({
   const [showResumeModal, setShowResumeModal] = useState(false);
   
   const isCompleted = scanState === 'completed';
-  const progress = isCompleted ? 100 : (totalModules > 0 ? Math.round((modulesCompleted.length / totalModules) * 100) : 0);
+  const progress = isCompleted ? 100 : (progressPercent !== undefined ? progressPercent : (totalModules > 0 ? Math.round((modulesCompleted.length / totalModules) * 100) : 0));
   const isRunning = scanState === 'running';
 
   const fmtTime = (s) => {

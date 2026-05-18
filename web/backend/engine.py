@@ -50,13 +50,49 @@ def kill_zombie_scanners():
         pass
 
 
+MODULE_SUBTOOLS = {
+    "Subdomain Enumeration": ["Subfinder", "Amass", "Assetfinder"],
+    "DNS Bruteforce": ["MassDNS"],
+    "DNS Resolution": ["DNS resolution"],
+    "Alive Hosts Check": ["HTTPX", "HTTProbe"],
+    "ASN Discovery": ["ASN Discovery"],
+    "Cloud Asset Discovery": ["Cloud Discovery"],
+    "OSINT Harvesting": ["OSINT Harvesting"],
+    "Shodan Recon": ["Shodan"],
+    "GitHub Dorking": ["GitHub Dorks"],
+    "Fast Port Scan": ["Naabu"],
+    "Full Port Scan": ["Nmap"],
+    "Tech Scan": ["WhatWeb scan"],
+    "WAF Detection": ["WAF detection"],
+    "Screenshot Capture": ["EyeWitness", "GoWitness"],
+    "URL Collection": ["Waybackurls", "Gau"],
+    "Advanced URL Enum": ["Hakrawler"],
+    "Parameter Discovery": ["ParamSpider", "Arjun"],
+    "JS Endpoint Extraction": ["LinkFinder"],
+    "Subdomain Takeover Check": ["Subzy check"],
+    "Vulnerability Scan (Nuclei)": ["Vulnerability scan"],
+    "Vulnerability Scan": ["Vulnerability scan"],
+    "GF Filters": ["GF filters"],
+    "Directory Fuzzing": ["FFUF"],
+    "API Fuzzing": ["API fuzzing"],
+    "SQLi Scan": ["SQLMap scan"],
+    "XSS Scan (Dalfox)": ["Dalfox XSS scan"],
+    "XSS Scan": ["Dalfox XSS scan"],
+    "Open Redirect Scan": ["Open Redirect Scan"],
+    "CORS Scanner": ["CORS Scan"],
+    "CORS Scan": ["CORS Scan"],
+    "HTTP Smuggling": ["Smuggler scan"],
+}
+
+
 class OutputCapture:
     """Thread-safe stdout capture that feeds lines to a queue."""
 
-    def __init__(self, log_queue: queue.Queue, original_stdout):
+    def __init__(self, log_queue: queue.Queue, original_stdout, engine=None):
         self._queue = log_queue
         self._original = original_stdout
         self._lock = threading.Lock()
+        self._engine = engine
 
     def write(self, text: str):
         if text and text.strip():
@@ -64,6 +100,8 @@ class OutputCapture:
             if clean:
                 with self._lock:
                     self._queue.put(clean)
+                if self._engine:
+                    self._engine.parse_subtool_completion(clean)
         # Also write to original stdout so server logs still work
         if self._original:
             try:
@@ -93,6 +131,7 @@ class ScanEngine:
         self._log_lock = threading.Lock()
         self._start_time: float = 0
         self._modules_completed: list[str] = []
+        self._subtools_completed: set[str] = set()
         self._modules_failed: list[str] = []
         self._current_module: Optional[str] = None
         self._total_modules: int = 0
@@ -130,6 +169,24 @@ class ScanEngine:
             failed = list(dict.fromkeys(failed + failed_names))
         if self._oculus and hasattr(self._oculus, "current_phase"):
             current_phase = self._oculus.current_phase
+
+        # Calculate granular, real-time micro-progress percentage
+        completed_count = len(completed)
+        progress_percent = 0
+        if self._total_modules > 0:
+            fraction = 0.0
+            if self._current_module:
+                norm_module = self._current_module.strip()
+                if norm_module in MODULE_SUBTOOLS:
+                    subtools = [st.lower() for st in MODULE_SUBTOOLS[norm_module]]
+                    completed_subtools = [st for st in subtools if st in self._subtools_completed]
+                    fraction = len(completed_subtools) / len(subtools)
+            
+            progress_percent = int(((completed_count + fraction) / self._total_modules) * 100)
+            progress_percent = min(progress_percent, 99)
+            
+        if self._state == "completed":
+            progress_percent = 100
             
         return {
             "state": self._state,
@@ -142,7 +199,16 @@ class ScanEngine:
             "modules_failed": failed,
             "total_modules": self._total_modules,
             "log_line_count": len(self._log_lines),
+            "progress_percent": progress_percent,
         }
+
+    def parse_subtool_completion(self, line: str):
+        """Parse real-time stdout logs to discover when nested sub-tools finish execution."""
+        match = re.search(r"\[[✔\?\+\*]\]\s*([\w\s\-]+?)\s*completed", line)
+        if match:
+            tool_name = match.group(1).strip().lower()
+            with self._log_lock:
+                self._subtools_completed.add(tool_name)
 
     def get_logs(self, since: int = 0) -> list[str]:
         """Return log lines since the given index."""
@@ -446,6 +512,7 @@ class ScanEngine:
         with self._log_lock:
             self._log_lines = []
         self._modules_completed = []
+        self._subtools_completed = set()
         self._modules_failed = []
         self._current_module = None
         self._total_modules = 0
@@ -512,7 +579,7 @@ class ScanEngine:
 
         # Redirect stdout to capture output
         original_stdout = sys.stdout
-        capture = OutputCapture(self._log_queue, original_stdout)
+        capture = OutputCapture(self._log_queue, original_stdout, engine=self)
         sys.stdout = capture
 
         try:
