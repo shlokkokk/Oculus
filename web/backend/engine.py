@@ -10,7 +10,6 @@ import time
 import threading
 import queue
 import re
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -143,13 +142,6 @@ class ScanEngine:
             "total_modules": self._total_modules,
             "log_line_count": len(self._log_lines),
         }
-
-    def _prepare_output_dir(self, output_dir: Path, fresh: bool):
-        """Create a clean output directory when starting fresh."""
-        if fresh and output_dir.exists():
-            shutil.rmtree(output_dir, ignore_errors=True)
-        output_dir.mkdir(exist_ok=True, parents=True)
-        (output_dir / "logs").mkdir(exist_ok=True, parents=True)
 
     def get_logs(self, since: int = 0) -> list[str]:
         """Return log lines since the given index."""
@@ -493,13 +485,12 @@ class ScanEngine:
 
             # Setup domain and use absolute path for output to prevent cwd mismatch
             oc.domain = domain
-            output_dir = Path(_project_root) / f"output-{domain}"
-            oc.output_dir = str(output_dir)
-            self._prepare_output_dir(output_dir, fresh=not resume)
+            oc.output_dir = str(Path(_project_root) / f"output-{domain}")
+            Path(oc.output_dir).mkdir(exist_ok=True, parents=True)
+            Path(f"{oc.output_dir}/logs").mkdir(exist_ok=True, parents=True)
             oc._setup_logging_full()
             oc.setup_complete = True
-            if resume:
-                oc.load_session()
+            oc.load_session()
 
             if self._abort_flag.is_set():
                 self._state = "aborted"
