@@ -10,6 +10,7 @@ import time
 import threading
 import queue
 import re
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -158,6 +159,18 @@ class ScanEngine:
                     self._log_lines.append(line)
                 except queue.Empty:
                     break
+
+    def _prepare_web_output_dir(self, output_dir: Path, resume: bool):
+        """Prepare scan output directory for web flows without changing CLI behavior."""
+        if resume:
+            output_dir.mkdir(exist_ok=True, parents=True)
+            (output_dir / "logs").mkdir(exist_ok=True, parents=True)
+            return
+
+        if output_dir.exists():
+            shutil.rmtree(output_dir, ignore_errors=True)
+        output_dir.mkdir(exist_ok=True, parents=True)
+        (output_dir / "logs").mkdir(exist_ok=True, parents=True)
 
     def check_tools(self, force: bool = False) -> dict:
         """Run tool initialization and cache the results."""
@@ -495,12 +508,15 @@ class ScanEngine:
 
             # Setup domain and use absolute path for output to prevent cwd mismatch
             oc.domain = domain
-            oc.output_dir = str(Path(_project_root) / f"output-{domain}")
-            Path(oc.output_dir).mkdir(exist_ok=True, parents=True)
-            Path(f"{oc.output_dir}/logs").mkdir(exist_ok=True, parents=True)
+            output_dir = Path(_project_root) / f"output-{domain}"
+            self._prepare_web_output_dir(output_dir, resume=resume)
+            oc.output_dir = str(output_dir)
             oc._setup_logging_full()
             oc.setup_complete = True
-            oc.load_session()
+            if resume:
+                oc.load_session()
+            else:
+                print("[*] Fresh web scan mode: previous output for this domain was cleared")
 
             if self._abort_flag.is_set():
                 self._state = "aborted"
@@ -590,7 +606,7 @@ class ScanEngine:
                     pass
 
             self._current_module = None
-            self._state = "failed" if self._modules_failed and not self._modules_completed else "completed"
+            self._state = "failed" if self._modules_failed else "completed"
 
         except Exception as e:
             self._log_queue.put(f"[FATAL] Scan engine error: {e}")

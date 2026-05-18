@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Play, Zap, Layers, Globe, Settings, ShieldAlert, Flame, EyeOff, RotateCcw } from 'lucide-react';
-import { SCAN_MODES, MODULES } from '../utils/constants';
+import { SCAN_MODES, MODULES, expandModuleDependencies } from '../utils/constants';
 import { api } from '../api/client';
 import ModuleSelector from './ModuleSelector';
 
@@ -21,6 +21,12 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
   const [configLoaded, setConfigLoaded] = useState(false);
+  const [dependencyNotice, setDependencyNotice] = useState(null);
+
+  const moduleNameById = MODULES.reduce((acc, mod) => {
+    acc[mod.id] = mod.name;
+    return acc;
+  }, {});
 
   useEffect(() => {
     if (defaultDomain) setDomain(defaultDomain);
@@ -43,6 +49,20 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
 
   const domainValid = /^[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(domain);
   const canStart = domainValid && scanState !== 'running' && (mode !== 'custom' || modules.length > 0);
+
+  const applyModuleSelection = (nextSelection, trigger) => {
+    const { resolved, autoAdded } = expandModuleDependencies(nextSelection);
+    setModules(resolved);
+    if (autoAdded.length > 0) {
+      const addedNames = autoAdded.map(id => moduleNameById[id] || id);
+      setDependencyNotice({
+        trigger: trigger && moduleNameById[trigger] ? moduleNameById[trigger] : 'selected modules',
+        addedNames,
+      });
+    } else {
+      setDependencyNotice(null);
+    }
+  };
 
   const handleStart = () => {
     setError('');
@@ -115,7 +135,27 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       {mode === 'custom' && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-title" style={{ marginBottom: 12 }}>Select Modules ({modules.length} selected)</div>
-          <ModuleSelector selected={modules} onChange={setModules} disabled={scanState === 'running'} />
+          {dependencyNotice && (
+            <div style={{
+              marginBottom: 12,
+              padding: '10px 12px',
+              borderRadius: 8,
+              border: '1px solid rgba(0, 212, 170, 0.25)',
+              background: 'rgba(0, 212, 170, 0.08)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}>
+              <strong style={{ color: 'var(--accent)' }}>Auto-selected for best results:</strong> {dependencyNotice.addedNames.join(', ')}.
+              <br />
+              <span style={{ color: 'var(--text-secondary)' }}>These modules provide required inputs for {dependencyNotice.trigger}.</span>
+            </div>
+          )}
+          <ModuleSelector
+            selected={modules}
+            onChange={(next, meta) => applyModuleSelection(next, meta?.trigger || null)}
+            disabled={scanState === 'running'}
+          />
         </div>
       )}
 

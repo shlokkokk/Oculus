@@ -29,6 +29,60 @@ export const MODULES = [
   { id: 'shodan', name: 'Shodan Recon', num: 28, phase: 5, tool: 'Shodan API' },
 ];
 
+export const MODULE_DEPENDENCIES = {
+  dns: ['subdomain'],
+  alive: ['subdomain', 'dns'],
+  dnsbrute: ['subdomain'],
+  ports: ['alive'],
+  fullports: ['alive'],
+  waf: ['alive'],
+  screenshots: ['alive'],
+  tech: ['alive'],
+  api: ['alive'],
+  hakrawler: ['alive'],
+  vuln: ['alive'],
+  fuzz: ['alive'],
+  takeover: ['subdomain'],
+  params: ['urls'],
+  js: ['urls'],
+  gf: ['urls'],
+  sqli: ['gf', 'alive'],
+  xss: ['gf', 'alive'],
+  redirect: ['gf', 'alive'],
+  cors: ['alive'],
+  smuggling: ['alive'],
+};
+
+const MODULE_ORDER = new Map(MODULES.map((m, i) => [m.id, i]));
+
+export function normalizeModuleOrder(ids) {
+  return [...new Set(ids)].sort((a, b) => {
+    const ai = MODULE_ORDER.has(a) ? MODULE_ORDER.get(a) : 10_000;
+    const bi = MODULE_ORDER.has(b) ? MODULE_ORDER.get(b) : 10_000;
+    return ai - bi;
+  });
+}
+
+export function expandModuleDependencies(selectedIds) {
+  const selected = new Set(selectedIds);
+  const queue = [...selectedIds];
+
+  while (queue.length) {
+    const id = queue.shift();
+    const deps = MODULE_DEPENDENCIES[id] || [];
+    for (const dep of deps) {
+      if (!selected.has(dep)) {
+        selected.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+
+  const resolved = normalizeModuleOrder([...selected]);
+  const autoAdded = resolved.filter((id) => !selectedIds.includes(id));
+  return { resolved, autoAdded };
+}
+
 export const PHASES = {
   1: { name: 'Discovery', color: '#00D4AA' },
   2: { name: 'Infrastructure', color: '#3B82F6' },

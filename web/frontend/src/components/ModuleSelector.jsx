@@ -1,10 +1,11 @@
 import { Check } from 'lucide-react';
-import { MODULES, PHASES } from '../utils/constants';
+import { MODULES, PHASES, normalizeModuleOrder } from '../utils/constants';
 
 export default function ModuleSelector({ selected, onChange, disabled }) {
   const toggle = (id) => {
     if (disabled) return;
-    onChange(selected.includes(id) ? selected.filter(m => m !== id) : [...selected, id]);
+    const next = selected.includes(id) ? selected.filter(m => m !== id) : [...selected, id];
+    onChange(normalizeModuleOrder(next), { source: 'toggle', trigger: id });
   };
 
   const selectPhase = (phase) => {
@@ -12,9 +13,15 @@ export default function ModuleSelector({ selected, onChange, disabled }) {
     const phaseModules = MODULES.filter(m => m.phase === phase).map(m => m.id);
     const allSelected = phaseModules.every(id => selected.includes(id));
     if (allSelected) {
-      onChange(selected.filter(id => !phaseModules.includes(id)));
+      onChange(normalizeModuleOrder(selected.filter(id => !phaseModules.includes(id))), {
+        source: 'phase',
+        trigger: null,
+      });
     } else {
-      onChange([...new Set([...selected, ...phaseModules])]);
+      onChange(normalizeModuleOrder([...selected, ...phaseModules]), {
+        source: 'phase',
+        trigger: null,
+      });
     }
   };
 
