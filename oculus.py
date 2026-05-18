@@ -2055,13 +2055,13 @@ class Oculus:
             return None
 
         target_dir = Path(out_dir) / 'eyewitness'
-        # EyeWitness prompts for overwrite if output dir already exists; recreate for non-interactive runs.
+        # EyeWitness prompts for overwrite if output dir exists at startup.
+        # Remove it and keep it absent so execution remains non-interactive.
         if target_dir.exists():
             try:
                 shutil.rmtree(target_dir)
             except Exception:
                 pass
-        target_dir.mkdir(parents=True, exist_ok=True)
 
         venv_python = self._prepare_eyewitness_python(script)
         if not venv_python:
