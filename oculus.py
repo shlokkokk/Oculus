@@ -487,6 +487,9 @@ class Oculus:
 
     def run_command(self, command, output_file=None, timeout=None, stream=True, label=None, get_code=False):
         """Execute a shell command with optional real-time streaming and output redirection"""
+        if getattr(self, 'abort_requested', False):
+            return -1 if get_code else False
+
         if self.config.get('jitter'):
             time.sleep(random.uniform(0.1, 0.5))
 
@@ -617,13 +620,21 @@ class Oculus:
         """Run command with retry logic"""
         retries = retries or self.config.get('retry_count', 2)
         for attempt in range(retries + 1):
+            if getattr(self, 'abort_requested', False):
+                return False
             if self.run_command(command, output_file=output_file, timeout=timeout, label=label):
                 return True
+            if getattr(self, 'abort_requested', False):
+                return False
             if attempt < retries:
                 delay = self.config.get('retry_delay', 5) * (attempt + 1)
+                # Check abort during retry delay sleep
+                for _ in range(delay):
+                    if getattr(self, 'abort_requested', False):
+                        return False
+                    time.sleep(1)
                 print(f"{Colors.YELLOW}[!] Retry {attempt+1}/{retries} in {delay}s...{Colors.RESET}")
                 self.logger.warning(f"Retry {attempt+1}: {command}")
-                time.sleep(delay)
         return False
 
     def safe_domain(self):
