@@ -426,25 +426,28 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
             {[
               {
                 key: 'kali', label: 'Kali Native', Icon: ShieldAlert,
-                fg: '#B975FF', bg: 'rgba(168,85,247,0.06)', border: 'rgba(168,85,247,0.15)',
-                bgHov: 'rgba(168,85,247,0.14)', borderHov: 'rgba(168,85,247,0.35)',
+                fg: '#C084FC', bgActive: 'rgba(168,85,247,0.15)', borderActive: 'rgba(168,85,247,0.45)',
+                glowActive: 'rgba(168,85,247,0.3)',
+                bgHov: 'rgba(168,85,247,0.08)', borderHov: 'rgba(168,85,247,0.3)'
               },
               {
                 key: 'fast', label: 'High Performance', Icon: Flame,
-                fg: 'var(--accent-green)', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.15)',
-                bgHov: 'rgba(16,185,129,0.14)', borderHov: 'rgba(16,185,129,0.35)',
+                fg: 'var(--accent-green)', bgActive: 'rgba(0,212,170,0.15)', borderActive: 'rgba(0,212,170,0.45)',
+                glowActive: 'rgba(0,212,170,0.3)',
+                bgHov: 'rgba(0,212,170,0.08)', borderHov: 'rgba(0,212,170,0.3)'
               },
               {
                 key: 'stealth', label: 'Stealth Ops', Icon: EyeOff,
-                fg: 'var(--accent-amber)', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.15)',
-                bgHov: 'rgba(245,158,11,0.14)', borderHov: 'rgba(245,158,11,0.35)',
+                fg: 'var(--accent-amber)', bgActive: 'rgba(245,158,11,0.15)', borderActive: 'rgba(245,158,11,0.45)',
+                glowActive: 'rgba(245,158,11,0.3)',
+                bgHov: 'rgba(245,158,11,0.08)', borderHov: 'rgba(245,158,11,0.3)'
               },
-            ].map(({ key, label, Icon, fg, bg, border, bgHov, borderHov }) => {
+            ].map(({ key, label, Icon, fg, bgActive, borderActive, glowActive, bgHov, borderHov }) => {
               const isActive = activePreset === key;
-              const btnBg = isActive ? bg : 'rgba(255,255,255,0.01)';
-              const btnBorder = isActive ? `1px solid ${border}` : '1px solid var(--border)';
+              const btnBg = isActive ? bgActive : 'rgba(255,255,255,0.01)';
+              const btnBorder = isActive ? `1px solid ${borderActive}` : '1px solid var(--border)';
               const btnColor = isActive ? fg : 'var(--text-secondary)';
-              const btnShadow = isActive ? `0 0 12px ${bg}` : 'none';
+              const btnShadow = isActive ? `0 0 16px ${glowActive}` : 'none';
 
               return (
                 <button
@@ -455,6 +458,7 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
                   onClick={() => applyPreset(key)}
                   style={{
                     fontSize: 11,
+                    fontWeight: isActive ? 600 : 500,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
@@ -463,17 +467,17 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
                     border: btnBorder,
                     color: btnColor,
                     boxShadow: btnShadow,
-                    transition: 'all 0.2s ease',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.background = bgHov;
-                    e.currentTarget.style.borderColor = borderHov;
-                    e.currentTarget.style.boxShadow = `0 0 12px ${bg}`;
+                    e.currentTarget.style.background = isActive ? bgActive : bgHov;
+                    e.currentTarget.style.borderColor = isActive ? borderActive : borderHov;
+                    e.currentTarget.style.boxShadow = `0 0 16px ${glowActive}`;
                     e.currentTarget.style.color = fg;
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.background = btnBg;
-                    e.currentTarget.style.borderColor = isActive ? border : 'var(--border)';
+                    e.currentTarget.style.borderColor = isActive ? borderActive : 'var(--border)';
                     e.currentTarget.style.boxShadow = btnShadow;
                     e.currentTarget.style.color = btnColor;
                   }}

@@ -481,6 +481,10 @@ class Oculus:
         resolved = self._which_tool(fallback or name)
         return resolved or fallback or name
 
+    def get_timeout(self):
+        """Return the default configuration timeout, fallback to 300 seconds"""
+        return self.config.get('timeout') or self.config.get('default_timeout') or 300
+
     def run_command(self, command, output_file=None, timeout=None, stream=True, label=None, get_code=False):
         """Execute a shell command with optional real-time streaming and output redirection"""
         if self.config.get('jitter'):
@@ -2123,7 +2127,22 @@ class Oculus:
             f"{shlex.quote(str(venv_python))} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
             f"-d {shlex.quote(str(target_dir))} --timeout 15 --no-prompt"
         )
-        return self.run_command(cmd, timeout=self.get_timeout(), label='eyewitness')
+        
+        # Calculate dynamic, scaled timeout based on number of active web domains
+        target_count = 1
+        if alive_file and os.path.exists(alive_file):
+            target_count = max(1, self.count_file_lines(alive_file))
+            
+        base_timeout = 600
+        per_target = 60
+        timeout = min(18000, max(900, base_timeout + (target_count * per_target)))
+        
+        hours, remainder = divmod(timeout, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        budget = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+        print(f"{Colors.CYAN}[*] EyeWitness timeout budget: {budget} for {target_count} target(s){Colors.RESET}")
+
+        return self.run_command(cmd, timeout=timeout, label='eyewitness')
 
     def run_screenshot_capture(self):
         if not self._require_setup():
@@ -2603,18 +2622,76 @@ class Oculus:
     # MODULE 24: ASN DISCOVERY
 
     def run_asn_discovery(self):
-        """Discover ASN and IP ranges using asnmap"""
-        if not self._require_setup() or not self._require_tool('asnmap'):
+        """Discover ASN and IP ranges using asnmap, with a high-fidelity Python WHOIS fallback"""
+        if not self._require_setup():
             return
+        
+        # Check and attempt to verify/install asnmap, but don't hard abort if it's missing
+        has_asnmap = self._require_tool('asnmap')
+        
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting ASN & IP Range Discovery...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/asn"
         Path(out_dir).mkdir(exist_ok=True)
-        asnmap_bin = self.get_tool('asnmap')
-        sd = self.safe_domain()
-        cmd = f"{asnmap_bin} -d {sd} -silent"
-        if self.run_command(cmd, output_file=f"{out_dir}/asn_ranges.txt", timeout=self.get_timeout(), label="asnmap"):
-            count = self.count_file_lines(f"{out_dir}/asn_ranges.txt")
-            print(f"{Colors.GREEN}[✔] ASN Discovery completed — found {count} CIDR ranges{Colors.RESET}")
+        out_file = f"{out_dir}/asn_ranges.txt"
+        
+        asnmap_bin = self.get_tool('asnmap') if has_asnmap else None
+        success = False
+        
+        if asnmap_bin:
+            sd = self.safe_domain()
+            cmd = f"{asnmap_bin} -d {sd} -silent"
+            success = self.run_command(cmd, output_file=out_file, timeout=300, label="asnmap")
+            
+        if not success:
+            sd = self.safe_domain()
+            print(f"{Colors.YELLOW}[*] asnmap not available or failed; launching high-fidelity BGP/WHOIS fallback...{Colors.RESET}")
+            try:
+                import socket
+                ip = socket.gethostbyname(sd)
+                print(f"  {Colors.CYAN}[+] Resolved {sd} to {ip}{Colors.RESET}")
+                
+                import subprocess
+                import re
+                whois_cmd = f"whois {shlex.quote(ip)}"
+                r = subprocess.run(whois_cmd, shell=True, capture_output=True, text=True, timeout=20)
+                if r.returncode == 0:
+                    output = r.stdout
+                    ranges = set()
+                    asns = set()
+                    
+                    cidr_pattern = re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}\b')
+                    for block in cidr_pattern.findall(output):
+                        ranges.add(block)
+                        
+                    netrange_match = re.search(r'(?i)(NetRange|inetnum):\s*([0-9.]+)\s*-\s*([0-9.]+)', output)
+                    if netrange_match and not ranges:
+                        ranges.add(f"{netrange_match.group(2)} - {netrange_match.group(3)}")
+                        
+                    asn_match = re.findall(r'(?i)(origin|ASNumber|ASN):\s*(AS\d+|\d+)', output)
+                    for item in asn_match:
+                        asn_val = item[1]
+                        if not asn_val.upper().startswith('AS'):
+                            asn_val = f"AS{asn_val}"
+                        asns.add(asn_val)
+                        
+                    if ranges or asns:
+                        with open(out_file, 'w', encoding='utf-8') as f:
+                            if asns:
+                                f.write(f"# Discovered ASNs: {', '.join(sorted(asns))}\n")
+                            for rng in sorted(ranges):
+                                f.write(f"{rng}\n")
+                        success = True
+            except Exception as e:
+                self.logger.error(f"ASN fallback failed: {e}")
+                
+        if success:
+            count = self.count_file_lines(out_file)
+            if count > 0:
+                with open(out_file, 'r', encoding='utf-8') as f:
+                    first = f.read(100)
+                if '# Discovered ASNs' in first:
+                    count = max(0, count - 1)
+            print(f"{Colors.GREEN}[✔] ASN Discovery completed — found {count} CIDR range(s){Colors.RESET}")
             if count > 0:
                 print(f"{Colors.YELLOW}[!] Use these ranges in Nmap for full attack surface scanning{Colors.RESET}")
         else:
@@ -3364,6 +3441,7 @@ class Oculus:
             ports = self.read_file_lines(f"{self.output_dir}/ports_fast.txt")
         params = self.read_file_lines(f"{self.output_dir}/parameters/parameters_final.txt")
         urls = self.read_file_lines(f"{self.output_dir}/urls_final.txt")
+        asn_ranges = self.read_file_lines(f"{self.output_dir}/asn/asn_ranges.txt")
         
         vulns_file = f"{self.output_dir}/nuclei_output.jsonl"
         vulns = []
@@ -3488,7 +3566,8 @@ function sortTable(n) {
             ("🟢 Alive Hosts", alive, 200),
             ("🔌 Open Ports", ports, 200),
             ("🔗 URLs", urls, 200),
-            ("📝 Parameters", params, 200)
+            ("📝 Parameters", params, 200),
+            ("🌐 ASN IP Ranges", asn_ranges, 200)
         ]
         
         for title, data, limit in sections:
@@ -3530,6 +3609,7 @@ function sortTable(n) {
             'open_ports': ports,
             'urls': self.read_file_lines(f"{self.output_dir}/urls_final.txt")[:1000],
             'parameters': self.read_file_lines(f"{self.output_dir}/parameters/parameters_final.txt")[:1000],
+            'asn_ranges': self.read_file_lines(f"{self.output_dir}/asn/asn_ranges.txt"),
         }
         # Parse vulnerabilities
         vulns_file = f"{self.output_dir}/nuclei_output.jsonl"
@@ -3559,6 +3639,7 @@ function sortTable(n) {
             ports = self.read_file_lines(f"{self.output_dir}/ports_fast.txt")
         params = self.read_file_lines(f"{self.output_dir}/parameters/parameters_final.txt")
         urls = self.read_file_lines(f"{self.output_dir}/urls_final.txt")
+        asn_ranges = self.read_file_lines(f"{self.output_dir}/asn/asn_ranges.txt")
         
         # Collect screenshots
         screenshots_dir = Path(f"{self.output_dir}/screenshots")
@@ -3638,6 +3719,19 @@ function sortTable(n) {
                     f.write(f"- {p}\n")
                 if len(ports) > 100:
                     f.write(f"\n*... and {len(ports) - 100} more open ports*\n")
+                f.write("\n---\n\n")
+
+            # ASN IP Ranges
+            if asn_ranges:
+                clean_ranges = [r for r in asn_ranges if not r.startswith('#')]
+                comments = [r for r in asn_ranges if r.startswith('#')]
+                f.write(f"## 🌐 ASN IP Ranges ({len(clean_ranges)})\n\n")
+                for c in comments:
+                    f.write(f"*{c.lstrip('#').strip()}*\n\n")
+                for r in clean_ranges[:100]:
+                    f.write(f"- {r}\n")
+                if len(clean_ranges) > 100:
+                    f.write(f"\n*... and {len(clean_ranges) - 100} more ASN IP ranges*\n")
                 f.write("\n---\n\n")
 
             # URLs
