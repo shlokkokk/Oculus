@@ -38,7 +38,8 @@ def kill_zombie_scanners():
         tools = [
             "dalfox", "sqlmap", "theHarvester", "nuclei", "naabu",
             "gowitness", "EyeWitness.py", "eyewitness.py",
-            "ffuf", "subfinder", "massdns", "dnsx",
+            "ffuf", "subfinder", "massdns", "dnsx", "amass",
+            "assetfinder", "katana", "gau", "waybackurls", "whatweb", "chromium"
         ]
         pattern = "|".join(tools)
         # Using WSL if on Windows, or direct call on Linux

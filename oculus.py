@@ -546,19 +546,55 @@ class Oculus:
                 
             elif output_file:
                 with open(output_file, 'w') as f:
-                    result = subprocess.run(
-                        command, shell=True, stdout=f, stderr=subprocess.STDOUT,
+                    proc = subprocess.Popen(
+                        command, shell=True,
                         stdin=subprocess.DEVNULL,
-                        timeout=timeout, text=True
+                        stdout=f, stderr=subprocess.STDOUT,
+                        text=True
                     )
-                return result.returncode if get_code else (result.returncode == 0)
+                    with self._proc_lock:
+                        self.active_processes.append(proc)
+                    try:
+                        proc.wait(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                        print(f"{Colors.RED}[!] Command timed out after {timeout}s{Colors.RESET}")
+                        self.logger.error(f"Timeout: {command}")
+                        with self._proc_lock:
+                            if proc in self.active_processes:
+                                self.active_processes.remove(proc)
+                        return -1 if get_code else False
+                    finally:
+                        with self._proc_lock:
+                            if proc in self.active_processes:
+                                self.active_processes.remove(proc)
+                return proc.returncode if get_code else (proc.returncode == 0)
                 
             else:
-                result = subprocess.run(
-                    command, shell=True, stdin=subprocess.DEVNULL, capture_output=True,
-                    timeout=timeout, text=True
+                proc = subprocess.Popen(
+                    command, shell=True, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True
                 )
-                return result.returncode if get_code else (result.returncode == 0)
+                with self._proc_lock:
+                    self.active_processes.append(proc)
+                try:
+                    stdout, stderr = proc.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    print(f"{Colors.RED}[!] Command timed out after {timeout}s{Colors.RESET}")
+                    self.logger.error(f"Timeout: {command}")
+                    with self._proc_lock:
+                        if proc in self.active_processes:
+                            self.active_processes.remove(proc)
+                    return -1 if get_code else False
+                finally:
+                    with self._proc_lock:
+                        if proc in self.active_processes:
+                            self.active_processes.remove(proc)
+                return proc.returncode if get_code else (proc.returncode == 0)
                 
         except subprocess.TimeoutExpired:
             print(f"{Colors.RED}[!] Command timed out after {timeout} seconds{Colors.RESET}")

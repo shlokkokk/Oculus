@@ -13,6 +13,7 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
   const [sqlmapRisk, setSqlmapRisk] = useState(3);
   const [sqlmapThreads, setSqlmapThreads] = useState(10);
   const [sessionData, setSessionData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Fetch both config and session state in parallel
