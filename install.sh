@@ -123,7 +123,7 @@ sudo apt-get update -qq 2>/dev/null || log_warn "apt-get update had warnings"
 
 APT_PACKAGES=(
     git wget curl unzip jq
-    python3-pip python3-venv python3-dev
+    python3-pip python3-venv python3-dev python3-selenium
     build-essential libpcap-dev
     nmap massdns wafw00f whatweb sqlmap
     dnsutils chromium chromium-driver

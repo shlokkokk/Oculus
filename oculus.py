@@ -1988,6 +1988,66 @@ class Oculus:
         )
         return self.run_command(cmd, timeout=900, label='gowitness')
 
+    def _python_has_module(self, python_bin, module_name):
+        try:
+            r = subprocess.run(
+                [str(python_bin), "-c", f"import {module_name}"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    def _prepare_eyewitness_python(self, script_path):
+        script_path = Path(script_path).resolve()
+        eyew_root = script_path.parent.parent
+        venv_python = eyew_root / 'eyewitness-venv' / 'bin' / 'python'
+
+        # Fast path: existing venv with selenium works.
+        if venv_python.exists() and self._python_has_module(venv_python, 'selenium'):
+            return str(venv_python)
+
+        print(f"{Colors.CYAN}[*] EyeWitness environment not ready; attempting auto-setup...{Colors.RESET}")
+
+        setup_script = eyew_root / 'setup' / 'setup.sh'
+        if setup_script.exists():
+            for cmd in (["bash", str(setup_script)], ["sudo", "bash", str(setup_script)]):
+                try:
+                    r = subprocess.run(
+                        cmd,
+                        cwd=str(eyew_root),
+                        capture_output=True,
+                        text=True,
+                        timeout=900,
+                    )
+                    if r.returncode == 0 and venv_python.exists() and self._python_has_module(venv_python, 'selenium'):
+                        print(f"{Colors.GREEN}[✔] EyeWitness venv auto-setup completed{Colors.RESET}")
+                        return str(venv_python)
+                except Exception:
+                    continue
+
+        # Fallback: build venv manually and install requirements.
+        py_req = eyew_root / 'Python' / 'requirements.txt'
+        sys_python = shutil.which('python3') or sys.executable
+        try:
+            subprocess.run([sys_python, '-m', 'venv', str(eyew_root / 'eyewitness-venv')], capture_output=True, text=True, timeout=180)
+            if venv_python.exists() and py_req.exists():
+                subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', str(py_req)], capture_output=True, text=True, timeout=900)
+                if self._python_has_module(venv_python, 'selenium'):
+                    print(f"{Colors.GREEN}[✔] EyeWitness manual venv bootstrap completed{Colors.RESET}")
+                    return str(venv_python)
+        except Exception:
+            pass
+
+        # Last resort: system python if selenium is available there.
+        if self._python_has_module(sys_python, 'selenium'):
+            return str(sys_python)
+
+        print(f"{Colors.YELLOW}[!] EyeWitness prerequisites missing (selenium/venv). Install with ./install.sh and retry.{Colors.RESET}")
+        return None
+
     def _capture_with_eyewitness(self, alive_file, out_dir):
         script = self.find_tool('eyewitness')
         if not script or not os.path.isfile(script):
@@ -1996,12 +2056,10 @@ class Oculus:
 
         target_dir = Path(out_dir) / 'eyewitness'
         target_dir.mkdir(parents=True, exist_ok=True)
-        
-        # EyeWitness now uses a Python virtual environment at /opt/recontools/EyeWitness/eyewitness-venv/
-        venv_python = "/opt/recontools/EyeWitness/eyewitness-venv/bin/python"
-        if not os.path.exists(venv_python):
-            # Fallback to system python3 if venv not found
-            venv_python = shutil.which('python3') or sys.executable
+
+        venv_python = self._prepare_eyewitness_python(script)
+        if not venv_python:
+            return None
         
         print(f"{Colors.CYAN}[*] EyeWitness script: {script}{Colors.RESET}")
         print(f"{Colors.CYAN}[*] EyeWitness output: {target_dir}{Colors.RESET}")
