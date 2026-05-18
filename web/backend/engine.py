@@ -596,8 +596,18 @@ class ScanEngine:
                 self._current_module = None
                 return
             elif mode == "custom" and modules:
+                # Chronological execution order matching Oculus's natural phase dependencies
+                custom_order = [
+                    'subdomain', 'dnsbrute', 'dns', 'alive', 'asn', 'cloud', 'osint', 'shodan', 'github',
+                    'ports', 'fullports', 'tech', 'waf', 'screenshots', 'urls', 'hakrawler', 'params', 'js',
+                    'takeover', 'vuln', 'gf', 'fuzz', 'api', 'sqli', 'xss', 'redirect', 'cors', 'smuggling'
+                ]
+                # Sort custom selection list to respect the pipeline stages
+                sorted_mods = [m for m in custom_order if m in modules]
+                sorted_mods += [m for m in modules if m not in custom_order]
+
                 steps = []
-                for mod_name in modules:
+                for mod_name in sorted_mods:
                     method_name = MODULE_MAP.get(mod_name)
                     if method_name and hasattr(oc, method_name):
                         nice_name = mod_name.replace("_", " ").title()
