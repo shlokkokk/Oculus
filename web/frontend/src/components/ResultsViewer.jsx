@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, File, FileText, ChevronRight, ChevronDown, Download, Search, Network, X, Globe } from 'lucide-react';
+import { FolderOpen, File, FileText, ChevronRight, ChevronDown, Search, Network, X, Globe, Image as ImageIcon } from 'lucide-react';
 import { api } from '../api/client';
 
 // Regex escape helper for in-file highlights
@@ -64,6 +64,59 @@ function filterTree(items, query, forceExpand = {}) {
     }
   }
   return { filteredItems: filtered, forceExpand };
+}
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+
+function isImageArtifact(item) {
+  if (!item || item.is_dir) return false;
+  const dot = item.name.lastIndexOf('.');
+  const ext = dot >= 0 ? item.name.slice(dot).toLowerCase() : '';
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
+function buildArtifactUrl(domain, filePath) {
+  const safePath = filePath.split('/').map(encodeURIComponent).join('/');
+  return `/api/results/${encodeURIComponent(domain)}/file/${safePath}`;
+}
+
+function flattenScreenshots(items, bucket = []) {
+  for (const item of items || []) {
+    if (item.is_dir) {
+      flattenScreenshots(item.children || [], bucket);
+    } else if (isImageArtifact(item) && item.path.toLowerCase().includes('screenshots/')) {
+      bucket.push(item);
+    }
+  }
+  return bucket;
+}
+
+function inferScreenshotDomain(shot, fallbackDomain) {
+  const raw = `${shot.path}/${shot.name}`.toLowerCase();
+  const urlMatch = raw.match(/https?[:_-]+[\\/._-]*([a-z0-9][a-z0-9.-]+\.[a-z]{2,})(?:[\\/._:-]|$)/i);
+  if (urlMatch) return urlMatch[1].replace(/^www\./, '');
+
+  const hostMatch = raw.match(/([a-z0-9][a-z0-9-]*(?:[._-][a-z0-9-]+)+[._-](?:com|net|org|io|co|dev|app|in|ai|me|edu|gov|info|biz))/i);
+  if (hostMatch) return hostMatch[1].replace(/[_-]/g, '.').replace(/^www\./, '');
+
+  const parts = shot.path.split('/');
+  const screenshotIndex = parts.findIndex(p => p.toLowerCase() === 'screenshots');
+  if (screenshotIndex >= 0 && parts[screenshotIndex + 2]) {
+    return parts[screenshotIndex + 2].replace(/[_-]/g, '.').replace(/^www\./, '');
+  }
+  return fallbackDomain || 'screenshots';
+}
+
+function groupScreenshots(items, domain) {
+  const groups = new Map();
+  flattenScreenshots(items).forEach((shot) => {
+    const key = inferScreenshotDomain(shot, domain);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(shot);
+  });
+  return [...groups.entries()]
+    .map(([name, shots]) => ({ name, shots: shots.sort((a, b) => a.path.localeCompare(b.path)) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function FileTree({ items, onSelect, selectedPath, depth = 0, forceExpand = {} }) {
@@ -228,6 +281,16 @@ export default function ResultsViewer({ domain }) {
     setContent(null);
     setFileSearchQuery(''); // Reset the in-file search box
     setIsMapOpen(false); // Smoothly close the popup on selection
+    if (isImageArtifact(item)) {
+      setContent({
+        type: 'image',
+        name: item.name,
+        path: item.path,
+        size: item.size,
+        url: buildArtifactUrl(activeDomain, item.path)
+      });
+      return;
+    }
     try {
       const data = await api.getFile(activeDomain, item.path);
       setContent(data);
@@ -251,6 +314,8 @@ export default function ResultsViewer({ domain }) {
 
   // Perform dynamic filtering based on search input
   const { filteredItems, forceExpand } = filterTree(artifacts, searchQuery, {});
+  const screenshotGroups = groupScreenshots(artifacts, activeDomain);
+  const screenshotCount = screenshotGroups.reduce((total, group) => total + group.shots.length, 0);
 
   if (!activeDomain) {
     return (
@@ -328,6 +393,29 @@ export default function ResultsViewer({ domain }) {
               <Search size={13} />
               Global Search
             </button>
+            <button
+              className={`btn btn-sm ${activeTab === 'screenshots' ? 'active-tab' : ''}`}
+              style={{
+                flex: 1,
+                borderRadius: 0,
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'screenshots' ? '2.5px solid var(--accent)' : 'none',
+                color: activeTab === 'screenshots' ? 'var(--accent)' : 'var(--text-dim)',
+                padding: '8px 4px',
+                fontSize: 11,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                cursor: 'pointer'
+              }}
+              onClick={() => setActiveTab('screenshots')}
+            >
+              <ImageIcon size={13} />
+              Screenshots
+            </button>
           </div>
 
           {activeTab === 'explorer' ? (
@@ -361,7 +449,7 @@ export default function ResultsViewer({ domain }) {
                 )}
               </div>
             </>
-          ) : (
+          ) : activeTab === 'search' ? (
             <>
               <div className="search-container" style={{ marginBottom: 12 }}>
                 <Search size={13} className="search-icon-inside" />
@@ -429,10 +517,103 @@ export default function ResultsViewer({ domain }) {
                 )}
               </div>
             </>
+          ) : (
+            <>
+              <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ImageIcon size={14} />
+                Screenshot Groups
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {screenshotGroups.length > 0 ? (
+                  <div className="screenshot-group-list">
+                    {screenshotGroups.map(group => (
+                      <button
+                        key={group.name}
+                        type="button"
+                        className="screenshot-group-button"
+                        onClick={() => {
+                          const first = group.shots[0];
+                          setSelected(first);
+                          setContent({
+                            type: 'image',
+                            name: first.name,
+                            path: first.path,
+                            size: first.size,
+                            url: buildArtifactUrl(activeDomain, first.path)
+                          });
+                        }}
+                      >
+                        <span>{group.name}</span>
+                        <strong>{group.shots.length}</strong>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 20 }}>
+                    No screenshots found.
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
         <div className="card" style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-          {content ? (
+          {activeTab === 'screenshots' ? (
+            <div className="results-screenshot-panel">
+              <div className="card-header" style={{ marginBottom: 12 }}>
+                <div className="card-title"><ImageIcon size={16} /> Screenshots</div>
+                <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{screenshotCount} total</span>
+              </div>
+              {screenshotGroups.length > 0 ? (
+                <div className="results-screenshot-scroll">
+                  {screenshotGroups.map(group => (
+                    <section key={group.name} className="screenshot-domain-section">
+                      <div className="screenshot-domain-head">
+                        <span>{group.name}</span>
+                        <strong>{group.shots.length}</strong>
+                      </div>
+                      <div className="screenshot-grid">
+                        {group.shots.map((shot) => {
+                          const isExpanded = selected?.path === shot.path;
+                          return (
+                            <button
+                              key={shot.path}
+                              type="button"
+                              className={`screenshot-card ${isExpanded ? 'expanded' : ''}`}
+                              onClick={() => {
+                                setSelected(isExpanded ? null : shot);
+                                setContent(isExpanded ? null : {
+                                  type: 'image',
+                                  name: shot.name,
+                                  path: shot.path,
+                                  size: shot.size,
+                                  url: buildArtifactUrl(activeDomain, shot.path)
+                                });
+                              }}
+                            >
+                              <div className="screenshot-card-head">
+                                <span>{shot.name}</span>
+                                <span>{((shot.size || 0) / 1024).toFixed(1)}K</span>
+                              </div>
+                              <div className="screenshot-card-body">
+                                <img src={buildArtifactUrl(activeDomain, shot.path)} alt={shot.name} loading="lazy" />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state" style={{ flex: 1 }}>
+                  <ImageIcon />
+                  <h3>No screenshots found</h3>
+                  <p>Run the screenshot module and refresh results.</p>
+                </div>
+              )}
+            </div>
+          ) : content ? (
             <>
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                 <div className="card-title"><FileText size={16} /> {content.name}</div>
@@ -451,9 +632,15 @@ export default function ResultsViewer({ domain }) {
                   <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{(content.size || 0).toLocaleString()} chars</span>
                 </div>
               </div>
-              <div className="file-viewer" style={{ flex: 1 }}>
-                <HighlightedText text={content.content} highlight={fileSearchQuery} />
-              </div>
+              {content.type === 'image' ? (
+                <div className="image-file-viewer">
+                  <img src={content.url} alt={content.name} />
+                </div>
+              ) : (
+                <div className="file-viewer" style={{ flex: 1 }}>
+                  <HighlightedText text={content.content} highlight={fileSearchQuery} />
+                </div>
+              )}
             </>
           ) : (
             <div className="empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', padding: '40px 20px' }}>
@@ -478,4 +665,3 @@ export default function ResultsViewer({ domain }) {
     </div>
   );
 }
-

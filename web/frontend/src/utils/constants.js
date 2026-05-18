@@ -6,7 +6,7 @@ export const MODULES = [
   { id: 'ports', name: 'Fast Port Scan', num: 4, phase: 2, tool: 'Naabu / Nmap' },
   { id: 'fullports', name: 'Full Port Scan', num: 5, phase: 2, tool: 'Nmap' },
   { id: 'waf', name: 'WAF Detection', num: 7, phase: 2, tool: 'wafw00f' },
-  { id: 'screenshots', name: 'Screenshot Capture', num: 16, phase: 2, tool: 'gowitness' },
+  { id: 'screenshots', name: 'Screenshot Capture', num: 16, phase: 2, tool: 'gowitness + EyeWitness' },
   { id: 'tech', name: 'Tech Fingerprint', num: 19, phase: 2, tool: 'WhatWeb' },
   { id: 'asn', name: 'ASN Discovery', num: 24, phase: 2, tool: 'asnmap' },
   { id: 'urls', name: 'URL Collection', num: 6, phase: 3, tool: 'Katana, gau, waybackurls' },

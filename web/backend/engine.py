@@ -34,7 +34,11 @@ def kill_zombie_scanners():
     try:
         import subprocess
         # Terminate any stray processes of tools wrapped by Oculus
-        tools = ["dalfox", "sqlmap", "theHarvester", "nuclei", "naabu", "gowitness", "ffuf", "subfinder", "massdns", "dnsx"]
+        tools = [
+            "dalfox", "sqlmap", "theHarvester", "nuclei", "naabu",
+            "gowitness", "EyeWitness.py", "eyewitness.py",
+            "ffuf", "subfinder", "massdns", "dnsx",
+        ]
         pattern = "|".join(tools)
         # Using WSL if on Windows, or direct call on Linux
         if os.name == 'nt':

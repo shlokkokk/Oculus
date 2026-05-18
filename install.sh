@@ -126,7 +126,7 @@ APT_PACKAGES=(
     python3-pip python3-venv
     build-essential libpcap-dev
     nmap massdns wafw00f whatweb sqlmap
-    dnsutils
+    dnsutils chromium
 )
 
 log_info "Installing ${#APT_PACKAGES[@]} packages..."
@@ -315,7 +315,7 @@ def pip_install_package_dir(opt):
     return False
 
 # Tools invoked as python3 /opt/recontools/<repo>/<script>.py — not PATH CLIs
-SCRIPT_BASED_TOOLS = frozenset({"xsstrike", "smuggler", "linkfinder"})
+SCRIPT_BASED_TOOLS = frozenset({"xsstrike", "smuggler", "linkfinder", "eyewitness"})
 
 def recon_script_exists(name_lower, opt):
     """Return True when the cloned repo contains its main Python entry script."""
@@ -329,6 +329,11 @@ def recon_script_exists(name_lower, opt):
         candidates.append(os.path.join(opt, "linkfinder.py"))
     elif name_lower == "smuggler":
         candidates.append(os.path.join(opt, "smuggler.py"))
+    elif name_lower == "eyewitness":
+        candidates.extend([
+            os.path.join(opt, "Python", "EyeWitness.py"),
+            os.path.join(opt, "Python", "eyewitness.py"),
+        ])
     return any(os.path.isfile(p) for p in candidates)
 
 def install_kiterunner(opt, progress, tid):
@@ -395,6 +400,7 @@ RECON_TOOLS = [
     ("LinkFinder",   "https://github.com/GerbenJavado/LinkFinder"),
     ("theHarvester", "https://github.com/laramies/theHarvester"),
     ("kiterunner",   "https://github.com/assetnote/kiterunner"),
+    ("EyeWitness",   "https://github.com/RedSiege/EyeWitness"),
 ]
 
 results = {}  # name -> (status, detail)
@@ -501,9 +507,17 @@ def install_recon_tool(name, repo, progress, tid):
             return
 
         req = os.path.join(opt, "requirements.txt")
+        if name_lower == "eyewitness":
+            py_req = os.path.join(opt, "Python", "requirements.txt")
+            if os.path.exists(py_req):
+                req = py_req
         if os.path.exists(req):
             if not pip_install_req(req):
                 log_failure(name, "pip requirements had errors (tool may still work)")
+                if name_lower == "eyewitness":
+                    progress.update(tid, description=f"[bold red]✘ {name}[/] (Python deps failed)", completed=100)
+                    results[name] = ("failed", "EyeWitness Python requirements failed")
+                    return
 
         setup_py = os.path.join(opt, "setup.py")
         pyproject = os.path.join(opt, "pyproject.toml")

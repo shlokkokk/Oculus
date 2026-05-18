@@ -35,10 +35,10 @@ Use **`./install.sh --update`** later to refresh Go tools and `/opt/recontools` 
 ### What `install.sh` does
 
 1. Verifies **Python ≥ 3.8** and **`go`** in `PATH` (offers to install the latest Go version if missing).
-2. **`apt-get install`**: `python3-pip`, `git`, `wget`, `curl`, `unzip`, `nmap`, `massdns`, `wafw00f`, `whatweb`, `sqlmap`, `jq`.
+2. **`apt-get install`**: `python3-pip`, `git`, `wget`, `curl`, `unzip`, `nmap`, `massdns`, `wafw00f`, `whatweb`, `sqlmap`, `jq`, `dnsutils`, `chromium`.
 3. **`pip3 install -r requirements.txt --break-system-packages`** (needed on newer Debian/Ubuntu PEP 668 environments).
 4. **`go install`** (see script for exact modules): subfinder, assetfinder, dnsx, httpx, httprobe, naabu, katana, gau, waybackurls, nuclei, hakrawler, ffuf, dalfox, asnmap, gowitness, gf, amass, kr, subzy.
-5. Creates **`/opt/recontools`** and clones: **ParamSpider**, **Arjun**, **XSStrike**, **smuggler**, **LinkFinder**, **theHarvester** (with `pip install -r requirements.txt` per repo where present).
+5. Creates **`/opt/recontools`** and clones: **ParamSpider**, **Arjun**, **XSStrike**, **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness** (with `pip install -r requirements.txt` per repo where present; EyeWitness uses `Python/requirements.txt`).
 6. Sets up **`~/.gf`** pattern JSONs (best-effort copy from `gf` examples + **Gf-Patterns**).
 7. If **`~/.config/oculus/config.yaml`** does not exist yet, copies **`config.yaml.example`** from the same directory as **`install.sh`** (the repo root).
 
@@ -85,8 +85,9 @@ python3 oculus.py
 Sanity-check common externals:
 
 ```bash
-which subfinder httpx naabu nuclei ffuf dalfox dnsx massdns
+which subfinder httpx naabu nuclei ffuf dalfox dnsx massdns chromium
 ls /opt/recontools/ParamSpider/paramspider.py
+ls /opt/recontools/EyeWitness/Python/EyeWitness.py
 ```
 
 ---
@@ -113,7 +114,7 @@ Use this only if `install.sh` fails or you need a minimal custom layout. Mirror 
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3 python3-pip git wget curl unzip build-essential \
-  nmap massdns wafw00f whatweb sqlmap jq dnsutils libpcap-dev
+  nmap massdns wafw00f whatweb sqlmap jq dnsutils chromium libpcap-dev
 ```
 
 Install **Go** from [go.dev](https://go.dev/dl/) if your distro ships an old version; Oculus expects **Go ≥ 1.20**.
@@ -164,9 +165,11 @@ git clone https://github.com/s0md3v/XSStrike.git
 git clone https://github.com/defparam/smuggler.git
 git clone https://github.com/GerbenJavado/LinkFinder.git
 git clone https://github.com/laramies/theHarvester.git
+git clone https://github.com/RedSiege/EyeWitness.git
 for d in ParamSpider Arjun XSStrike smuggler LinkFinder theHarvester; do
   [ -f "$d/requirements.txt" ] && pip3 install -r "$d/requirements.txt" --break-system-packages || true
 done
+[ -f EyeWitness/Python/requirements.txt ] && pip3 install -r EyeWitness/Python/requirements.txt --break-system-packages || true
 ```
 
 ### 5. GF patterns

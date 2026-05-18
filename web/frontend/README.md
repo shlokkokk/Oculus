@@ -19,6 +19,14 @@ This directory houses the **React Single Page Application (SPA)** that powers th
 
 ---
 
+## 🖼️ Screenshot Review UI
+
+- **Reports tab:** Includes a Screenshots view that groups captures by inferred host/domain and opens each capture in a near full-screen lightbox with previous/next controls.
+- **Results tab:** Includes a Screenshots workspace alongside Explorer and Global Search, grouping captured artifacts domain-wise and previewing image files directly.
+- **Artifact source:** The UI reads recursively from `output-<domain>/screenshots/`, including `gowitness/` and `eyewitness/` subfolders when both engines run.
+
+---
+
 ## 🏗️ Directory Structure
 
 ```text
@@ -31,10 +39,11 @@ frontend/
 │   ├── App.jsx         # Root application component
 │   ├── index.css       # Global design tokens and utilities
 │   └── components/     # Modular React components
-│       ├── Dashboard/  # Core scan command center
-│       ├── Results/    # Artifact viewer and vulnerability grids
-│       ├── Settings/   # Tool validation and config management
-│       └── UI/         # Reusable buttons, modals, and loaders
+│       ├── ScanConfigurator.jsx  # Scan setup, presets, module selection
+│       ├── ScanProgress.jsx      # Live progress and terminal output surface
+│       ├── ResultsViewer.jsx     # Artifact explorer, search, screenshot workspace
+│       ├── ReportViewer.jsx      # HTML/JSON/Markdown reports and screenshot lightbox
+│       └── ToolStatus.jsx        # Dependency validation and refresh
 ```
 
 ---

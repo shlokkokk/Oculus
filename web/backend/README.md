@@ -15,7 +15,7 @@ This directory contains the **FastAPI Backend** that powers the Oculus Web Cockp
 - **Engine Orchestration:** Directly imports the native `Oculus` Python class from the parent directory. It does not spawn messy subprocesses; it interacts with the framework at the object level.
 - **WebSocket Streaming:** Upgrades connections to `ws://` to stream high-frequency terminal logs and scan status directly to the browser with zero latency.
 - **Static Asset Serving:** Automatically detects if the React frontend has been compiled (in `../frontend/dist`) and serves the UI, allowing for a seamless single-port production deployment.
-- **Artifact Retrieval:** Reads directly from the `output-*/` directories on disk, allowing you to fetch HTML reports, JSON findings, and raw text logs via the API.
+- **Artifact Retrieval:** Reads directly from the `output-*/` directories on disk, allowing you to fetch HTML reports, JSON findings, raw text logs, and binary screenshot artifacts via the API.
 
 ---
 

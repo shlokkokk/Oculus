@@ -86,6 +86,11 @@ DEFAULT_CONFIG = {
         'ports': '1-65535',
         'rate': 2000,
     },
+    'nmap': {
+        'full_port_timeout_base': 3600,
+        'full_port_timeout_per_host': 900,
+        'full_port_timeout_max': 43200,
+    },
     'ffuf': {
         'extensions': 'php,html,js,json,txt,bak,old',
         'status_filter': '200,204,301,302,307,401,403',
@@ -341,6 +346,13 @@ class Oculus:
             special_paths.extend([
                 "/opt/recontools/theHarvester/theHarvester.py",
                 "/opt/recontools/theharvester/theHarvester.py",
+            ])
+        elif name_lower == 'eyewitness':
+            special_paths.extend([
+                "/opt/recontools/EyeWitness/Python/EyeWitness.py",
+                "/opt/recontools/EyeWitness/Python/eyewitness.py",
+                "/opt/recontools/eyewitness/Python/EyeWitness.py",
+                "/opt/recontools/eyewitness/Python/eyewitness.py",
             ])
         elif name_lower == 'smuggler':
             special_paths.extend([
@@ -720,6 +732,7 @@ class Oculus:
             ('wafw00f', 'sudo apt install wafw00f'),
             ('whatweb', 'sudo apt install whatweb'),
             ('sqlmap', 'sudo apt install sqlmap'),
+            ('chromium', 'sudo apt install chromium'),
             ('nuclei', 'go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest'),
             ('hakrawler', 'go install github.com/hakluke/hakrawler@latest'),
             ('ffuf', 'go install github.com/ffuf/ffuf@latest'),
@@ -742,7 +755,7 @@ class Oculus:
 
         special_tools = [
             'paramspider', 'arjun', 'xsstrike', 'smuggler',
-            'linkfinder', 'theharvester', 'subzy', 'kr',
+            'linkfinder', 'theharvester', 'subzy', 'kr', 'eyewitness',
         ]
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Python/Opt-based Tools...{Colors.RESET}\n")
@@ -1164,6 +1177,15 @@ class Oculus:
 
     # CORE MODULE 5: FULL PORT SCAN (Nmap -sV -sC with safe XML parsing)
 
+    def _full_port_scan_timeout(self, target_count):
+        """Scale the outer Nmap timeout by target count without slowing small scans."""
+        nmap_cfg = self.config.get('nmap', {})
+        base = int(nmap_cfg.get('full_port_timeout_base', 3600))
+        per_host = int(nmap_cfg.get('full_port_timeout_per_host', 900))
+        max_timeout = int(nmap_cfg.get('full_port_timeout_max', 43200))
+        target_count = max(1, int(target_count or 1))
+        return min(max_timeout, max(base, target_count * per_host))
+
     def run_full_port_scan(self):
         """Comprehensive port scan with Nmap — fixed XML parsing"""
         if not self._require_setup():
@@ -1173,14 +1195,25 @@ class Oculus:
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Full Port Scan with Nmap...{Colors.RESET}")
         print(f"{Colors.YELLOW}[!] This may take a while. Press Ctrl+C to skip.{Colors.RESET}\n")
         hosts = self._get_hosts(prefer_alive=True)
+        if not hosts:
+            hosts = [self.domain]
+        hosts = [self._strip_protocol(h.strip()) for h in hosts if h and h.strip()]
+        timeout = self._full_port_scan_timeout(len(hosts))
+        hours, remainder = divmod(timeout, 3600)
+        minutes = remainder // 60
+        budget = f"{hours}h {minutes}m" if hours else f"{minutes}m"
+        print(f"{Colors.CYAN}[*] Nmap timeout budget: {budget} for {len(hosts)} target(s){Colors.RESET}")
         final_input = f"{self.output_dir}/ports_full_input.txt"
         with open(final_input, 'w', encoding='utf-8') as f:
             for h in hosts:
-                f.write(self._strip_protocol(h.strip()) + "\n")
+                f.write(h + "\n")
         output_base = f"{self.output_dir}/ports_full"
         nmap_bin = self.get_tool('nmap')
-        cmd = f"{nmap_bin} -iL {final_input} -p- -sV -sC -O --open -T4 -oA {output_base}"
-        if self.run_command(cmd, timeout=3600, label="nmap"):
+        cmd = (
+            f"{shlex.quote(nmap_bin)} -iL {shlex.quote(final_input)} "
+            f"-p- -sV -sC -O --open -T4 -oA {shlex.quote(output_base)}"
+        )
+        if self.run_command(cmd, timeout=timeout, label="nmap"):
             xml_file = f"{output_base}.xml"
             results = []
             if os.path.exists(xml_file):
@@ -1924,23 +1957,97 @@ class Oculus:
         self.results['urls_final'] = count
         return count
 
-    # MODULE 16: SCREENSHOT CAPTURE (gowitness)
+    # MODULE 16: SCREENSHOT CAPTURE (gowitness + EyeWitness)
+
+    def _screenshot_images(self, path):
+        screenshot_exts = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+        root = Path(path)
+        if not root.exists():
+            return []
+        return [
+            p for p in root.rglob('*')
+            if p.is_file() and p.suffix.lower() in screenshot_exts
+        ]
+
+    def _capture_with_gowitness(self, alive_file, out_dir):
+        tool = self.find_tool('gowitness')
+        if not tool:
+            print(f"{Colors.YELLOW}[*] gowitness not found; skipping primary screenshot pass{Colors.RESET}")
+            return None
+
+        target_dir = Path(out_dir) / 'gowitness'
+        target_dir.mkdir(parents=True, exist_ok=True)
+        print(f"{Colors.CYAN}[*] gowitness binary: {tool}{Colors.RESET}")
+        print(f"{Colors.CYAN}[*] gowitness output: {target_dir}{Colors.RESET}")
+        cmd = (
+            f"{shlex.quote(tool)} scan file -f {shlex.quote(alive_file)} "
+            f"--screenshot-path {shlex.quote(str(target_dir))} --timeout 15 "
+            f"--chrome-flag=\"--no-sandbox\" --chrome-flag=\"--ignore-certificate-errors\" --chrome-flag=\"--disable-gpu\""
+        )
+        return self.run_command(cmd, timeout=900, label='gowitness')
+
+    def _capture_with_eyewitness(self, alive_file, out_dir):
+        script = self.find_tool('eyewitness')
+        if not script or not os.path.isfile(script):
+            print(f"{Colors.YELLOW}[*] EyeWitness not found; skipping secondary screenshot pass{Colors.RESET}")
+            return None
+
+        target_dir = Path(out_dir) / 'eyewitness'
+        target_dir.mkdir(parents=True, exist_ok=True)
+        python_bin = shutil.which('python3') or sys.executable
+        print(f"{Colors.CYAN}[*] EyeWitness script: {script}{Colors.RESET}")
+        print(f"{Colors.CYAN}[*] EyeWitness output: {target_dir}{Colors.RESET}")
+        cmd = (
+            f"{shlex.quote(python_bin)} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
+            f"-d {shlex.quote(str(target_dir))} --no-prompt"
+        )
+        return self.run_command(cmd, timeout=1800, label='eyewitness')
 
     def run_screenshot_capture(self):
-        if not self._require_setup() or not self._require_tool('gowitness'):
+        if not self._require_setup():
             return
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
             return
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Capturing Screenshots...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/screenshots"
-        Path(out_dir).mkdir(exist_ok=True)
-        cmd = f"{self.get_tool('gowitness')} scan file -f {alive_file} --screenshot-path {out_dir} --timeout 15"
-        if self.run_command(cmd, timeout=600, label="gowitness"):
-            imgs = len(list(Path(out_dir).glob("*.png")))
-            print(f"{Colors.GREEN}[✔] Captured {imgs} screenshots in {out_dir}{Colors.RESET}")
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+        engines = [
+            ("gowitness", self._capture_with_gowitness),
+            ("eyewitness", self._capture_with_eyewitness),
+        ]
+        attempted_any = False
+        engine_counts = {}
+        for engine_name, runner in engines:
+            print(f"{Colors.CYAN}[*] Running {engine_name}...{Colors.RESET}")
+            engine_dir = Path(out_dir) / engine_name
+            before = len(self._screenshot_images(engine_dir))
+            result = runner(alive_file, out_dir)
+            if result is not None:
+                attempted_any = True
+            imgs = len(self._screenshot_images(engine_dir))
+            engine_counts[engine_name] = imgs
+            new_imgs = max(0, imgs - before)
+            if result:
+                print(f"{Colors.GREEN}[✔] {engine_name} captured {imgs} screenshots in {engine_dir}{Colors.RESET}")
+            elif result is None:
+                print(f"{Colors.YELLOW}[!] {engine_name} unavailable; skipped{Colors.RESET}")
+            elif imgs:
+                print(f"{Colors.YELLOW}[!] {engine_name} exited with errors, but {imgs} screenshot files exist ({new_imgs} new){Colors.RESET}")
+            else:
+                print(f"{Colors.YELLOW}[!] {engine_name} did not produce screenshots{Colors.RESET}")
+
+        all_imgs = self._screenshot_images(out_dir)
+        self.results['screenshots'] = len(all_imgs)
+        self.results['screenshot_engines'] = engine_counts
+        if all_imgs:
+            print(f"{Colors.GREEN}[✔] Captured {len(all_imgs)} total screenshots in {out_dir}{Colors.RESET}")
+        elif not attempted_any:
+            print(f"{Colors.RED}[!] No screenshot engines were available{Colors.RESET}")
         else:
-            print(f"{Colors.RED}[!] Gowitness failed{Colors.RESET}")
+            print(f"{Colors.YELLOW}[!] Screenshot engines ran, but no images were found{Colors.RESET}")
+        self.save_session()
 
     # MODULE 17: DNS BRUTEFORCE
 
@@ -3121,9 +3228,13 @@ class Oculus:
                     pass
                     
         screenshots_dir = Path(f"{self.output_dir}/screenshots")
+        screenshot_exts = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
         screenshots = []
         if screenshots_dir.exists():
-            screenshots = list(screenshots_dir.glob("*.png"))
+            screenshots = [
+                img for img in sorted(screenshots_dir.rglob('*'))
+                if img.is_file() and img.suffix.lower() in screenshot_exts
+            ]
 
         html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -3146,9 +3257,10 @@ td{{padding:6px 8px;border-bottom:1px solid #1a1a2e;font-size:12px;word-break:br
 tr:hover{{background:#1a1a2e}}
 .critical{{color:#ff4444;font-weight:bold}} .high{{color:#ff8800}} .medium{{color:#ffcc00}} .low{{color:#44cc44}} .info{{color:#4488ff}}
 details{{margin:5px 0}} summary{{cursor:pointer;color:#00aaff;padding:5px;font-weight:bold}}
-.gallery{{display:flex;flex-wrap:wrap;gap:10px}}
-.gallery img{{max-width:250px;border:1px solid #1a1a2e;border-radius:4px;cursor:pointer}}
-.gallery img:hover{{border-color:#00ffcc}}
+.gallery{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}
+.gallery a{{display:block;background:#0f0f18;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}}
+.gallery a:hover{{border-color:#00ffcc;transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,255,204,.12)}}
+.gallery img{{width:100%;height:100%;max-height:240px;object-fit:cover;display:block}}
 .chart-container{{width:400px;margin:0 auto;padding:20px}}
 </style></head><body><div class="container">
 <h1>⚡ Oculus v{VERSION} — {self.domain}</h1>
@@ -3212,7 +3324,8 @@ function sortTable(n) {
         if screenshots:
             html += f'<details><summary>📸 Screenshots ({len(screenshots)})</summary><div class="card gallery">'
             for img in screenshots[:50]:
-                rel_path = f"screenshots/{img.name}"
+                rel_img = str(img.relative_to(screenshots_dir)).replace(os.sep, '/')
+                rel_path = f"screenshots/{rel_img}"
                 html += f'<a href="{rel_path}" target="_blank"><img src="{rel_path}" loading="lazy" alt="Screenshot"></a>'
             if len(screenshots) > 50:
                 html += f'<p>... and {len(screenshots)-50} more in screenshots/ directory</p>'

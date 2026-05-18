@@ -2,6 +2,17 @@
 
 All notable changes to the **Oculus** project will be documented in this file.
 
+## [Unreleased]
+### Added
+- **Dual Screenshot Capture:** Screenshot module now attempts both `gowitness` and `EyeWitness` for every alive URL/domain/subdomain, storing output under engine-specific screenshot folders.
+- **Domain-Grouped Screenshot UI:** Web Reports and Results views now display screenshots grouped by inferred host/domain, with larger previews and a near full-screen lightbox viewer.
+- **Dynamic Full-Port Timeout:** Full Nmap scans now scale their outer timeout by alive-target count via `nmap.full_port_timeout_base`, `nmap.full_port_timeout_per_host`, and `nmap.full_port_timeout_max`.
+
+### Fixed
+- **Screenshot Telemetry:** Screenshot capture now logs resolved tool paths, output directories, per-engine counts, total counts, and writes screenshot metrics into `session.json`.
+- **Recursive Screenshot Reporting:** HTML and web artifact viewers now include nested screenshot outputs instead of only top-level PNGs.
+- **EyeWitness Installation Wiring:** Installer now clones and validates `EyeWitness` instead of the unrelated `aquatone` path.
+
 ## [4.1.0] - 2026-05-17
 ### 🚀 Added
 - **Dual-Engine Probing:** Configured `httprobe` as a secondary, concurrent alive-checking engine alongside `httpx` to guarantee zero dropped targets.

@@ -50,6 +50,12 @@ naabu:
   ports: "1-65535"
   rate: 2000
 
+# Nmap full-port scan timeout scaling
+nmap:
+  full_port_timeout_base: 3600       # Minimum budget: 1 hour
+  full_port_timeout_per_host: 900    # Add 15 minutes per target
+  full_port_timeout_max: 43200       # Hard cap: 12 hours
+
 # FFUF directory fuzzing
 ffuf:
   extensions: php,html,js,json,txt,bak,old

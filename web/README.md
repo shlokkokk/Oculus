@@ -8,7 +8,7 @@
 
 The **Oculus Web Interface** is a sleek, high-performance browser dashboard built to orchestrate the core Oculus framework. It provides a real-time command center for configuring scans, monitoring live output streams, managing persistent sessions, and viewing final reports without ever touching a terminal.
 
-> ⚡ **Hybrid Architecture:** The web interface is a pure companion to the CLI. The native CLI (`oculus.py`) remains 100% untouched. You can run scans from the terminal and view the results in the browser, or vice-versa.
+> ⚡ **Hybrid Architecture:** The web interface is a companion to the CLI and uses the same native `oculus.py` engine. You can run scans from the terminal and view the results in the browser, or vice-versa.
 
 ---
 
@@ -50,6 +50,9 @@ The **Oculus Web Interface** is a sleek, high-performance browser dashboard buil
 
 #### 📂 **Session Management**
 > Automatically reads the `session.json` state. Resume past scans, view artifact directories, and browse vulnerabilities cleanly.
+
+#### 🖼️ **Domain-Wise Screenshot Review**
+> Results and Reports include a screenshot tab that groups captured images by inferred domain/subdomain, supports outputs from both screenshot engines, and opens screenshots in a near full-screen viewer for readable triage.
 
 #### 🏛️ **Stateless PARITY Architecture (Zero Database)**
 > Zero-database design that queries directly from `output-*/` session files, ensuring absolute synchronicity between CLI commands and browser operations.
@@ -156,6 +159,7 @@ Navigate to **http://localhost:8000** in your browser.
 | `GET`  | `/api/scan/status` | Fetch current execution state |
 | `GET`  | `/api/sessions` | List all historical scan sessions |
 | `GET`  | `/api/results/{domain}` | Browse artifact files for a target |
+| `GET`  | `/api/results/{domain}/file/{file_path}` | Retrieve text artifacts or binary files such as screenshots |
 | `WS`   | `/ws/scan` | Real-time WebSocket log streaming |
 
 ---

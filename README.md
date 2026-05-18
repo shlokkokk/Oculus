@@ -58,6 +58,8 @@ npm run dev # Open http://localhost:5173
 *   🎨 **Interactive Cyan Cyber-Glow Aesthetics**: The Jitter element has been elevated into a 100% clickable glassmorphic telemetry container. Uses fluid `0.3s` ease transitions, active micro-animations, glowing borders, active text shadows, and custom cyberpunk neon accents.
 *   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `29/29 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
 
+*   🖼️ **Domain-Wise Screenshot Review**: Results and Reports include a Screenshots tab that groups captures by inferred domain/subdomain, supports both screenshot engines, and opens screenshots in a near full-screen viewer for readable triage.
+
 See the **[Web README](web/README.md)** for full details.
 
 ---
@@ -101,7 +103,7 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 | **2** | `dns` | dnsx | Resolve subs (A/AAAA/CNAME/NS/MX/etc.) with responses → **`dns_resolved.txt`** |
 | **3** | `alive` | httpx, httprobe | Hit subs over HTTP(S) concurrently for dual-engine redundancy; JSON + raw formats merged → **`alive.txt`** |
 | **4** | `ports` | dig, whois, Naabu / Nmap | Guess CDN from DNS/WHOIS; **Naabu** syn scan or **Nmap** fallback if CDN → **`ports_fast.txt`** |
-| **5** | `fullports` | Nmap | All TCP ports **`-p-`**, scripts **`-sC`**, versions **`-sV`**, OS guess; parse XML → **`ports_full.txt`** |
+| **5** | `fullports` | Nmap | All TCP ports **`-p-`**, scripts **`-sC`**, versions **`-sV`**, OS guess; dynamic timeout scales by alive-host count; parse XML → **`ports_full.txt`** |
 | **6** | `urls` | Katana, gau, waybackurls | Crawl + passive archives in parallel, strip noise, dedupe → **`urls.txt`** / **`urls_final.txt`** |
 | **7** | `waf` | wafw00f | One WAF probe per host (concurrent); normalize vendor names → **`waf_summary.txt`** |
 | **8** | `vuln` | nuclei | Run templates on **`alive.txt`**; optional template update; JSONL + grouped text findings |
@@ -112,7 +114,7 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 | **13** | `api` | kr (Kiterunner) | API-style route discovery against alive hosts → **`api_fuzzing/`** |
 | **14** | `takeover` | subzy, dig | Subzy takeover scan + parallel **CNAME** audit for dangling third-party records → **`takeover/`** |
 | **15** | `hakrawler` | hakrawler | Crawl in-scope sites from **`alive.txt`**, merge new links into **`urls_final.txt`** |
-| **16** | `screenshots` | gowitness | Render alive URLs to PNGs for triage → **`screenshots/`** |
+| **16** | `screenshots` | gowitness + EyeWitness | Render every alive URL/domain/subdomain through both screenshot engines where available → **`screenshots/gowitness/`**, **`screenshots/eyewitness/`** |
 | **17** | `dnsbrute` | massdns | Build `word.target` from DNS wordlist + resolvers; merge hits back into **`subdomains.txt`** |
 | **18** | `gf` | gf | Classify **`urls_final.txt`** into buckets (xss, sqli, ssrf, lfi, redirect, rce) → **`gf/*.txt`** |
 | **19** | `tech` | whatweb | Fingerprint stacks from **`alive.txt`** → **`tech_scan/`** JSON |
@@ -200,7 +202,7 @@ Checked **in order**; the **first file that exists** is loaded (there is **no** 
 
 For each top-level key in your file:
 
-- If the value is a **dict** and the key already exists in defaults (`wordlists`, `api_keys`, `nuclei`, `naabu`, `ffuf`), Oculus **shallow-merges** into that dict (`update()`).
+- If the value is a **dict** and the key already exists in defaults (`wordlists`, `api_keys`, `nuclei`, `naabu`, `nmap`, `ffuf`), Oculus **shallow-merges** into that dict (`update()`).
 - Otherwise the top-level key **replaces** the default value entirely.
 - **Unknown** top-level keys are kept on the config object; most are ignored unless future code reads them.
 
@@ -216,7 +218,7 @@ For each top-level key in your file:
 | `parallel` | `true` | If `false`, subdomain enum and URL collection run tools **one after another** instead of `ThreadPoolExecutor` |
 | `auto_confirm` | `false` | If `true`: skips **Nuclei `-ut`** prompt, **Deep recon** confirm, **session resume** prompt (same idea as `--no-confirm`) |
 | `jitter` | `false` | If `true` (or `--jitter`): random **0.1–0.5s** sleep before each shell invocation |
-| `default_timeout` | *(not in example file)* | Shell `run_command` uses `config.get('default_timeout', 300)` when a step does not pass its own timeout. You can add this key to YAML to influence those paths. |
+| `default_timeout` | `300` | Shell `run_command` uses `config.get('default_timeout', 300)` when a step does not pass its own timeout. |
 | `wordlists.dns` | SecLists path | **DNS bruteforce** (`dnsbrute`): wordlist for `word.mydomain` lines |
 | `wordlists.dirs` | SecLists path | **ffuf** primary wordlist |
 | `wordlists.dirs_fallback` | dirb path | Used if `dirs` path missing |
@@ -230,6 +232,9 @@ For each top-level key in your file:
 | `nuclei.templates` | `""` | If non-empty, adds **`-t <path>`** custom templates |
 | `naabu.ports` | `1-65535` | **`-p`** for fast port scan (when not using Nmap fallback) |
 | `naabu.rate` | `2000` | **`-rate`** packets/sec |
+| `nmap.full_port_timeout_base` | `3600` | Minimum outer timeout for full-port Nmap (`fullports`) |
+| `nmap.full_port_timeout_per_host` | `900` | Per-target scaling for full-port Nmap; budget is `max(base, alive_targets * per_host)` |
+| `nmap.full_port_timeout_max` | `43200` | Hard cap for full-port Nmap timeout |
 | `ffuf.extensions` | `php,html,...` | **`-e`** extension list for directory fuzz |
 | `ffuf.status_filter` | `200,204,...` | **`-mc`** match codes |
 | `ffuf.recursion_depth` | `2` | **`-recursion-depth`** |
@@ -410,6 +415,8 @@ timeout: 300
 rate_limit: 150
 retry_count: 2
 retry_delay: 5
+# Default timeout used by generic shell-invocations when a module doesn't pass its own timeout
+default_timeout: 300
 parallel: true        # Run independent tools concurrently
 auto_confirm: false   # Skip confirmation prompts (useful for automation)
 jitter: false         # Add random delays between tool calls for stealth
@@ -439,17 +446,17 @@ naabu:
   ports: "1-65535"
   rate: 2000
 
+# Nmap full-port scan timeout scaling
+nmap:
+  full_port_timeout_base: 3600       # Minimum budget: 1 hour
+  full_port_timeout_per_host: 900    # Add 15 minutes per target
+  full_port_timeout_max: 43200       # Hard cap: 12 hours
+
 # FFUF directory fuzzing
 ffuf:
   extensions: php,html,js,json,txt,bak,old
   status_filter: "200,204,301,302,307,401,403"
   recursion_depth: 2
-```
-
-Optional extra line (not in repo template) for subprocess baseline timeout:
-
-```yaml
-default_timeout: 600   # used by run_command when modules don't override
 ```
 
 </details>
@@ -510,7 +517,7 @@ All scan data goes under **`output-<domain>/`** (created when you set the domain
 | `summary.txt` | Text executive summary |
 | `report.html` / `findings.json` / `report.md` | Generated from menu **R** (and partial set after **full recon**) |
 
-Subfolders (created as needed): `parameters/`, `js_endpoints/`, `fuzzing/`, `api_fuzzing/`, `takeover/`, `screenshots/`, `gf/`, `tech_scan/`, `sqlmap/`, `xss_findings/`, `cors_findings/`, `smuggling/`, `asn/`, `cloud/`, `github/`, `osint/`, `shodan/`, `redirects/`, etc.
+Subfolders (created as needed): `parameters/`, `js_endpoints/`, `fuzzing/`, `api_fuzzing/`, `takeover/`, `screenshots/gowitness/`, `screenshots/eyewitness/`, `gf/`, `tech_scan/`, `sqlmap/`, `xss_findings/`, `cors_findings/`, `smuggling/`, `asn/`, `cloud/`, `github/`, `osint/`, `shodan/`, `redirects/`, etc.
 
 **Session resume:** If `session.json` exists and you re-enter the same domain (**C**), Oculus restores prior `results`.
 - **Full Spectrum (`U`)** offers a smart **Resume** mode: it skips already-completed steps (printing `[SKIP]`) to safely pick up where a long scan dropped off.
@@ -565,7 +572,7 @@ Everything below is implemented in [`oculus.py`](oculus.py) today. Open the sect
 | **Jitter** | Optional random delay before each shell invocation (`--jitter` or `jitter: true` in YAML) |
 | **Parallel toggle** | `parallel: false` runs some multi-tool stages sequentially |
 | **Health check** | On startup: free disk space warning, outbound connectivity probe |
-| **Tool inventory** | Menu **I** — checks Go/apt tools plus `/opt/recontools` scripts (`paramspider`, `arjun`, `xsstrike`, `smuggler`, `linkfinder`, `subzy`, `kr`) and prints install hints |
+| **Tool inventory** | Menu **I** — checks Go/apt tools plus `/opt/recontools` scripts (`paramspider`, `arjun`, `xsstrike`, `smuggler`, `linkfinder`, `subzy`, `kr`, `eyewitness`, `chromium`) and prints install hints |
 | **Domain setup** | Menu **C** — validates domain format, creates `output-<domain>/` and `logs/` |
 | **Host selection** | `_get_hosts()` prefers `alive.txt`, then `subdomains.txt`, then apex; enforces hostname contains target domain |
 | **Session state** | `output-<domain>/session.json` stores metrics + completed module keys; optional resume on next run; **show_diff** after preset pipelines compares new vs restored counts |
@@ -585,7 +592,7 @@ Then: **session diff**, **`summary.txt`**, **`report.html`**, **`findings.json`*
 
 **Deep recon mode** (`--deep` / menu **D**) — **not** “all modules,” **not** menus **1–9**:
 
-Runs **exactly** this fixed sequence (same as `run_deep_recon_mode` in code): **24** ASN → **10** params → **11** JS → **12** ffuf → **13** kr → **14** takeover → **15** hakrawler → **16** gowitness → **18** gf → **19** whatweb → **21** dalfox → **22** CORS → **23** smuggling → **20** sqlmap.
+Runs **exactly** this fixed sequence (same as `run_deep_recon_mode` in code): **24** ASN → **10** params → **11** JS → **12** ffuf → **13** kr → **14** takeover → **15** hakrawler → **16** screenshots (gowitness + EyeWitness when installed) → **18** gf → **19** whatweb → **21** dalfox → **22** CORS → **23** smuggling → **20** sqlmap.
 
 **Does not run:** core **1–8** (subdomain, DNS, alive, ports, URLs, WAF, nuclei), **9**, **17** dnsbrute, **25** cloud, **26** github, **27** osint, **28** shodan, **29** redirect.
 
@@ -604,7 +611,7 @@ Runs all 29 modules across 5 phases with intelligent concurrency. See **[Automat
 | Artifact | Contents |
 |:---|:---|
 | **`summary.txt`** | Domain, paths, discovery metrics, WAF ratio, vuln counts by severity, GF hit counts, full tool ✓/✘ matrix |
-| **`report.html`** | Dark theme, **Chart.js** severity chart, **sortable** Nuclei table, collapsible lists (subs, alive, ports, URLs, params), **screenshot gallery** linking `screenshots/*.png` |
+| **`report.html`** | Dark theme, **Chart.js** severity chart, **sortable** Nuclei table, collapsible lists (subs, alive, ports, URLs, params), recursive screenshot gallery linking images from both screenshot engines |
 | **`findings.json`** | `domain`, `version`, `scan_date`, `results`, host/URL lists, parsed **`nuclei_output.jsonl`** |
 | **`report.md`** | Compact Markdown aimed at **HackerOne-style** submissions |
 
@@ -619,7 +626,7 @@ Runs all 29 modules across 5 phases with intelligent concurrency. See **[Automat
 | `dns` | 2 | **dnsx** A/AAAA/CNAME/NS/PTR/MX/SOA on subdomain list |
 | `alive` | 3 | **httpx** (JSON stats) + **httprobe** (lightweight fail-safe) in parallel → deduped `alive.txt` |
 | `ports` | 4 | **CDN hint** via dig+whois; **Naabu** (or **Nmap** if CDN) — configurable port range/rate → `ports_fast.txt` |
-| `fullports` | 5 | **Nmap** all ports **`-p-`** with **`-sV -sC -O`**, XML parse → `ports_full.txt` (+ `.xml` / `.gnmap` base) |
+| `fullports` | 5 | **Nmap** all ports **`-p-`** with **`-sV -sC -O`**, host-count-scaled timeout, XML parse → `ports_full.txt` (+ `.xml` / `.gnmap` base) |
 | `urls` | 6 | **Katana**, **gau**, **waybackurls** in parallel → cleaned `urls.txt` + merged **`urls_final.txt`** |
 | `waf` | 7 | Concurrent **wafw00f** per host → `waf_summary.txt` |
 | `vuln` | 8 | **Nuclei** JSONL + **`nuclei_output.txt`**; optional **`-ut`** template update |
@@ -629,7 +636,7 @@ Runs all 29 modules across 5 phases with intelligent concurrency. See **[Automat
 | `api` | 13 | **kr** (Kiterunner) → `api_fuzzing/kr_results.txt` |
 | `takeover` | 14 | **subzy** + **dig** CNAME workers → `takeover/` |
 | `hakrawler` | 15 | **hakrawler** → merges **`urls_final.txt`** |
-| `screenshots` | 16 | **gowitness** → `screenshots/` |
+| `screenshots` | 16 | **gowitness** + **EyeWitness** where installed → `screenshots/gowitness/`, `screenshots/eyewitness/` |
 | `dnsbrute` | 17 | **massdns** + wordlist → merges into `subdomains.txt` |
 | `gf` | 18 | **gf** `xss` `sqli` `ssrf` `lfi` `redirect` `rce` → `gf/*.txt` |
 | `tech` | 19 | **WhatWeb** JSON → `tech_scan/` |
@@ -729,7 +736,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 | **13** | API fuzzing (`kr` / Kiterunner) |
 | **14** | Subdomain takeover (`subzy` + CNAME audit) |
 | **15** | Advanced URL enum (`hakrawler`) |
-| **16** | Screenshots (`gowitness`) |
+| **16** | Screenshots (`gowitness` + `EyeWitness` where installed) |
 | **17** | DNS bruteforce (`massdns`) |
 | **18** | GF pattern filters |
 | **19** | Tech fingerprint (`whatweb`) |
@@ -762,7 +769,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 
 **Python** ([`requirements.txt`](requirements.txt)): `requests`, `dnspython`, `tldextract`, `rich` (recommended), `pyyaml` (recommended).
 
-**Go / apt / `/opt/recontools`** — [`install.sh`](install.sh) installs **subfinder**, **amass**, **assetfinder**, **dnsx**, **httpx**, **naabu**, **nuclei**, **katana**, **gau**, **waybackurls**, **ffuf**, **dalfox**, **asnmap**, **hakrawler**, **gowitness**, **gf**, **subzy**, **kr**, **nmap**, **massdns**, **wafw00f**, **whatweb**, **sqlmap**, plus **ParamSpider**, **Arjun**, **XSStrike** (cloned; menu XSS uses **Dalfox**), **smuggler**, **LinkFinder**, **theHarvester**.
+**Go / apt / `/opt/recontools`** — [`install.sh`](install.sh) installs **subfinder**, **amass**, **assetfinder**, **dnsx**, **httpx**, **naabu**, **nuclei**, **katana**, **gau**, **waybackurls**, **ffuf**, **dalfox**, **asnmap**, **hakrawler**, **gowitness**, **gf**, **subzy**, **kr**, **nmap**, **massdns**, **wafw00f**, **whatweb**, **sqlmap**, **chromium**, plus **ParamSpider**, **Arjun**, **XSStrike** (cloned; menu XSS uses **Dalfox**), **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness**.
 
 ```
 Oculus/
@@ -801,7 +808,7 @@ flowchart LR
 | Symptom | What to try |
 |:---|:---|
 | Tool shows ✘ in menu **I** | Run `./install.sh` or `./install.sh --update`; confirm `~/go/bin` is on **`PATH`** |
-| `Module X failed` / timeouts | Lower `rate_limit` / `threads`; use smaller `naabu.ports`; run modules separately; add `default_timeout` in YAML (see [config guide](#expandable-guides)) |
+| `Module X failed` / timeouts | Lower `rate_limit` / `threads`; use smaller `naabu.ports`; run modules separately; tune `default_timeout` or `nmap.full_port_timeout_*` in YAML (see [config guide](#expandable-guides)) |
 | `wordlist not found` | Install **SecLists** or edit `wordlists.*` paths in YAML to real files on disk |
 | `No subdomains` / empty `alive.txt` | Check target DNS; try **`dnsbrute`**; confirm **Subfinder/Amass** have network and API tokens if you use PD env vars |
 | **Nuclei** no findings | Run template update when prompted (`-ut`) or run `nuclei -ut` manually; widen `nuclei.severity` |
