@@ -3487,13 +3487,14 @@ class Oculus:
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Oculus Report — {self.domain}</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#0a0a0f;color:#e0e0e0;font-family:'Courier New',monospace;padding:20px}}
 .container{{max-width:1200px;margin:0 auto}}
-h1{{color:#00ffcc;font-size:28px;border-bottom:2px solid #00ffcc;padding-bottom:10px;margin-bottom:20px}}
-h2{{color:#00aaff;font-size:20px;margin:25px 0 10px}}
-.card{{background:#12121a;border:1px solid #1a1a2e;border-radius:8px;padding:15px;margin:10px 0}}
+h1{{color:#00ffcc;font-size:28px;border-bottom:2px solid #00ffcc;padding-bottom:10px;margin-bottom:20px;display:flex;align-items:center}}
+h2{{color:#00aaff;font-size:20px;margin:25px 0 10px;display:flex;align-items:center}}
+.card{{background:#12121a;border:1px solid #1a1a2e;border-radius:8px;padding:15px;margin:5px 0 15px}}
 .stat{{display:inline-block;background:#1a1a2e;border-radius:6px;padding:12px 20px;margin:5px;text-align:center;min-width:150px}}
 .stat .num{{font-size:24px;font-weight:bold;color:#00ffcc}}
 .stat .label{{font-size:11px;color:#888;text-transform:uppercase}}
@@ -3503,15 +3504,20 @@ th:hover{{background:#2a2a3e}}
 td{{padding:6px 8px;border-bottom:1px solid #1a1a2e;font-size:12px;word-break:break-all}}
 tr:hover{{background:#1a1a2e}}
 .critical{{color:#ff4444;font-weight:bold}} .high{{color:#ff8800}} .medium{{color:#ffcc00}} .low{{color:#44cc44}} .info{{color:#4488ff}}
-details{{margin:5px 0}} summary{{cursor:pointer;color:#00aaff;padding:5px;font-weight:bold}}
+details{{margin:6px 0}}
+summary{{cursor:pointer;color:#00aaff;padding:10px 14px;font-weight:bold;background:#12121a;border:1px solid #1a1a2e;border-radius:6px;display:flex;align-items:center;list-style:none;transition:background 0.15s ease,color 0.15s ease}}
+summary::-webkit-details-marker{{display:none}}
+summary:hover{{background:#1a1a2e;color:#00ffcc}}
 .gallery{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}
 .gallery a{{display:block;background:#0f0f18;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}}
 .gallery a:hover{{border-color:#00ffcc;transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,255,204,.12)}}
 .gallery img{{width:100%;height:100%;max-height:240px;object-fit:cover;display:block}}
 .chart-container{{width:400px;margin:0 auto;padding:20px}}
 .footer{{text-align:center;padding:30px 0;margin-top:60px;border-top:1px solid #1a1a2e;color:#555;font-size:11px;letter-spacing:1px}}
+.icon-inline{{width:16px;height:16px;margin-right:10px;flex-shrink:0}}
+.title-icon{{width:24px;height:24px;color:#00ffcc;margin-right:12px;flex-shrink:0}}
 </style></head><body><div class="container">
-<h1>⚡ Oculus v{VERSION} — {self.domain}</h1>
+<h1><i data-lucide="shield" class="title-icon"></i> Oculus v{VERSION} — {self.domain}</h1>
 <p style="color:#666">Scan Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
 <div style="margin:20px 0;text-align:center;">
 <div class="stat"><div class="num">{len(subs)}</div><div class="label">Subdomains</div></div>
@@ -3543,7 +3549,7 @@ new Chart(document.getElementById('vulnChart'), {{
 }});
 </script>"""
 
-            html += """<h2>🔴 Vulnerabilities</h2><div class="card">
+            html += """<h2><i data-lucide="shield-alert" class="icon-inline" style="color:#ff4444"></i> Vulnerabilities</h2><div class="card">
 <table id="vulnTable">
 <thead><tr><th onclick="sortTable(0)">Severity ↕</th><th onclick="sortTable(1)">Name ↕</th><th onclick="sortTable(2)">Template ↕</th><th onclick="sortTable(3)">Matched At ↕</th></tr></thead>
 <tbody>"""
@@ -3570,7 +3576,7 @@ function sortTable(n) {
 </script>"""
 
         if screenshots:
-            html += f'<details><summary>📸 Screenshots ({len(screenshots)})</summary><div class="card gallery">'
+            html += f'<details><summary><i data-lucide="image" class="icon-inline"></i> Screenshots ({len(screenshots)})</summary><div class="card gallery">'
             for img in screenshots[:50]:
                 rel_img = str(img.relative_to(screenshots_dir)).replace(os.sep, '/')
                 rel_path = f"screenshots/{rel_img}"
@@ -3580,29 +3586,29 @@ function sortTable(n) {
             html += '</div></details>'
 
         sections = [
-            ("📡 Subdomains", subs, 200),
-            ("🔎 DNS Records Resolved", dns_resolved, 200),
-            ("🟢 Alive Hosts", alive, 200),
-            ("🔌 Open Ports", ports, 200),
-            ("🔗 URLs", urls, 200),
-            ("📝 Parameters", params, 200),
-            ("📜 JS Endpoints", js_endpoints, 200),
-            ("🌐 ASN IP Ranges", asn_ranges, 200),
-            ("🦊 Cross-Site Scripting (XSS)", dalfox, 200),
-            ("💉 SQL Injections", sqlmap, 200),
-            ("🏴‍☠️ Subdomain Takeovers", takeovers, 200),
-            ("🔄 CORS Misconfigurations", cors, 200),
-            ("🕵️ HTTP Smuggling", smuggler, 200),
-            ("☁️ Cloud Buckets / Assets", s3_buckets, 200),
-            ("🔑 Leaked Secrets (GitHub)", github_secrets, 200),
-            ("🔎 Shodan Host Intelligence", shodan_results, 200),
-            ("↩️ Open Redirects", open_redirects, 200)
+            ("Subdomains", "globe", subs, 200),
+            ("DNS Records Resolved", "search", dns_resolved, 200),
+            ("Alive Hosts", "activity", alive, 200),
+            ("Open Ports", "plug", ports, 200),
+            ("URLs", "link", urls, 200),
+            ("Parameters", "file-text", params, 200),
+            ("JS Endpoints", "terminal", js_endpoints, 200),
+            ("ASN IP Ranges", "network", asn_ranges, 200),
+            ("Cross-Site Scripting (XSS)", "code", dalfox, 200),
+            ("SQL Injections", "database", sqlmap, 200),
+            ("Subdomain Takeovers", "flag", takeovers, 200),
+            ("CORS Misconfigurations", "refresh-cw", cors, 200),
+            ("HTTP Smuggling", "shield-alert", smuggler, 200),
+            ("Cloud Buckets / Assets", "cloud", s3_buckets, 200),
+            ("Leaked Secrets (GitHub)", "key", github_secrets, 200),
+            ("Shodan Host Intelligence", "radar", shodan_results, 200),
+            ("Open Redirects", "external-link", open_redirects, 200)
         ]
         
-        for title, data, limit in sections:
+        for title, icon, data, limit in sections:
             if data:
                 try:
-                    html += f'<details><summary>{title} ({len(data)})</summary><div class="card">'
+                    html += f'<details><summary><i data-lucide="{icon}" class="icon-inline"></i> {title} ({len(data)})</summary><div class="card">'
                     for item in data[:limit]:
                         html += f'{item}<br>'
                     if len(data) > limit:
@@ -3611,7 +3617,7 @@ function sortTable(n) {
                 except Exception as e:
                     self.logger.error(f"Error appending HTML section {title}: {e}")
 
-        html += f'<div class="footer">Generated by Oculus v{VERSION}</div></div></body></html>'
+        html += f'<div class="footer">Generated by Oculus v{VERSION}</div></div><script>lucide.createIcons();</script></body></html>'
         try:
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html)

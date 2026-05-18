@@ -318,9 +318,46 @@ export default function ReportViewer({ domain }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', boxSizing: 'border-box' }}>
-      <div className="page-header" style={{ flexShrink: 0 }}>
-        <h2>Reports — {activeDomain}</h2>
-        <p>View generated HTML, JSON, Markdown, summary reports, and captured screenshots.</p>
+      <div className="page-header" style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Reports — {activeDomain}</h2>
+          <p style={{ marginTop: 4 }}>View generated HTML, JSON, Markdown, summary reports, and captured screenshots.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setActiveDomain('')}
+          style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid var(--border)',
+            borderRadius: '50%',
+            color: 'var(--text-secondary)',
+            width: '36px',
+            height: '36px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            flexShrink: 0
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+            e.currentTarget.style.color = '#ff6b6b';
+            const icon = e.currentTarget.querySelector('svg');
+            if (icon) icon.style.transform = 'rotate(90deg)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+            e.currentTarget.style.borderColor = 'var(--border)';
+            e.currentTarget.style.color = 'var(--text-secondary)';
+            const icon = e.currentTarget.querySelector('svg');
+            if (icon) icon.style.transform = 'rotate(0deg)';
+          }}
+          title="Close Report View"
+        >
+          <X size={16} style={{ transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+        </button>
       </div>
 
       <div className="tabs" style={{ flexShrink: 0, marginBottom: 16 }}>
