@@ -3515,6 +3515,11 @@ function sortTable(n) {
         """Generate machine-readable JSON report"""
         if not self._require_setup():
             return
+        
+        ports = self.read_file_lines(f"{self.output_dir}/ports_full.txt")
+        if not ports:
+            ports = self.read_file_lines(f"{self.output_dir}/ports_fast.txt")
+            
         report = {
             'domain': self.domain,
             'version': VERSION,
@@ -3522,7 +3527,9 @@ function sortTable(n) {
             'results': self.results,
             'subdomains': self.read_file_lines(f"{self.output_dir}/subdomains.txt"),
             'alive_hosts': self.read_file_lines(f"{self.output_dir}/alive.txt"),
-            'urls': self.read_file_lines(f"{self.output_dir}/urls_final.txt")[:500],
+            'open_ports': ports,
+            'urls': self.read_file_lines(f"{self.output_dir}/urls_final.txt")[:1000],
+            'parameters': self.read_file_lines(f"{self.output_dir}/parameters/parameters_final.txt")[:1000],
         }
         # Parse vulnerabilities
         vulns_file = f"{self.output_dir}/nuclei_output.jsonl"
@@ -3544,31 +3551,113 @@ function sortTable(n) {
         if not self._require_setup():
             return
         path = f"{self.output_dir}/report.md"
+        
+        subs = self.read_file_lines(f"{self.output_dir}/subdomains.txt")
+        alive = self.read_file_lines(f"{self.output_dir}/alive.txt")
+        ports = self.read_file_lines(f"{self.output_dir}/ports_full.txt")
+        if not ports:
+            ports = self.read_file_lines(f"{self.output_dir}/ports_fast.txt")
+        params = self.read_file_lines(f"{self.output_dir}/parameters/parameters_final.txt")
+        urls = self.read_file_lines(f"{self.output_dir}/urls_final.txt")
+        
+        # Collect screenshots
+        screenshots_dir = Path(f"{self.output_dir}/screenshots")
+        screenshot_exts = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+        screenshots = []
+        if screenshots_dir.exists():
+            screenshots = [
+                img for img in sorted(screenshots_dir.rglob('*'))
+                if img.is_file() and img.suffix.lower() in screenshot_exts
+            ]
+
         with open(path, 'w', encoding='utf-8') as f:
             f.write(f"# Oculus Report — {self.domain}\n\n")
             f.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n")
             f.write(f"**Version:** {VERSION}\n\n---\n\n")
+            
+            # Summary Table
             f.write("## Summary\n\n| Metric | Count |\n|---|---|\n")
             for k, v in self.results.items():
                 if isinstance(v, (int, float)):
                     f.write(f"| {k.replace('_', ' ').title()} | {v} |\n")
             f.write("\n---\n\n")
-            # Vulns
-            vulns_file = f"{self.output_dir}/nuclei_output.txt"
+            
+            # Vulnerabilities
+            vulns_file = f"{self.output_dir}/nuclei_output.jsonl"
             if os.path.exists(vulns_file):
-                lines = self.read_file_lines(vulns_file)
-                if lines:
-                    f.write("## Vulnerabilities\n\n```\n")
-                    for l in lines[:50]:
-                        f.write(l + "\n")
-                    f.write("```\n\n")
-            # Alive
-            alive = self.read_file_lines(f"{self.output_dir}/alive.txt")
+                vulns = []
+                for line in self.read_file_lines(vulns_file):
+                    try:
+                        vulns.append(json.loads(line))
+                    except Exception:
+                        pass
+                if vulns:
+                    f.write("## 🔴 Vulnerabilities\n\n")
+                    f.write("| Severity | Name | Template | Matched At |\n|---|---|---|---|\n")
+                    for v in sorted(vulns, key=lambda x: {'critical':0, 'high':1, 'medium':2, 'low':3, 'info':4}.get(x.get('info',{}).get('severity','info').lower(), 5)):
+                        sev = v.get('info',{}).get('severity','info').lower().upper()
+                        name = v.get("info",{}).get("name","")
+                        template = v.get("template-id","")
+                        matched = v.get("matched-at","")
+                        f.write(f"| **{sev}** | {name} | {template} | `{matched}` |\n")
+                    f.write("\n---\n\n")
+            
+            # Screenshots
+            if screenshots:
+                f.write(f"## 📸 Captured Screenshots ({len(screenshots)})\n\n")
+                for img in screenshots[:20]:
+                    rel_img = str(img.relative_to(screenshots_dir)).replace(os.sep, '/')
+                    f.write(f"### {img.name}\n")
+                    f.write(f"![{img.name}](screenshots/{rel_img})\n\n")
+                if len(screenshots) > 20:
+                    f.write(f"*... and {len(screenshots) - 20} more in screenshots/ directory*\n\n")
+                f.write("---\n\n")
+
+            # Subdomains
+            if subs:
+                f.write(f"## 📡 Subdomains ({len(subs)})\n\n")
+                for s in subs[:100]:
+                    f.write(f"- {s}\n")
+                if len(subs) > 100:
+                    f.write(f"\n*... and {len(subs) - 100} more subdomains*\n")
+                f.write("\n---\n\n")
+                
+            # Alive Hosts
             if alive:
-                f.write(f"## Alive Hosts ({len(alive)})\n\n")
-                for a in alive[:30]:
+                f.write(f"## 🟢 Alive Hosts ({len(alive)})\n\n")
+                for a in alive[:100]:
                     f.write(f"- {a}\n")
-                f.write("\n")
+                if len(alive) > 100:
+                    f.write(f"\n*... and {len(alive) - 100} more alive hosts*\n")
+                f.write("\n---\n\n")
+
+            # Open Ports
+            if ports:
+                f.write(f"## 🔌 Open Ports ({len(ports)})\n\n")
+                for p in ports[:100]:
+                    f.write(f"- {p}\n")
+                if len(ports) > 100:
+                    f.write(f"\n*... and {len(ports) - 100} more open ports*\n")
+                f.write("\n---\n\n")
+
+            # URLs
+            if urls:
+                f.write(f"## 🔗 Discovered URLs ({len(urls)})\n\n")
+                for u in urls[:100]:
+                    f.write(f"- {u}\n")
+                if len(urls) > 100:
+                    f.write(f"\n*... and {len(urls) - 100} more URLs*\n")
+                f.write("\n---\n\n")
+
+            # Parameters
+            if params:
+                f.write(f"## 📝 Parameters ({len(params)})\n\n")
+                for pa in params[:100]:
+                    f.write(f"- {pa}\n")
+                if len(params) > 100:
+                    f.write(f"\n*... and {len(params) - 100} more parameters*\n")
+                f.write("\n\n")
+
         print(f"{Colors.GREEN}[✔] Markdown report: {path}{Colors.RESET}")
 
     # ═══════════════════════════════════════════════════════════════
