@@ -123,10 +123,11 @@ sudo apt-get update -qq 2>/dev/null || log_warn "apt-get update had warnings"
 
 APT_PACKAGES=(
     git wget curl unzip jq
-    python3-pip python3-venv
+    python3-pip python3-venv python3-dev
     build-essential libpcap-dev
     nmap massdns wafw00f whatweb sqlmap
-    dnsutils chromium
+    dnsutils chromium chromium-driver
+    xvfb libnss3 libgconf-2-4
 )
 
 log_info "Installing ${#APT_PACKAGES[@]} packages..."
@@ -506,18 +507,72 @@ def install_recon_tool(name, repo, progress, tid):
                 results[name] = ("failed", "kr binary not found")
             return
 
-        req = os.path.join(opt, "requirements.txt")
+        # EyeWitness now uses virtual environment setup
         if name_lower == "eyewitness":
-            py_req = os.path.join(opt, "Python", "requirements.txt")
-            if os.path.exists(py_req):
-                req = py_req
-        if os.path.exists(req):
-            if not pip_install_req(req):
-                log_failure(name, "pip requirements had errors (tool may still work)")
-                if name_lower == "eyewitness":
-                    progress.update(tid, description=f"[bold red]✘ {name}[/] (Python deps failed)", completed=100)
-                    results[name] = ("failed", "EyeWitness Python requirements failed")
+            setup_script = os.path.join(opt, "setup", "setup.sh")
+            if os.path.exists(setup_script):
+                progress.update(tid, description=f"[bold cyan]➤ {name}[/] (Installing venv + deps...)")
+                try:
+                    # Ensure setup script is executable
+                    os.chmod(setup_script, 0o755)
+                    
+                    # Run setup.sh with bash explicitly
+                    r = subprocess.run(["bash", setup_script], 
+                                     cwd=opt, capture_output=True, text=True, timeout=900)
+                    if r.returncode != 0:
+                        # Try with sudo if regular execution fails
+                        r = subprocess.run(["sudo", "bash", setup_script], 
+                                         cwd=opt, capture_output=True, text=True, timeout=900)
+                        if r.returncode != 0:
+                            log_failure(name, f"setup.sh failed: {r.stderr}")
+                            progress.update(tid, description=f"[bold yellow]⚠ {name}[/] (Partial)", completed=100)
+                            results[name] = ("partial", "Venv setup incomplete; pip fallback attempted")
+                except subprocess.TimeoutExpired:
+                    log_failure(name, "EyeWitness setup timed out")
+                    progress.update(tid, description=f"[bold red]✘ {name}[/] (Setup timeout)", completed=100)
+                    results[name] = ("failed", "Setup script timeout")
                     return
+                except Exception as e:
+                    log_failure(name, str(e))
+                    progress.update(tid, description=f"[bold yellow]⚠ {name}[/] (Fallback)", completed=100)
+                
+                # Verify venv was created
+                venv_python = os.path.join(opt, "eyewitness-venv", "bin", "python")
+                if os.path.exists(venv_python):
+                    progress.update(tid, description=f"[bold green]✔ {name}[/] (Venv ready)", completed=100)
+                    results[name] = ("success", "EyeWitness venv installed")
+                    return
+                else:
+                    # Fallback: try manual venv + pip install
+                    progress.update(tid, description=f"[bold cyan]➤ {name}[/] (Manual setup...)")
+                    py_req = os.path.join(opt, "Python", "requirements.txt")
+                    if os.path.exists(py_req):
+                        try:
+                            venv_dir = os.path.join(opt, "eyewitness-venv")
+                            subprocess.run(["python3", "-m", "venv", venv_dir], 
+                                         capture_output=True, text=True, timeout=120)
+                            if os.path.exists(venv_python):
+                                subprocess.run([venv_python, "-m", "pip", "install", "-q", "-r", py_req],
+                                             capture_output=True, text=True, timeout=600)
+                                progress.update(tid, description=f"[bold green]✔ {name}[/] (Manual venv ok)", completed=100)
+                                results[name] = ("success", "EyeWitness venv created (manual)")
+                                return
+                        except Exception as e:
+                            log_failure(name, str(e))
+            else:
+                # setup.sh not found - try direct pip install as last resort
+                py_req = os.path.join(opt, "Python", "requirements.txt")
+                if os.path.exists(py_req):
+                    if not pip_install_req(py_req):
+                        log_failure(name, "pip requirements install failed")
+                        progress.update(tid, description=f"[bold red]✘ {name}[/] (Install failed)", completed=100)
+                        results[name] = ("failed", "EyeWitness installation failed")
+                        return
+        else:
+            req = os.path.join(opt, "requirements.txt")
+            if os.path.exists(req):
+                if not pip_install_req(req):
+                    log_failure(name, "pip requirements had errors (tool may still work)")
 
         setup_py = os.path.join(opt, "setup.py")
         pyproject = os.path.join(opt, "pyproject.toml")

@@ -1979,10 +1979,12 @@ class Oculus:
         target_dir.mkdir(parents=True, exist_ok=True)
         print(f"{Colors.CYAN}[*] gowitness binary: {tool}{Colors.RESET}")
         print(f"{Colors.CYAN}[*] gowitness output: {target_dir}{Colors.RESET}")
+        
+        threads = self.config.get('threads', 10)
         cmd = (
             f"{shlex.quote(tool)} scan file -f {shlex.quote(alive_file)} "
-            f"--screenshot-path {shlex.quote(str(target_dir))} --timeout 15 "
-            f"--chrome-flag=\"--no-sandbox\" --chrome-flag=\"--ignore-certificate-errors\" --chrome-flag=\"--disable-gpu\""
+            f"-s {shlex.quote(str(target_dir))} -T 15 -t {threads} "
+            f"--write-jsonl --write-db"
         )
         return self.run_command(cmd, timeout=900, label='gowitness')
 
@@ -1994,12 +1996,18 @@ class Oculus:
 
         target_dir = Path(out_dir) / 'eyewitness'
         target_dir.mkdir(parents=True, exist_ok=True)
-        python_bin = shutil.which('python3') or sys.executable
+        
+        # EyeWitness now uses a Python virtual environment at /opt/recontools/EyeWitness/eyewitness-venv/
+        venv_python = "/opt/recontools/EyeWitness/eyewitness-venv/bin/python"
+        if not os.path.exists(venv_python):
+            # Fallback to system python3 if venv not found
+            venv_python = shutil.which('python3') or sys.executable
+        
         print(f"{Colors.CYAN}[*] EyeWitness script: {script}{Colors.RESET}")
         print(f"{Colors.CYAN}[*] EyeWitness output: {target_dir}{Colors.RESET}")
         cmd = (
-            f"{shlex.quote(python_bin)} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
-            f"-d {shlex.quote(str(target_dir))} --no-prompt"
+            f"{shlex.quote(str(venv_python))} {shlex.quote(script)} -f {shlex.quote(alive_file)} "
+            f"-d {shlex.quote(str(target_dir))} --timeout 15"
         )
         return self.run_command(cmd, timeout=1800, label='eyewitness')
 
