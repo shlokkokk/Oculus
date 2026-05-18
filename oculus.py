@@ -2080,7 +2080,26 @@ class Oculus:
             return
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
-            return
+            fallback_file = f"{self.output_dir}/screenshot_targets.txt"
+            hosts = self._get_hosts(prefer_alive=True)
+            targets = set()
+            for h in hosts:
+                h = h.strip()
+                if not h:
+                    continue
+                if h.startswith('http://') or h.startswith('https://'):
+                    targets.add(h)
+                else:
+                    targets.add(f"https://{h}")
+                    targets.add(f"http://{h}")
+            if not targets:
+                print(f"{Colors.RED}[!] No hosts available for screenshot capture{Colors.RESET}")
+                return
+            with open(fallback_file, 'w', encoding='utf-8') as f:
+                for t in sorted(targets):
+                    f.write(t + "\n")
+            alive_file = fallback_file
+            print(f"{Colors.YELLOW}[*] alive.txt missing; using fallback targets from discovered hosts/domain{Colors.RESET}")
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Capturing Screenshots...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/screenshots"
         Path(out_dir).mkdir(parents=True, exist_ok=True)
