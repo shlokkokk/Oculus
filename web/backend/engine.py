@@ -478,6 +478,16 @@ class ScanEngine:
             oc = Oculus(config=config)
             oc._setup_logging_basic()
             self._oculus = oc
+            require_file_failed = {"value": False}
+            original_require_file = oc._require_file
+
+            def tracked_require_file(filepath, msg="Required file not found"):
+                ok = original_require_file(filepath, msg)
+                if not ok:
+                    require_file_failed["value"] = True
+                return ok
+
+            oc._require_file = tracked_require_file
 
             # Initialize tools (captured)
             self._current_module = "Initializing tools"
@@ -554,9 +564,14 @@ class ScanEngine:
                         self._state = "aborted"
                         return
                     self._current_module = step_name
+                    require_file_failed["value"] = False
                     try:
                         step_func()
-                        self._modules_completed.append(step_name)
+                        if require_file_failed["value"]:
+                            self._modules_failed.append(step_name)
+                            self._log_queue.put(f"[ERROR] {step_name} failed: prerequisite file missing")
+                        else:
+                            self._modules_completed.append(step_name)
                     except KeyboardInterrupt:
                         self._state = "aborted"
                         return
@@ -575,7 +590,7 @@ class ScanEngine:
                     pass
 
             self._current_module = None
-            self._state = "completed"
+            self._state = "failed" if self._modules_failed and not self._modules_completed else "completed"
 
         except Exception as e:
             self._log_queue.put(f"[FATAL] Scan engine error: {e}")
