@@ -92,16 +92,54 @@ ls /opt/recontools/EyeWitness/Python/EyeWitness.py
 
 ---
 
-## Docker (alternative)
+## Docker (Alternative — Recommended for Windows/macOS)
 
-From the repo root:
+Using Docker is the **recommended path** if you are on Windows, macOS, or do not want to install all 29 native security compilers on your host system. 
+
+We provide a **high-performance multi-stage Dockerfile** that automatically:
+1. Spins up a Node.js stage to compile the React dashboard (`web/frontend/dist`).
+2. Bundles the compiled SPA directly into a `kalilinux` base runner.
+3. Auto-configures Python, Go, and installs all 29 tools via `install.sh` in prompt-free mode.
+4. Hosts both the FastAPI REST/WebSocket API and React dashboard on a single port (`8000`).
+
+---
+
+### Method A: One-Command Build & Launch (Docker Compose)
+
+From the project root directory:
+```bash
+docker compose up --build
+```
+This single command handles dependencies, builds the system, forwards ports, and starts the interface. 
+
+To open the cyber control center, navigate your browser to:
+👉 **[http://localhost:8000](http://localhost:8000)**
+
+---
+
+### Method B: Manual Docker CLI
+
+If you prefer building and running with native Docker CLI:
 
 ```bash
-docker build -t oculus .
-docker run --rm -it -v "$(pwd):/app" oculus -d example.com --module subdomain --no-confirm
+# 1. Build the unified Web + CLI image
+docker build -t oculus-web .
+
+# 2. Run the Web Dashboard
+docker run -it -p 8000:8000 oculus-web
 ```
 
-See **README.md** for bind mounts, API keys, and wordlist paths inside the image.
+---
+
+### Running CLI Commands via Docker
+
+Even though the image defaults to launching the sleek Web Control HUD, it remains **fully backward-compatible** with the standard terminal menu and command-line flags. Just override the default container command:
+
+```bash
+# Run a quick scan on a domain directly in your shell
+docker run -it oculus-web oculus.py -d target.com -m quick
+```
+
 
 ---
 

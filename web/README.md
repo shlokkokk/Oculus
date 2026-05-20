@@ -147,6 +147,33 @@ Navigate to **http://localhost:8000** in your browser.
 
 ---
 
+## 🐳 Running the Web Interface in Docker (Recommended for Windows & macOS)
+
+If you are on Windows, macOS, or do not want to install Node, Python, and the 29 underlying security tools on your host machine, you can run the entire Web UI ecosystem inside a fully pre-configured container environment with one command.
+
+### Method A: Single-Command Launch (Docker Compose)
+From the project root directory:
+```bash
+docker compose up --build
+```
+This command automatically builds the Node frontend stage, compiles the React assets, downloads all 29 tools inside a Kali Linux container, forwards ports, and starts the FastAPI server.
+
+Open your browser to:
+👉 **[http://localhost:8000](http://localhost:8000)**
+
+### Method B: Manual Docker CLI
+If you prefer standard Docker commands:
+```bash
+# 1. Build the unified image
+docker build -t oculus-web .
+
+# 2. Run the Web Dashboard
+docker run -it -p 8000:8000 oculus-web
+```
+
+
+---
+
 ## 📡 Core API Endpoints
 
 | Method | Endpoint | Description |

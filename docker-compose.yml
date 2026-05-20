@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  oculus-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oculus:latest
+    container_name: oculus-web
+    ports:
+      - "8000:8000"
+    tty: true
+    stdin_open: true
+    restart: unless-stopped

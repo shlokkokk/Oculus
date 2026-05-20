@@ -657,16 +657,38 @@ Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + a
 
 ---
 
-## Docker
+## 🐳 Running in Docker (Web UI & CLI)
 
-From repo root (Kali-based image; runs `install.sh --update` at build):
+Oculus provides a **high-performance multi-stage Docker build** that bundles the CLI tool, the FastAPI backend, and the React frontend on a single mapped port (`8000`), pre-configured with all 29 scanning modules natively.
+
+### Option A: Launch the Web Control HUD (Recommended)
+From the project root:
+```bash
+docker compose up --build
+```
+Open your browser to: **http://localhost:8000** to configure, run, and browse scans. All files can be triaged and downloaded directly via the web portal.
+
+---
+
+### Option B: Run CLI Scans Directly via Docker (Without Web)
+If you prefer using Oculus as a pure command-line tool, you can run containerized scans directly and extract the results to your host machine safely.
 
 ```bash
+# 1. Build the unified image
 docker build -t oculus .
-docker run --rm -it -v "$(pwd):/app" oculus -d example.com --module subdomain,alive --no-confirm
+
+# 2. Start a CLI scan (naming the container so you can extract results easily)
+docker run -it --name oculus-runner oculus -d example.com -m quick
+
+# 3. Copy the generated output files from the container directly to your host machine
+docker cp oculus-runner:/app/output-example.com ./output-example.com
+
+# 4. Clean up the runner container
+docker rm oculus-runner
 ```
 
-Bind-mount **`$(pwd):/app`** so `output-<domain>/` is written on your host clone.
+#### Why we don't bind-mount `-v $(pwd):/app`
+Mounting your entire host folder directly over `/app` in the container will override the pre-compiled React dashboard assets and node setups inside the image, causing errors. Using the standard `docker cp` flow shown above keeps your host directory clean and completely avoids Windows/Linux file permission or line-ending mismatches.
 
 <details>
 <summary><b>Docker tips</b> — config inside the container, secrets, wordlists</summary>
@@ -675,7 +697,6 @@ Bind-mount **`$(pwd):/app`** so `output-<domain>/` is written on your host clone
   `-v /host/oculus.yaml:/root/.config/oculus/config.yaml:ro`
 - **Secrets:** Prefer `-e` for tokens **or** a read-only mounted file; never commit keys.
 - **SecLists:** Host paths in YAML must exist **inside** the container filesystem unless you mount SecLists at the same path as in your YAML.
-- **No volume:** Outputs stay in the container layer — use `docker cp` before the container exits if you need artifacts.
 
 </details>
 
