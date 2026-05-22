@@ -1,7 +1,7 @@
 # ==========================================================
 # STAGE 1: Build the React Frontend SPA
 # ==========================================================
-FROM node:18-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 WORKDIR /web/frontend
 
 # Copy frontend package manifests for dependency installation caching
