@@ -229,6 +229,9 @@ else
     safe_pip_install rich -q || log_warn "Could not install rich"
 fi
 
+log_info "Installing build dependencies (setuptools, wheel)..."
+safe_pip_install setuptools wheel -q || log_warn "Could not install setuptools/wheel"
+
 # PHASE 5: Tool Installation Dashboard
 log_step "Phase 5.1 · Tool Installation Dashboard"
 
@@ -353,8 +356,9 @@ def create_venv_and_install(opt, name_lower, cli_name):
             py_log(f"venv creation failed: {r.stderr or r.stdout}")
             return False
         venv_python = os.path.join(venv_dir, "bin", "python")
-        # upgrade pip
+        # upgrade pip and install build dependencies
         subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"], capture_output=True, text=True, timeout=120)
+        subprocess.run([venv_python, "-m", "pip", "install", "setuptools", "wheel"], capture_output=True, text=True, timeout=120)
 
         # install requirements.txt if present
         req = os.path.join(opt, "requirements.txt")
