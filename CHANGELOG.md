@@ -33,7 +33,7 @@ All notable changes to the **Oculus** project will be documented in this file.
 
 ## [3.1.0] - 2026-05-15
 ### 🚀 Added
-- **Full Spectrum Scan (`[U]`):** A new 5-phase orchestration pipeline running all 29 modules concurrently with intelligent dependency gating.
+- **Full Spectrum Scan (`[U]`):** A new 5-phase orchestration pipeline running all 37 modules concurrently with intelligent dependency gating.
 - **Smart Resume Logic:** Deep session integration allowing Full Spectrum Scan to instantly skip previously completed tasks on resume.
 - **Graceful Abort Handling:** Safe `Ctrl+C` interrupt handling that halts pipelines, saves progress, and generates partial reports without losing data.
 - **Data Protection:** Added pre-scan warnings to Full Auto (`[9]`) and Deep Recon (`[D]`) to prevent accidental overwrites of existing session data.

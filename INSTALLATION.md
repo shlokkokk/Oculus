@@ -96,12 +96,12 @@ ls /opt/recontools/EyeWitness/Python/EyeWitness.py
 
 ## Docker (Alternative — Recommended for Windows/macOS)
 
-Using Docker is the **recommended path** if you are on Windows, macOS, or do not want to install all 29 native security compilers on your host system. 
+Using Docker is the **recommended path** if you are on Windows, macOS, or do not want to install the full native security toolchain (≈37 tools) on your host system. 
 
 We provide a **high-performance multi-stage Dockerfile** that automatically:
 1. Spins up a Node.js stage to compile the React dashboard (`web/frontend/dist`).
 2. Bundles the compiled SPA directly into a `kalilinux` base runner.
-3. Auto-configures Python, Go, and installs all 29 tools via `install.sh` in prompt-free mode.
+3. Auto-configures Python, Go, and installs the full toolset (≈37 tools) via `install.sh` in prompt-free mode.
 4. Hosts both the FastAPI REST/WebSocket API and React dashboard on a single port (`8000`).
 
 ---

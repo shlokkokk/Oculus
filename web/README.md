@@ -71,7 +71,7 @@ Browser (React SPA)
     │
     ├── [ REST API ] ──── FastAPI Backend ──── Oculus Core (oculus.py)
     │                                              │
-    └── [ WebSocket ] ── Live Log Stream           └── 36 Kali Modules
+    └── [ WebSocket ] ── Live Log Stream           └── 37 Kali Modules
 ```
 
 - **Backend (`web/backend/`)**: A fast, asynchronous API built with FastAPI. It imports the `Oculus` Python class directly to execute scans without spawning dangerous subprocesses.

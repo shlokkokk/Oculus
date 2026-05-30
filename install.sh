@@ -342,6 +342,64 @@ def pip_install_package_dir(opt):
         py_log(f"pip install failed: {r.stderr or r.stdout}")
     return False
 
+def create_venv_and_install(opt, name_lower, cli_name):
+    """Create a venv under the tool directory, install the package there, and add a wrapper on /usr/local/bin."""
+    try:
+        venv_dir = os.path.join(opt, f"{name_lower}-venv")
+        py_log(f"Attempting venv install in {venv_dir}")
+        # create venv
+        r = subprocess.run(["python3", "-m", "venv", venv_dir], capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            py_log(f"venv creation failed: {r.stderr or r.stdout}")
+            return False
+        venv_python = os.path.join(venv_dir, "bin", "python")
+        # upgrade pip
+        subprocess.run([venv_python, "-m", "pip", "install", "--upgrade", "pip"], capture_output=True, text=True, timeout=120)
+
+        # install requirements.txt if present
+        req = os.path.join(opt, "requirements.txt")
+        if os.path.exists(req):
+            r = subprocess.run([venv_python, "-m", "pip", "install", "-r", req], capture_output=True, text=True, timeout=600)
+            if r.returncode != 0:
+                py_log(f"venv pip install -r failed: {r.stderr or r.stdout}")
+
+        # attempt to install the package into the venv
+        r = subprocess.run([venv_python, "-m", "pip", "install", "--force-reinstall", opt], capture_output=True, text=True, timeout=600)
+        if r.returncode != 0:
+            py_log(f"venv pip install from dir failed: {r.stderr or r.stdout}")
+
+        # create a simple wrapper that runs the main script with the venv python
+        # try to discover the script path
+        candidates = [
+            os.path.join(opt, f"{name_lower}.py"),
+            os.path.join(opt, name_lower, f"{name_lower}.py"),
+            os.path.join(opt, "whatwaf.py"),
+            os.path.join(opt, "WhatWaf", "whatwaf.py"),
+        ]
+        script = None
+        for c in candidates:
+            if os.path.isfile(c):
+                script = c
+                break
+
+        wrapper = f"/usr/local/bin/{cli_name}"
+        if script:
+            try:
+                content = f"""#!/usr/bin/env bash\n{venv_python} \"{script}\" \"$@\"\n"""
+                # write via sudo
+                p = subprocess.Popen(["sudo", "tee", wrapper], stdin=subprocess.PIPE, text=True)
+                p.communicate(content)
+                subprocess.run(["sudo", "chmod", "+x", wrapper], timeout=30)
+                py_log(f"Created wrapper {wrapper} -> {venv_python} {script}")
+                return True
+            except Exception as e:
+                py_log(f"Failed to create wrapper: {e}")
+                return False
+        else:
+            py_log("No entry script found for venv wrapper creation")
+            return False
+
+
 # Tools invoked as python3 /opt/recontools/<repo>/<script>.py — not PATH CLIs
 SCRIPT_BASED_TOOLS = frozenset({"xsstrike", "smuggler", "linkfinder", "eyewitness", "tplmap", "whatwaf"})
 
@@ -627,10 +685,16 @@ def install_recon_tool(name, repo, progress, tid):
         if (os.path.exists(setup_py) or os.path.exists(pyproject)) and not cli_available(cli_name):
             progress.update(tid, description=f"[bold cyan]➤ {name}[/] (pip install from source...)")
             if pip_install_package_dir(opt):
-                ensure_cli_on_path(cli_name)
-                py_log(f"Installed {name} from {opt}")
-            else:
-                log_failure(name, "pip install from clone failed")
+                    ensure_cli_on_path(cli_name)
+                    py_log(f"Installed {name} from {opt}")
+                else:
+                    # Try venv-based install as a fallback (works on PEP-668 managed systems)
+                    py_log(f"pip install failed for {name}; attempting venv fallback")
+                    if create_venv_and_install(opt, name_lower, cli_name):
+                        ensure_cli_on_path(cli_name)
+                        py_log(f"Installed {name} into venv at {opt}")
+                    else:
+                        log_failure(name, "pip install from clone failed and venv fallback failed")
 
         if cli_available(cli_name):
             if name_lower == "massdns":

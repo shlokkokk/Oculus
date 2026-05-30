@@ -56,7 +56,7 @@ npm run dev # Open http://localhost:5173
 *   🔄 **Zero-Latency Reset Core**: Instantly purges and re-syncs state configurations to pristine system baselines, eliminating static parameters via recursive async calls directly to the FastAPI config registry.
 *   🛡️ **Accidental Abort Interception Layer**: Replaced fragile, instantly destructive termination calls with a threat-crimson modal warning engine. Leverages SVG `<ShieldAlert />` vector isolation, preventing accidental process interrupts on parallel scanning threads.
 *   🎨 **Interactive Cyan Cyber-Glow Aesthetics**: The Jitter element has been elevated into a 100% clickable glassmorphic telemetry container. Uses fluid `0.3s` ease transitions, active micro-animations, glowing borders, active text shadows, and custom cyberpunk neon accents.
-*   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `36/36 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
+*   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `37/37 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
 
 *   🖼️ **Domain-Wise Screenshot Review**: Results and Reports include a Screenshots tab that groups captures by inferred domain/subdomain, supports both screenshot engines, and opens screenshots in a near full-screen viewer for readable triage.
 
@@ -139,7 +139,7 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 | **36** | `tlsx` | TLSX | TLS certificate scanning with CN/SAN parsing to discover extra subdomains → **`tlsx/`** |
 | **37** | `nomore403` | nomore403 | Automated 403/401 Forbidden bypass techniques scanner → **`nomore403/`** |
 | **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **24 → 10→11→12→13→14→15→16→18→19→21→22→23→20** (ASN first, **sqlmap** last). **Skips** menus **1–9**, **17**, **25–29**, **30–37**. Needs prior **`alive.txt`** / URLs from **9** or manual **1–8**+**6**. |
-| **U** | `--full-spectrum` | *(all 36 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
+| **U** | `--full-spectrum` | *(all 37 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
 | **R** | — | *(generators)* | Rebuild **`report.html`**, **`findings.json`**, **`report.md`** from disk artifacts |
 
 ---
@@ -151,7 +151,7 @@ Oculus has three preset automation modes. Pick the one that matches your scope a
 | | **[9] Full Auto Recon** | **[D] Deep Recon** | **[U] Full Spectrum Scan** |
 |:---|:---|:---|:---|
 | **Scope** | Core recon pipeline | Advanced modules only | Everything — recon through exploitation |
-| **Modules run** | 7 (steps 1→8, skips 5) | 14 fixed advanced steps | All 36 modules |
+| **Modules run** | 7 (steps 1→8, skips 5) | 14 fixed advanced steps | All 37 modules |
 | **Prerequisite** | Just set a domain | Needs `alive.txt` + URLs (run 9 first) | Just set a domain |
 | **Concurrency** | Subdomain tools + URL tools in parallel | Sequential only | Full concurrent scheduling per phase |
 | **Estimated time** | 15–45 min | 1–3 hours | 2–6 hours |
@@ -487,7 +487,7 @@ python3 oculus.py -d example.com --full-recon --no-confirm
 # Deep mode = fixed 14 advanced steps (NOT menus 1–9). Run full recon first so alive.txt / URLs exist.
 python3 oculus.py -d example.com --deep --no-confirm
 
-# Full Spectrum Scan = ALL 36 modules in 5 phases with concurrency. Set it and forget it.
+# Full Spectrum Scan = ALL 37 modules in 5 phases with concurrency. Set it and forget it.
 python3 oculus.py -d example.com --full-spectrum --no-confirm
 
 # Pick modules à la carte (order runs left → right)
@@ -615,7 +615,7 @@ Then: **session diff** + **`summary.txt`** only — run **R** for HTML / JSON / 
 
 **Full Spectrum Scan** (`--full-spectrum` / menu **U**) — **every module, optimal order:**
 
-Runs all 36 modules across 5 phases with intelligent concurrency. See **[Automation modes compared](#automation-modes-compared)** for the full pipeline diagram. Thread-safe tracking, graceful Ctrl+C abort (saves progress and still generates reports), and session checkpoints between every phase.
+Runs all 37 modules across 5 phases with intelligent concurrency. See **[Automation modes compared](#automation-modes-compared)** for the full pipeline diagram. Thread-safe tracking, graceful Ctrl+C abort (saves progress and still generates reports), and session checkpoints between every phase.
 
 **No prerequisite:** Just set a domain. Full Spectrum handles the entire dependency chain from subdomain enumeration through targeted exploitation. Auto-generates HTML, JSON, and Markdown reports at completion.
 
@@ -672,7 +672,7 @@ Runs all 36 modules across 5 phases with intelligent concurrency. See **[Automat
 | `tlsx` | 36 | **TLSX** certificate scan and CN/SAN parser, merging new subdomains back into `subdomains.txt` |
 | `nomore403` | 37 | **nomore403** automated 403/401 Forbidden bypass techniques scanner over ffuf/general URLs |
 
-Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–9, **not** 17 / 25–29 / 30–37. Menu **U** / **`--full-spectrum`** = **all 36 modules** in 5 concurrent phases — see **[Automation modes compared](#automation-modes-compared)**.
+Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–9, **not** 17 / 25–29 / 30–37. Menu **U** / **`--full-spectrum`** = **all 37 modules** in 5 concurrent phases — see **[Automation modes compared](#automation-modes-compared)**.
 
 </details>
 
@@ -680,7 +680,7 @@ Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + a
 
 ## 🐳 Running in Docker (Web UI & CLI)
 
-Oculus provides a **high-performance multi-stage Docker build** that bundles the CLI tool, the FastAPI backend, and the React frontend on a single mapped port (`8000`), pre-configured with all 36 scanning modules natively.
+Oculus provides a **high-performance multi-stage Docker build** that bundles the CLI tool, the FastAPI backend, and the React frontend on a single mapped port (`8000`), pre-configured with all 37 scanning modules natively.
 
 ### Option A: Launch the Web Control HUD (Recommended)
 From the project root:
@@ -735,7 +735,7 @@ Non-interactive mode requires **`-d`**. More recipes live under **[CLI cookbook]
 | `-d`, `--domain` | Target domain (required for non-interactive runs) |
 | `--full-recon` | Full automated pipeline (core 1→8) |
 | `--deep` | Fixed **14-step** advanced chain (**24→10…→20**); does **not** run **1–9**, **17 / 25–29**, or **30–37** |
-| `--full-spectrum` | **All 36 modules** in 5 phases with concurrency — see **[Automation modes compared](#automation-modes-compared)** |
+| `--full-spectrum` | **All 37 modules** in 5 phases with concurrency — see **[Automation modes compared](#automation-modes-compared)** |
 | `--module` | Comma-separated modules (exact names below) |
 | `--no-confirm` | Skip prompts (CI / automation); sets `auto_confirm` |
 | `--threads N` | Overrides `threads` (httpx) |
@@ -801,7 +801,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 | **36** | TLSX cert scanner & SAN subdomain extractor |
 | **37** | nomore403 bypass scanner |
 | **D** | **Deep recon** — fixed **14** steps (**24→10→…→20**); not full **1–37** ([details](#feature-catalog)) |
-| **U** | **Full Spectrum Scan** — all **36 modules** in 5 phases with concurrency ([details](#automation-modes-compared)) |
+| **U** | **Full Spectrum Scan** — all **37 modules** in 5 phases with concurrency ([details](#automation-modes-compared)) |
 | **R** | Regenerate **HTML + JSON + Markdown** reports |
 | **C** | Set / change target domain + `output-<domain>/` |
 | **I** | Tool installation check |
