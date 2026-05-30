@@ -1,4 +1,4 @@
-# Oculus v3 Python requirements
+# Oculus Python requirements
 # Core dependencies for Oculus
 
 # HTTP and networking

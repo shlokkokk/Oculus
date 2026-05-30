@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y \
     wafw00f \
     whatweb \
     sqlmap \
+    nikto \
     jq \
     ruby-dev \
     libpcap-dev \

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Oculus v4.1 — Professional Installation Engine
+# Oculus — Professional Installation Engine
 # Hardened · Idempotent · Docker & CI Compatible
 
 # Failsafe: Ensure we are running in Bash
@@ -32,7 +32,7 @@ for arg in "$@"; do
         --update)          export UPDATE_MODE=true ;;
         --non-interactive) INTERACTIVE=false ;;
         --help|-h)
-            echo -e "${CYAN}Oculus v4.1 Installer${RESET}"
+            echo -e "${CYAN}Oculus Installer${RESET}"
             echo ""
             echo "Usage: ./install.sh [OPTIONS]"
             echo ""
@@ -125,7 +125,7 @@ APT_PACKAGES=(
     git wget curl unzip jq
     python3-pip python3-venv python3-dev python3-selenium
     build-essential libpcap-dev
-    nmap massdns wafw00f whatweb sqlmap
+    nmap massdns wafw00f whatweb sqlmap nikto
     dnsutils chromium chromium-driver
     xvfb libnss3 libgconf-2-4
 )
@@ -316,7 +316,7 @@ def pip_install_package_dir(opt):
     return False
 
 # Tools invoked as python3 /opt/recontools/<repo>/<script>.py — not PATH CLIs
-SCRIPT_BASED_TOOLS = frozenset({"xsstrike", "smuggler", "linkfinder", "eyewitness"})
+SCRIPT_BASED_TOOLS = frozenset({"xsstrike", "smuggler", "linkfinder", "eyewitness", "tplmap", "whatwaf"})
 
 def recon_script_exists(name_lower, opt):
     """Return True when the cloned repo contains its main Python entry script."""
@@ -334,6 +334,16 @@ def recon_script_exists(name_lower, opt):
         candidates.extend([
             os.path.join(opt, "Python", "EyeWitness.py"),
             os.path.join(opt, "Python", "eyewitness.py"),
+        ])
+    elif name_lower == "tplmap":
+        candidates.extend([
+            os.path.join(opt, "tplmap.py"),
+            os.path.join(opt, "tplmap", "tplmap.py"),
+        ])
+    elif name_lower == "whatwaf":
+        candidates.extend([
+            os.path.join(opt, "whatwaf.py"),
+            os.path.join(opt, "WhatWaf", "whatwaf.py"),
         ])
     return any(os.path.isfile(p) for p in candidates)
 
@@ -391,6 +401,15 @@ GO_TOOLS = [
     ("gf",          "github.com/tomnomnom/gf@latest"),
     ("amass",       "github.com/owasp-amass/amass/v4/...@master"),
     ("subzy",       "github.com/PentestPad/subzy@latest"),
+    ("puredns",     "github.com/d3mondev/puredns/v2@latest"),
+    ("cariddi",     "github.com/edoardottt/cariddi/cmd/cariddi@latest"),
+    ("jaeles",      "github.com/jaeles-project/jaeles@latest"),
+    ("crlfuzz",     "github.com/dwisiswant0/crlfuzz/cmd/crlfuzz@latest"),
+    ("qsreplace",   "github.com/tomnomnom/qsreplace@latest"),
+    ("tlsx",        "github.com/projectdiscovery/tlsx/cmd/tlsx@latest"),
+    ("alterx",      "github.com/projectdiscovery/alterx/cmd/alterx@latest"),
+    ("nomore403",   "github.com/devploit/nomore403@latest"),
+    ("notify",      "github.com/projectdiscovery/notify/cmd/notify@latest"),
 ]
 
 RECON_TOOLS = [
@@ -402,6 +421,8 @@ RECON_TOOLS = [
     ("theHarvester", "https://github.com/laramies/theHarvester"),
     ("kiterunner",   "https://github.com/assetnote/kiterunner"),
     ("EyeWitness",   "https://github.com/RedSiege/EyeWitness"),
+    ("tplmap",       "https://github.com/epinna/tplmap"),
+    ("WhatWaf",      "https://github.com/Ekultek/WhatWaf"),
 ]
 
 results = {}  # name -> (status, detail)
@@ -620,7 +641,7 @@ def install_recon_tool(name, repo, progress, tid):
 # Run Installation
 if HAS_RICH:
     console.print(Panel(
-        "[bold cyan]Oculus v4.1 — Tool Installation Engine[/]\n"
+        "[bold cyan]Oculus — Tool Installation Engine[/]\n"
         f"[dim]Go tools: {len(GO_TOOLS)} · Recon tools: {len(RECON_TOOLS)} · "
         f"Mode: {'[yellow]Update[/]' if UPDATE_MODE else '[green]Fresh Install[/]'}[/dim]",
         border_style="cyan", padding=(1, 2)
@@ -906,14 +927,14 @@ fi
 echo ""
 if [ "${INSTALL_FAILED:-0}" -ne 0 ]; then
     echo -e "${YELLOW}${BOLD}╔═══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${YELLOW}${BOLD}║ Oculus v4.1 — Installed (with critical failures)      ║${RESET}"
+    echo -e "${YELLOW}${BOLD}║ Oculus — Installed (with critical failures)           ║${RESET}"
     echo -e "${YELLOW}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
     echo ""
     echo -e "  ${RED}Some critical tools failed to install.${RESET}"
     echo -e "  ${DIM}Review install.log and re-run with:  ${YELLOW}./install.sh --update${RESET}"
 else
     echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${GREEN}${BOLD}║       Oculus v4.1 — Installation Complete! ✔          ║${RESET}"
+    echo -e "${GREEN}${BOLD}║       Oculus — Installation Complete! ✔               ║${RESET}"
     echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════╝${RESET}"
 fi
 echo ""

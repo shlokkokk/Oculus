@@ -1,4 +1,4 @@
-# Oculus v4.1 — Installation Guide
+# Oculus — Installation Guide
 
 Oculus is a Python recon orchestrator for **Kali / Debian-style** Linux. The supported path is **`./install.sh`** from your clone; use **Docker** if you are on macOS or do not want a full native toolchain.
 
@@ -273,7 +273,7 @@ Or use a **venv** and run `oculus.py` with that interpreter (you must install CL
 Edit **`~/.config/oculus/config.yaml`** (`wordlists.*`, `resolvers`). Defaults point at SecLists and `/opt/recontools/massdns/resolvers.txt`. 
 
 > [!TIP]
-> **Auto-Healing DNS Resolvers (v4.1.0+)**: If your installer didn't run with root privileges or hit transient network errors (leaving `/usr/share/massdns/resolvers.txt` missing), **Oculus now dynamically heals itself**. It will automatically print a warning and generate a comprehensive `auto_resolvers.txt` in your session folder, containing **over 120+ un-nerfed premium public recursive DNS resolvers** (Google, Cloudflare, OpenDNS, Level3/CenturyLink, OpenNIC, etc.) to ensure concurrent bruteforcing runs at extreme speeds without any rate-limits.
+> **Auto-Healing DNS Resolvers**: If your installer didn't run with root privileges or hit transient network errors (leaving `/usr/share/massdns/resolvers.txt` missing), **Oculus now dynamically heals itself**. It will automatically print a warning and generate a comprehensive `auto_resolvers.txt` in your session folder, containing **over 120+ un-nerfed premium public recursive DNS resolvers** (Google, Cloudflare, OpenDNS, Level3/CenturyLink, OpenNIC, etc.) to ensure concurrent bruteforcing runs at extreme speeds without any rate-limits.
 
 ### `massdns` / `dig` not found
 
@@ -341,7 +341,7 @@ Only use domains you are authorized to assess.
 
 ## Post-install checklist
 
-- [ ] `python3 oculus.py --version` prints **4.1**
+- [ ] `python3 oculus.py --version` prints **4.2.0**
 - [ ] `which subfinder httpx naabu nuclei` succeeds (after `PATH` includes `~/go/bin`)
 - [ ] `/opt/recontools/ParamSpider/paramspider.py` exists
 - [ ] `~/.config/oculus/config.yaml` exists and paths match your machine

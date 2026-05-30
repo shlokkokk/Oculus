@@ -51,7 +51,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-VERSION = "4.1.0"
+VERSION = "4.2.0"
 
 DEFAULT_CONFIG = {
     'threads': 50,
@@ -95,6 +95,28 @@ DEFAULT_CONFIG = {
         'extensions': 'php,html,js,json,txt,bak,old',
         'status_filter': '200,204,301,302,307,401,403',
         'recursion_depth': 2,
+    },
+    'notify': {
+        'enabled': False,
+        'provider_config': '',
+        'bulk': True,
+    },
+    'jaeles': {
+        'concurrency': 20,
+        'signatures': '',
+        'max_hosts': 100,
+    },
+    'nikto': {
+        'tuning': '1234',
+        'timeout': 600,
+        'max_hosts': 10,
+    },
+    'crlfuzz': {
+        'concurrency': 25,
+    },
+    'puredns': {
+        'threads': 100,
+        'wildcard_batch': 1000000,
     },
     'parallel': True,
     'auto_confirm': False,
@@ -338,6 +360,34 @@ class Oculus:
         # 4. Re-attach file logging to the new directory
         self._setup_logging_full()
 
+    def _crtsh_passive(self):
+        """Query crt.sh for subdomains via certificate transparency logs."""
+        url = f"https://crt.sh/?q=%.{self.domain}&output=json"
+        subs = set()
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Oculus/4.2'})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+                for entry in data:
+                    name = entry.get('name_value', '')
+                    for sub in name.split('\n'):
+                        sub = sub.strip().lower()
+                        if sub and '*' not in sub and self.domain in sub:
+                            subs.add(sub)
+        except Exception as e:
+            self.logger.warning(f"crt.sh query failed: {e}")
+        return subs
+
+    def _internetdb_lookup(self, ip):
+        """Query InternetDB for open ports, CPEs, vulns (zero-auth)."""
+        url = f"https://internetdb.shodan.io/{ip}"
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Oculus/4.2'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode())
+        except Exception:
+            return None
+
     def find_tool(self, name):
         """Unified cross-platform path detection with intelligent priority"""
         name_lower = name.lower()
@@ -410,6 +460,16 @@ class Oculus:
         elif name_lower == 'subzy':
             special_paths.extend([
                 "/opt/recontools/subzy/subzy",
+            ])
+        elif name_lower == 'tplmap':
+            special_paths.extend([
+                "/opt/recontools/tplmap/tplmap.py",
+                "/opt/recontools/Tplmap/tplmap.py",
+            ])
+        elif name_lower == 'whatwaf':
+            special_paths.extend([
+                "/opt/recontools/WhatWaf/whatwaf.py",
+                "/opt/recontools/whatwaf/whatwaf.py",
             ])
 
         found = self._first_existing_file(special_paths)
@@ -649,7 +709,7 @@ class Oculus:
                 if os.path.exists(file_path):
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         unique_lines.update(line.strip() for line in f if line.strip())
-            with open(output_file, 'w') as f:
+            with open(output_file, 'w', encoding='utf-8') as f:
                 for line in sorted(unique_lines):
                     f.write(f"{line}\n")
             return len(unique_lines)
@@ -769,7 +829,7 @@ class Oculus:
    ╚██████╔╝╚██████╗╚██████╔╝███████╗╚██████╔╝███████║
      ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝"""
             
-            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]29 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
+            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]37 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
             
             panel_content = Align.center(Text.from_markup(ascii_art + "\n" + desc), vertical="middle")
             
@@ -789,9 +849,9 @@ class Oculus:
    ██║   ██║██║     ██║   ██║██║     ██║   ██║╚════██║
    ╚██████╔╝╚██████╗╚██████╔╝███████╗╚██████╔╝███████║
     ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝
-    
+     
          {Colors.WHITE}Full-Spectrum Attack Surface Intelligence  v{VERSION}{Colors.CYAN}
-         {Colors.DIM}29 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
+         {Colors.DIM}37 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
 ================================================================================
 {Colors.RESET}"""
             print(banner)
@@ -840,6 +900,16 @@ class Oculus:
             ('gowitness', 'go install github.com/sensepost/gowitness@latest'),
             ('gf', 'go install github.com/tomnomnom/gf@latest'),
             ('massdns', 'binary expected at /usr/local/bin/massdns'),
+            ('puredns', 'go install github.com/d3mondev/puredns/v2@latest'),
+            ('cariddi', 'go install github.com/edoardottt/cariddi/cmd/cariddi@latest'),
+            ('jaeles', 'go install github.com/jaeles-project/jaeles@latest'),
+            ('crlfuzz', 'go install github.com/dwisiswant0/crlfuzz/cmd/crlfuzz@latest'),
+            ('qsreplace', 'go install github.com/tomnomnom/qsreplace@latest'),
+            ('tlsx', 'go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest'),
+            ('alterx', 'go install github.com/projectdiscovery/alterx/cmd/alterx@latest'),
+            ('nomore403', 'go install github.com/devploit/nomore403@latest'),
+            ('notify', 'go install github.com/projectdiscovery/notify/cmd/notify@latest'),
+            ('nikto', 'sudo apt install nikto'),
         ]
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Tool Installation Status...{Colors.RESET}\n")
@@ -855,6 +925,7 @@ class Oculus:
         special_tools = [
             'paramspider', 'arjun', 'xsstrike', 'smuggler',
             'linkfinder', 'theharvester', 'subzy', 'kr', 'eyewitness',
+            'tplmap', 'whatwaf',
         ]
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Python/Opt-based Tools...{Colors.RESET}\n")
@@ -1036,6 +1107,19 @@ class Oculus:
                 result = self._run_single_subdomain_tool(name, cmd, out)
                 if result:
                     raw_files.append(result)
+
+        # --- crt.sh passive (zero-install, pure Python) ---
+        print(f"{Colors.CYAN}[*] Querying crt.sh certificate transparency...{Colors.RESET}")
+        crtsh_subs = self._crtsh_passive()
+        if crtsh_subs:
+            crtsh_file = f"{self.output_dir}/crtsh_subs.txt"
+            try:
+                with open(crtsh_file, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(sorted(crtsh_subs)) + '\n')
+                raw_files.append(crtsh_file)
+                print(f"{Colors.GREEN}[✔] crt.sh: {len(crtsh_subs)} subdomains{Colors.RESET}")
+            except Exception as e:
+                self.logger.error(f"Failed to write crt.sh results: {e}")
 
         if not raw_files:
             print(f"{Colors.RED}[!] All subdomain tools failed!{Colors.RESET}")
@@ -1495,6 +1579,18 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] WAF detection completed{Colors.RESET}")
         print(f"  {Colors.RED}• Hosts with WAF: {waf_found}{Colors.RESET}")
         print(f"  {Colors.GREEN}• Total tested: {len(hosts)}{Colors.RESET}")
+
+        # --- WhatWaf (deep WAF fingerprinting + bypass suggestions) ---
+        whatwaf_bin = self.find_tool('whatwaf')
+        if whatwaf_bin:
+            print(f"\n{Colors.CYAN}[*] Running WhatWaf detection on top 20 alive hosts...{Colors.RESET}")
+            alive_file = f"{self.output_dir}/alive.txt"
+            if os.path.exists(alive_file):
+                whatwaf_hosts = self.read_file_lines(alive_file)[:20]
+                for host in whatwaf_hosts:
+                    cmd = f"python3 {whatwaf_bin} -u {shlex.quote(host)} --json --skip"
+                    self.run_command(cmd, timeout=120, label=f"whatwaf:{host[:40]}")
+
         self.results['waf_detected'] = waf_found
         self.results['waf_total'] = len(hosts)
         self.save_session()
@@ -1857,6 +1953,13 @@ class Oculus:
             "AWS Key": r"(?i)AKIA[0-9A-Z]{16}",
             "Stripe": r"(?i)sk_live_[0-9a-zA-Z]{24}",
             "Google API": r"(?i)AIza[0-9A-Za-z-_]{35}",
+            "Twilio SID": r"AC[a-f0-9]{32}",
+            "Slack Token": r"xox[bapts]-[0-9a-zA-Z]{10,12}-[0-9a-zA-Z]{10,12}-[a-zA-Z0-9]{24}",
+            "Slack Webhook": r"https://hooks\.slack\.com/services/[T][A-Z0-9_]{8}/[B][A-Z0-9_]{8}/[A-Za-z0-9_]{24}",
+            "Private Key": r"-----BEGIN RSA PRIVATE KEY-----",
+            "SendGrid API": r"SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}",
+            "Firebase URL": r"https://[a-zA-Z0-9_-]+\.firebaseio\.com",
+            "Database Connection": r"(mongodb|postgres|mysql|sqlite|oracle|mssql)://[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+@[a-zA-Z0-9.-]+:\d+/[a-zA-Z0-9_-]+",
         }
         found_secrets = []
         # urllib.request imported at top level
@@ -1882,9 +1985,30 @@ class Oculus:
             futures = {executor.submit(fetch_and_scan, url): url for url in self.read_file_lines(js_urls_file)[:500]}
             for future in as_completed(futures):
                 found_secrets.extend(future.result())
+
+        # Merge Cariddi secrets findings if available
+        cariddi_txt = f"{self.output_dir}/cariddi/cariddi_results.txt"
+        if os.path.exists(cariddi_txt):
+            try:
+                for line in self.read_file_lines(cariddi_txt):
+                    if any(kw in line.lower() for kw in ['secret', 'api_key', 'token', 'private_key', 'aws_key', 'stripe', 'password']):
+                        found_secrets.append(f"Cariddi -> {line.strip()}")
+            except Exception as e:
+                self.logger.error(f"Failed to read Cariddi findings: {e}")
+
         with open(secrets_file, 'w', encoding='utf-8') as f:
             for s in set(found_secrets):
                 f.write(s + "\n")
+        
+        # Also write to js_secrets.txt to sync with frontend or specific references
+        js_secrets_file = f"{js_dir}/js_secrets.txt"
+        try:
+            with open(js_secrets_file, 'w', encoding='utf-8') as f:
+                for s in set(found_secrets):
+                    f.write(s + "\n")
+        except Exception as e:
+            self.logger.error(f"Failed to write js_secrets.txt: {e}")
+
         print(f"{Colors.GREEN}[✔] Found {len(set(found_secrets))} potential secrets{Colors.RESET}")
         self.save_session()
 
@@ -1931,6 +2055,7 @@ class Oculus:
             print(f"{Colors.RED}[!] Wordlist not found! Tried primary and fallback paths.{Colors.RESET}")
             return
 
+        fuzzed_json_files = []
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {executor.submit(self._fuzz_single_host, h, wordlist, ext, status, depth): h for h in hosts_to_scan}
             for future in as_completed(futures):
@@ -1938,8 +2063,45 @@ class Oculus:
                 res = future.result()
                 if res and os.path.exists(res):
                     print(f"{Colors.GREEN}[✔] Fuzzing complete for {h}{Colors.RESET}")
+                    fuzzed_json_files.append(res)
                 else:
                     print(f"{Colors.RED}[!] Fuzzing failed for {h}{Colors.RESET}")
+
+        # --- nomore403 Auto-feed from ffuf 403/401 results ---
+        forbidden_urls = []
+        for f_path in fuzzed_json_files:
+            try:
+                data = json.loads(Path(f_path).read_text())
+                for result in data.get('results', []):
+                    if result.get('status') in [403, 401]:
+                        forbidden_urls.append(result.get('url', ''))
+            except Exception:
+                pass
+        if forbidden_urls:
+            forbidden_urls = list(set(forbidden_urls))[:200]
+            print(f"{Colors.CYAN}[*] Auto-feeding {len(forbidden_urls)} forbidden (403/401) URLs into nomore403...{Colors.RESET}")
+            nomore403_bin = self.get_tool('nomore403')
+            if nomore403_bin:
+                nomore403_out_dir = f"{self.output_dir}/nomore403"
+                Path(nomore403_out_dir).mkdir(parents=True, exist_ok=True)
+                out_file = f"{nomore403_out_dir}/bypass_results.txt"
+                # Keep track of bypass count
+                for url in forbidden_urls[:50]:
+                    cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {out_file}"
+                    self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}")
+                count = self.count_file_lines(out_file)
+                self.results['bypass_403'] = count
+                print(f"{Colors.GREEN}[✔] nomore403 auto-feed: {count} potential bypasses found{Colors.RESET}")
+
+        fuzz_count = 0
+        for f_path in fuzzed_json_files:
+            try:
+                data = json.loads(Path(f_path).read_text())
+                fuzz_count += len(data.get('results', []))
+            except Exception:
+                pass
+        self.results['fuzz_findings'] = fuzz_count
+
         self.save_session()
 
     # MODULE 13: API FUZZING
@@ -1969,8 +2131,10 @@ class Oculus:
             cmd = f"{kr_bin} scan {alive_file} -A=apiroutes-210228 -x 5 -j 50 --fail-status-codes 400,401,404,403,501,502,503"
         if self.run_command(cmd, output_file=output, timeout=1200, label="kr"):
             print(f"{Colors.GREEN}[✔] API fuzzing completed{Colors.RESET}")
+            self.results['api_fuzz'] = self.count_file_lines(output)
         else:
             print(f"{Colors.RED}[!] kr scan failed or routes wordlist missing{Colors.RESET}")
+            self.results['api_fuzz'] = 0
         self.save_session()
 
     # MODULE 14: SUBDOMAIN TAKEOVER CHECK
@@ -2018,10 +2182,12 @@ class Oculus:
                 if res:
                     takeovers.append(res)
                     
-        with open(cname_file, 'w') as f:
+        with open(cname_file, 'w', encoding='utf-8') as f:
             for t in takeovers:
                 f.write(t + "\n")
                 
+        subzy_count = self.count_file_lines(out_file)
+        self.results['takeover'] = subzy_count + len(takeovers)
         if takeovers:
             print(f"{Colors.YELLOW}[!] Found {len(takeovers)} external CNAMEs pointing outside domain!{Colors.RESET}")
         self.save_session()
@@ -2333,7 +2499,7 @@ class Oculus:
                 "198.6.1.4", "198.6.1.5"
             ]
             try:
-                with open(auto_resolvers, 'w') as rf:
+                with open(auto_resolvers, 'w', encoding='utf-8') as rf:
                     rf.write("\n".join(trusted_resolvers) + "\n")
                 resolvers = auto_resolvers
                 print(f"{Colors.GREEN}[✔] Temporary resolvers list successfully created!{Colors.RESET}")
@@ -2345,6 +2511,16 @@ class Oculus:
         if not self._require_file(wordlist, "DNS wordlist not found!"):
             return
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting DNS Bruteforce...{Colors.RESET}\n")
+
+        # --- alterx smart wordlist generation ---
+        alterx_bin = self.get_tool('alterx')
+        subs_file = f"{self.output_dir}/subdomains.txt"
+        if alterx_bin and os.path.exists(subs_file):
+            alterx_out = f"{self.output_dir}/alterx_wordlist.txt"
+            print(f"{Colors.CYAN}[*] Generating smart wordlist with AlterX...{Colors.RESET}")
+            cmd = f"cat {subs_file} | {alterx_bin} -enrich -limit 50000 -o {alterx_out}"
+            self.run_command(cmd, timeout=300, label="alterx")
+
         # Generate FQDNs from wordlist (massdns needs full domain names, not bare words)
         fqdn_file = f"{self.output_dir}/massdns_fqdns.txt"
         try:
@@ -2360,7 +2536,10 @@ class Oculus:
             return
         out = f"{self.output_dir}/massdns_out.txt"
         cmd = f"{self.get_tool('massdns')} -r {resolvers} -t A -o S -w {out} {fqdn_file}"
-        if self.run_command(cmd, timeout=1200, label="massdns"):
+        massdns_success = self.run_command(cmd, timeout=1200, label="massdns")
+        
+        new_found_massdns = 0
+        if massdns_success:
             new_subs = set()
             for line in self.read_file_lines(out):
                 parts = line.split()
@@ -2372,18 +2551,52 @@ class Oculus:
                 subs_file = f"{self.output_dir}/subdomains.txt"
                 existing = set(self.read_file_lines(subs_file))
                 merged = existing | new_subs
-                new_found = len(merged) - len(existing)
+                new_found_massdns = len(merged) - len(existing)
                 with open(subs_file, 'w', encoding='utf-8') as f:
                     for s in sorted(merged):
                         f.write(s + '\n')
-                self.results['dns_brute'] = new_found
-                print(f"{Colors.GREEN}[✔] DNS bruteforce — {len(new_subs)} resolved, {new_found} new subdomains added{Colors.RESET}")
+                self.results['dns_brute'] = new_found_massdns
+                print(f"{Colors.GREEN}[✔] DNS bruteforce (massdns) — {len(new_subs)} resolved, {new_found_massdns} new subdomains added{Colors.RESET}")
             else:
                 self.results['dns_brute'] = 0
-                print(f"{Colors.GREEN}[✔] DNS bruteforce completed — no new subdomains found{Colors.RESET}")
-            self.save_session()
+                print(f"{Colors.GREEN}[✔] DNS bruteforce (massdns) completed — no new subdomains found{Colors.RESET}")
         else:
-            print(f"{Colors.RED}[!] DNS bruteforce failed{Colors.RESET}")
+            self.results['dns_brute'] = 0
+            print(f"{Colors.RED}[!] DNS bruteforce (massdns) failed{Colors.RESET}")
+
+        # --- puredns validation ---
+        puredns_bin = self.get_tool('puredns')
+        if puredns_bin:
+            puredns_out = f"{self.output_dir}/puredns_resolved.txt"
+            target_wordlist = wordlist
+            if os.path.exists(f"{self.output_dir}/alterx_wordlist.txt"):
+                target_wordlist = f"{self.output_dir}/alterx_wordlist.txt"
+            print(f"{Colors.CYAN}[*] Running PureDNS bruteforce with wildcard-aware resolution...{Colors.RESET}")
+            cmd = (f"{puredns_bin} bruteforce {target_wordlist} {self.domain} "
+                   f"-r {resolvers} -w {puredns_out} "
+                   f"--wildcard-batch {self.config.get('puredns', {}).get('wildcard_batch', 1000000)} "
+                   f"-l {self.config.get('puredns', {}).get('threads', 100)}")
+            if self.run_command(cmd, timeout=1800, label="puredns"):
+                if os.path.exists(puredns_out):
+                    puredns_subs = set()
+                    for line in self.read_file_lines(puredns_out):
+                        sub = line.strip().lower()
+                        if self.domain in sub:
+                            puredns_subs.add(sub)
+                    if puredns_subs:
+                        subs_file = f"{self.output_dir}/subdomains.txt"
+                        existing = set(self.read_file_lines(subs_file))
+                        merged = existing | puredns_subs
+                        new_found_puredns = len(merged) - len(existing)
+                        with open(subs_file, 'w', encoding='utf-8') as f:
+                            for s in sorted(merged):
+                                f.write(s + '\n')
+                        self.results['dns_brute'] = self.results.get('dns_brute', 0) + new_found_puredns
+                        print(f"{Colors.GREEN}[✔] PureDNS resolved {len(puredns_subs)} subdomains, adding {new_found_puredns} new unique records{Colors.RESET}")
+            else:
+                print(f"{Colors.RED}[!] PureDNS bruteforce failed{Colors.RESET}")
+
+        self.save_session()
 
     # MODULE 18: GF FILTERS
 
@@ -2432,8 +2645,18 @@ class Oculus:
         cmd = f"{self.get_tool('whatweb')} -i {alive} --log-json={out_file}"
         if self.run_command(cmd, timeout=300, label="whatweb"):
             print(f"{Colors.GREEN}[✔] WhatWeb scan completed{Colors.RESET}")
+            tech_count = 0
+            if os.path.exists(out_file):
+                try:
+                    with open(out_file, encoding='utf-8') as f:
+                        data = json.load(f)
+                        tech_count = len(data)
+                except Exception:
+                    pass
+            self.results['tech_scan'] = tech_count
         else:
             print(f"{Colors.RED}[!] WhatWeb scan failed{Colors.RESET}")
+            self.results['tech_scan'] = 0
 
     # MODULE 20: SQLI SCAN (SQLMap)
 
@@ -2502,6 +2725,14 @@ class Oculus:
             print(f"{Colors.YELLOW}[!] No SQLi URLs match alive hosts — running full list as fallback{Colors.RESET}")
             filtered_sqli = gf_sqli
 
+        # --- qsreplace parameter prepping for SQLi ---
+        qsreplace_bin = self.get_tool('qsreplace')
+        if qsreplace_bin and os.path.exists(filtered_sqli):
+            qsreplace_out = f"{out_dir}/sqli_qsreplaced.txt"
+            cmd = f"cat {filtered_sqli} | {qsreplace_bin} 'FUZZ' | sort -u > {qsreplace_out}"
+            self.run_command(cmd, timeout=60, label="qsreplace:sqli")
+            filtered_sqli = qsreplace_out
+
         # Use configured SQLMap settings (defaults defined in DEFAULT_CONFIG)
         sqlmap_cfg = self.config.get('sqlmap', {}) or {}
         level = int(sqlmap_cfg.get('level', 5) or 5)
@@ -2522,6 +2753,12 @@ class Oculus:
             print(f"{Colors.GREEN}[✔] SQLMap scan completed{Colors.RESET}")
         else:
             print(f"{Colors.RED}[!] SQLMap scan failed{Colors.RESET}")
+        sqlmap_vulns = 0
+        if os.path.exists(out_dir):
+            for log in Path(out_dir).rglob('log'):
+                if Oculus._path_has_output(str(log)):
+                    sqlmap_vulns += 1
+        self.results['sqlmap'] = sqlmap_vulns
 
 
     # MODULE 21: XSS SCAN (Dalfox)
@@ -2548,6 +2785,15 @@ class Oculus:
         if kept == 0:
             print(f"{Colors.YELLOW}[!] No XSS URLs match alive hosts — running full list as fallback{Colors.RESET}")
             filtered_xss = gf_xss
+
+        # --- qsreplace parameter prepping for XSS ---
+        qsreplace_bin = self.get_tool('qsreplace')
+        if qsreplace_bin and os.path.exists(filtered_xss):
+            qsreplace_out = f"{out_dir}/xss_qsreplaced.txt"
+            # Pipe to replace existing values with custom payload placement marker for Dalfox fuzzing
+            cmd = f"cat {filtered_xss} | {qsreplace_bin} 'FUZZ' | sort -u > {qsreplace_out}"
+            self.run_command(cmd, timeout=60, label="qsreplace:xss")
+            filtered_xss = qsreplace_out
 
         dalfox_bin = self.get_tool('dalfox')
         # Full-power Dalfox: 100 workers, DOM mining, blind XSS callback, 15s timeout per request
@@ -2624,7 +2870,7 @@ class Oculus:
         print()
         out_dir = f"{self.output_dir}/cors_findings"
         Path(out_dir).mkdir(exist_ok=True)
-        with open(f"{out_dir}/cors_results.txt", 'w') as f:
+        with open(f"{out_dir}/cors_results.txt", 'w', encoding='utf-8') as f:
             for r in all_results:
                 f.write(r + '\n')
         vuln_count = len([r for r in all_results if '[VULN]' in r])
@@ -2664,6 +2910,7 @@ class Oculus:
             for r in all_results:
                 f.write(r + '\n')
         print(f"{Colors.GREEN}[✔] Smuggler scan completed — {len(all_results)} results across {len(hosts)} hosts{Colors.RESET}")
+        self.results['smuggler'] = len(all_results)
         self.save_session()
 
     # MODULE 24: ASN DISCOVERY
@@ -2739,9 +2986,11 @@ class Oculus:
                 if '# Discovered ASNs' in first:
                     count = max(0, count - 1)
             print(f"{Colors.GREEN}[✔] ASN Discovery completed — found {count} CIDR range(s){Colors.RESET}")
+            self.results['asn_ranges'] = count
             if count > 0:
                 print(f"{Colors.YELLOW}[!] Use these ranges in Nmap for full attack surface scanning{Colors.RESET}")
         else:
+            self.results['asn_ranges'] = 0
             print(f"{Colors.RED}[!] ASN Discovery failed{Colors.RESET}")
 
     # ORCHESTRATION: FULL AND DEEP RECON
@@ -2808,10 +3057,11 @@ class Oculus:
                     found_buckets.append(res[1])
                     print(f"  {Colors.YELLOW}{res[1]}{Colors.RESET}")
                     
-        with open(f"{out_dir}/s3_buckets.txt", 'w') as f:
+        with open(f"{out_dir}/s3_buckets.txt", 'w', encoding='utf-8') as f:
             for b in found_buckets:
                 f.write(b + '\n')
         print(f"{Colors.GREEN}[✔] Cloud Discovery completed — found {len(found_buckets)} buckets{Colors.RESET}")
+        self.results['cloud_assets'] = len(found_buckets)
         self.save_session()
 
     # MODULE 26: GITHUB DORKING
@@ -2845,6 +3095,7 @@ class Oculus:
                         f.write(entry + '\n')
                         print(f"  {Colors.YELLOW}• {repo}/{file}{Colors.RESET}")
                 print(f"{Colors.GREEN}[✔] Found {len(items)} potentially interesting files on GitHub{Colors.RESET}")
+                self.results['github_secrets'] = len(items)
         except urllib.error.HTTPError as e:
             if e.code == 403:
                 print(f"{Colors.RED}[!] GitHub API Rate limit exceeded or invalid token.{Colors.RESET}")
@@ -2873,8 +3124,10 @@ class Oculus:
         cmd = f"{prefix}{bin_path} -d {self.safe_domain()} -b all -f {out_file}"
         if self.run_command(cmd, timeout=600, label="harvester"):
             print(f"{Colors.GREEN}[✔] OSINT Harvesting completed{Colors.RESET}")
+            self.results['osint_findings'] = 1 if os.path.exists(out_file) else 0
         else:
             print(f"{Colors.RED}[!] OSINT Harvesting failed{Colors.RESET}")
+            self.results['osint_findings'] = 0
 
     # MODULE 28: SHODAN INTEGRATION
 
@@ -2895,7 +3148,7 @@ class Oculus:
             with urllib.request.urlopen(url, timeout=15) as response:
                 data = json.loads(response.read())
                 matches = data.get('matches', [])
-                with open(f"{out_dir}/shodan_results.txt", 'w') as f:
+                with open(f"{out_dir}/shodan_results.txt", 'w', encoding='utf-8') as f:
                     for m in matches:
                         ip = m.get('ip_str')
                         port = m.get('port')
@@ -2904,6 +3157,7 @@ class Oculus:
                         f.write(entry + '\n')
                         print(f"  {Colors.YELLOW}• {entry}{Colors.RESET}")
                 print(f"{Colors.GREEN}[✔] Found {len(matches)} open ports via Shodan{Colors.RESET}")
+                self.results['shodan_results'] = len(matches)
         except Exception as e:
             print(f"{Colors.RED}[!] Shodan API Error: {e}{Colors.RESET}")
 
@@ -2930,6 +3184,15 @@ class Oculus:
         kept, total = self._filter_to_alive_hosts(gf_redirect, filtered_redirect)
         print(f"{Colors.GREEN}[✔] Pre-filter: {kept}/{total} redirect URLs are on alive hosts{Colors.RESET}")
         src = filtered_redirect if kept > 0 else gf_redirect
+
+        # --- qsreplace parameter prepping for Open Redirect ---
+        qsreplace_bin = self.get_tool('qsreplace')
+        if qsreplace_bin and os.path.exists(src):
+            qsreplace_out = f"{out_dir}/redirect_qsreplaced.txt"
+            cmd = f"cat {src} | {qsreplace_bin} 'FUZZ' | sort -u > {qsreplace_out}"
+            self.run_command(cmd, timeout=60, label="qsreplace:redirect")
+            src = qsreplace_out
+
         urls = self.read_file_lines(src)
         payloads = ["https://evil.com", "//evil.com", "/\\evil.com"]
         found = []
@@ -2966,10 +3229,11 @@ class Oculus:
                     found.append(res)
                     print(f"  {Colors.RED}{res}{Colors.RESET}")
         
-        with open(out_file, 'w') as f:
+        with open(out_file, 'w', encoding='utf-8') as f:
             for r in found:
                 f.write(r + '\n')
         print(f"{Colors.GREEN}[✔] Open Redirect Scan completed — {len(found)} vulnerabilities found{Colors.RESET}")
+        self.results['open_redirects'] = len(found)
         self.save_session()
 
     def _detect_existing_data(self, key_map):
@@ -3087,6 +3351,318 @@ class Oculus:
         self.generate_summary()
         print(f"\n{Colors.GREEN}{Colors.BOLD}[+] DEEP RECON COMPLETED!{Colors.RESET}\n")
 
+    def run_cariddi_scan(self):
+        """Module 30: Cariddi — crawl URLs for secrets, endpoints, juicy extensions."""
+        if not self._require_setup():
+            return
+        cariddi_bin = self.get_tool('cariddi')
+        if not cariddi_bin:
+            print(f"{Colors.RED}[!] cariddi not installed{Colors.RESET}")
+            return
+        out_dir = f"{self.output_dir}/cariddi"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        alive_file = f"{self.output_dir}/alive.txt"
+        if not self._require_file(alive_file):
+            return
+        
+        out_txt = f"{out_dir}/cariddi_results.txt"
+        out_html = f"{out_dir}/cariddi_report.html"
+        
+        cmd = (f"cat {alive_file} | {cariddi_bin} "
+               f"-s -e -err -ext 1 -info -intensive "
+               f"-c 20 -ot {out_txt} -oh {out_html}")
+        self.run_command(cmd, timeout=1800, label="cariddi")
+        
+        count = self.count_file_lines(out_txt)
+        self.results['cariddi_findings'] = count
+        print(f"{Colors.GREEN}[✔] Cariddi: {count} findings{Colors.RESET}")
+
+    def run_jaeles_scan(self):
+        """Module 31: Jaeles — signature-based vulnerability scanner."""
+        if not self._require_setup():
+            return
+        jaeles_bin = self.get_tool('jaeles')
+        if not jaeles_bin:
+            print(f"{Colors.RED}[!] jaeles not installed{Colors.RESET}")
+            return
+        out_dir = f"{self.output_dir}/jaeles"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        alive_file = f"{self.output_dir}/alive.txt"
+        if not self._require_file(alive_file):
+            return
+        
+        # Reload/sync signatures first
+        self.run_command(f"{jaeles_bin} config reload --signDir ~/.jaeles", timeout=120, label="jaeles:reload")
+        
+        conc = self.config.get('jaeles', {}).get('concurrency', 20)
+        custom_sigs = self.config.get('jaeles', {}).get('signatures', '')
+        sig_flag = f"-s {custom_sigs}" if custom_sigs else ""
+        
+        hosts = self.read_file_lines(alive_file)
+        max_hosts = self.config.get('jaeles', {}).get('max_hosts', 100)
+        for host in hosts[:max_hosts]:
+            cmd = (f"{jaeles_bin} scan -u {shlex.quote(host)} "
+                   f"{sig_flag} -c {conc} "
+                   f"-o {out_dir} --no-output-url -v")
+            self.run_command(cmd, timeout=600, label=f"jaeles:{host[:40]}")
+        
+        results_count = sum(1 for f in Path(out_dir).rglob('*.txt') if f.stat().st_size > 0)
+        self.results['jaeles_findings'] = results_count
+        print(f"{Colors.GREEN}[✔] Jaeles: {results_count} findings{Colors.RESET}")
+
+    def run_tplmap_scan(self):
+        """Module 32: Tplmap — Server-Side Template Injection scanner (safe detection)."""
+        if not self._require_setup():
+            return
+        tplmap_path = self.find_tool('tplmap')
+        if not tplmap_path:
+            print(f"{Colors.RED}[!] tplmap not installed{Colors.RESET}")
+            return
+        out_dir = f"{self.output_dir}/tplmap"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        ssti_candidates = []
+        for gf_pattern in ['ssrf', 'rce', 'ssti']:
+            gf_file = f"{self.output_dir}/gf/{gf_pattern}.txt"
+            if os.path.exists(gf_file):
+                ssti_candidates.extend(self.read_file_lines(gf_file))
+        
+        if not ssti_candidates:
+            urls_file = f"{self.output_dir}/urls_final.txt"
+            if os.path.exists(urls_file):
+                for url in self.read_file_lines(urls_file):
+                    if any(p in url.lower() for p in ['template', 'render', 'view', 'page', 'name=', 'input=']):
+                        ssti_candidates.append(url)
+        
+        ssti_candidates = list(set(ssti_candidates))[:100]
+        if not ssti_candidates:
+            print(f"{Colors.YELLOW}[!] No SSTI candidate URLs found.{Colors.RESET}")
+            return
+        
+        findings = 0
+        out_file = f"{out_dir}/tplmap_results.txt"
+        for url in ssti_candidates:
+            # Safe detection only - no --os-cmd execution to avoid target bans
+            cmd = f"python3 {tplmap_path} -u {shlex.quote(url)} --level 5 2>&1"
+            result = self.run_command(cmd, timeout=120, label=f"tplmap:{url[:40]}")
+            if result:
+                with open(out_file, 'a') as f:
+                    f.write(f"[DETECTED] {url}\n")
+                findings += 1
+        
+        self.results['ssti_findings'] = findings
+        print(f"{Colors.GREEN}[✔] Tplmap: tested {len(ssti_candidates)} URLs, found {findings} vulnerabilities{Colors.RESET}")
+
+    def run_crlfuzz_scan(self):
+        """Module 33: CRLFuzz — CRLF injection vulnerability scanner."""
+        if not self._require_setup():
+            return
+        crlfuzz_bin = self.get_tool('crlfuzz')
+        if not crlfuzz_bin:
+            print(f"{Colors.RED}[!] crlfuzz not installed{Colors.RESET}")
+            return
+        out_dir = f"{self.output_dir}/crlfuzz"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        alive_file = f"{self.output_dir}/alive.txt"
+        if not self._require_file(alive_file):
+            return
+        
+        conc = self.config.get('crlfuzz', {}).get('concurrency', 25)
+        out_file = f"{out_dir}/crlfuzz_results.txt"
+        
+        cmd = (f"{crlfuzz_bin} -l {alive_file} "
+               f"-c {conc} -s -o {out_file}")
+        self.run_command(cmd, timeout=1200, label="crlfuzz")
+        
+        count = self.count_file_lines(out_file)
+        self.results['crlf_findings'] = count
+        print(f"{Colors.GREEN}[✔] CRLFuzz: {count} CRLF injection findings{Colors.RESET}")
+
+    def run_internetdb_scan(self):
+        """Module 34: InternetDB — zero-auth Shodan passive port/vuln lookup."""
+        if not self._require_setup():
+            return
+        out_dir = f"{self.output_dir}/internetdb"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        dns_file = f"{self.output_dir}/dns_resolved.txt"
+        ips = set()
+        if os.path.exists(dns_file):
+            for line in self.read_file_lines(dns_file):
+                parts = line.split()
+                for part in parts:
+                    if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', part):
+                        ips.add(part)
+        
+        if not ips:
+            try:
+                for info in socket.getaddrinfo(self.domain, None):
+                    ip = info[4][0]
+                    if ':' not in ip:
+                        ips.add(ip)
+            except Exception:
+                pass
+        
+        if not ips:
+            print(f"{Colors.YELLOW}[!] No IPs found for InternetDB lookup{Colors.RESET}")
+            return
+        
+        print(f"{Colors.CYAN}[*] Querying InternetDB for {len(ips)} IPs...{Colors.RESET}")
+        results_all = []
+        out_file = f"{out_dir}/internetdb_results.json"
+        
+        def lookup_ip(ip):
+            return (ip, self._internetdb_lookup(ip))
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(lookup_ip, ip): ip for ip in list(ips)[:200]}
+            for future in as_completed(futures):
+                ip, data = future.result()
+                if data and data.get('ports'):
+                    results_all.append(data)
+        
+        with open(out_file, 'w') as f:
+            json.dump(results_all, f, indent=2)
+        
+        self.results['internetdb_hosts'] = len(results_all)
+        print(f"{Colors.GREEN}[✔] InternetDB: {len(results_all)} hosts with data{Colors.RESET}")
+
+    def run_nikto_scan(self):
+        """Module 35: Nikto — comprehensive web server vulnerability scanner."""
+        if not self._require_setup() or not self._require_tool('nikto'):
+            return
+        out_dir = f"{self.output_dir}/nikto"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        max_hosts = self.config.get('nikto', {}).get('max_hosts', 10)
+        hosts = self._get_hosts()[:max_hosts]
+        if not hosts:
+            return
+        
+        tuning = self.config.get('nikto', {}).get('tuning', '1234')
+        timeout = self.config.get('nikto', {}).get('timeout', 600)
+        
+        for host in hosts:
+            safe_host = self.safe_domain() if host == self.domain else host.replace('://', '_').replace('/', '_')
+            # Use txt format as a safer fallback to avoid missing JSON plugin issues
+            out_txt = f"{out_dir}/nikto_{safe_host}.txt"
+            
+            cmd = (f"nikto -h {shlex.quote(host)} "
+                   f"-Tuning {tuning} "
+                   f"-Format txt -o {out_txt} "
+                   f"-Display 1234VP -timeout 15 -nolookup")
+            self.run_command(cmd, timeout=timeout, label=f"nikto:{host[:40]}")
+        
+        total = sum(1 for f in Path(out_dir).glob('*.txt') if f.stat().st_size > 0)
+        self.results['nikto_scanned'] = total
+        print(f"{Colors.GREEN}[✔] Nikto: scanned {total} hosts{Colors.RESET}")
+
+    def run_tlsx_scan(self):
+        """Module 36: TLSX — TLS certificate scanning + SAN subdomain discovery."""
+        if not self._require_setup():
+            return
+        tlsx_bin = self.get_tool('tlsx')
+        if not tlsx_bin:
+            print(f"{Colors.RED}[!] tlsx not installed{Colors.RESET}")
+            return
+        out_dir = f"{self.output_dir}/tlsx"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        hosts = self._get_hosts()
+        if not hosts:
+            return
+        
+        hosts_file = f"{out_dir}/tlsx_input.txt"
+        with open(hosts_file, 'w') as f:
+            for h in hosts:
+                f.write(self._strip_protocol(h) + '\n')
+        
+        out_json = f"{out_dir}/tlsx_results.json"
+        out_sans = f"{out_dir}/tlsx_sans.txt"
+        
+        # Expanded port list to include 9443 and other important ports
+        cmd = (f"{tlsx_bin} -l {hosts_file} -p 80,443,8000,8080,8081,8443,4443,9443,8888 "
+               f"-san -cn -json -resp-only -silent -o {out_json}")
+        self.run_command(cmd, timeout=600, label="tlsx")
+        
+        new_subs = set()
+        if os.path.exists(out_json):
+            for line in self.read_file_lines(out_json):
+                try:
+                    data = json.loads(line)
+                    for san in data.get('san', []):
+                        san = san.strip().lower()
+                        if self.domain in san and '*' not in san:
+                            new_subs.add(san)
+                    cn = data.get('cn', '').strip().lower()
+                    if cn and self.domain in cn and '*' not in cn:
+                        new_subs.add(cn)
+                except Exception:
+                    pass
+        
+        if new_subs:
+            with open(out_sans, 'w') as f:
+                f.write('\n'.join(sorted(new_subs)) + '\n')
+            subs_file = f"{self.output_dir}/subdomains.txt"
+            existing = set(self.read_file_lines(subs_file))
+            merged = existing | new_subs
+            added = len(merged) - len(existing)
+            with open(subs_file, 'w') as f:
+                f.write('\n'.join(sorted(merged)) + '\n')
+            self.results['tlsx_sans'] = len(new_subs)
+            print(f"{Colors.GREEN}[✔] TLSX: {len(new_subs)} SANs found, {added} new subdomains added{Colors.RESET}")
+        else:
+            self.results['tlsx_sans'] = 0
+            print(f"{Colors.GREEN}[✔] TLSX: scan complete, no new SANs{Colors.RESET}")
+
+    def run_nomore403_scan(self):
+        """Module 37: nomore403 — 403/401 Forbidden bypass scanner."""
+        if not self._require_setup():
+            return
+        nomore403_bin = self.get_tool('nomore403')
+        if not nomore403_bin:
+            print(f"{Colors.RED}[!] nomore403 not installed{Colors.RESET}")
+            return
+        out_dir = f"{self.output_dir}/nomore403"
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
+        forbidden_urls = []
+        ffuf_dir = Path(f"{self.output_dir}/fuzzing")
+        if ffuf_dir.exists():
+            for f in ffuf_dir.rglob('*.json'):
+                try:
+                    data = json.loads(f.read_text())
+                    for result in data.get('results', []):
+                        if result.get('status') in [403, 401]:
+                            forbidden_urls.append(result.get('url', ''))
+                except Exception:
+                    pass
+        
+        if not forbidden_urls:
+            hosts = self._get_hosts()[:5]
+            admin_paths = ['/admin', '/wp-admin', '/administrator', '/dashboard',
+                           '/api', '/config', '/internal', '/management']
+            for host in hosts:
+                for path in admin_paths:
+                    forbidden_urls.append(f"{host.rstrip('/')}{path}")
+        
+        forbidden_urls = list(set(forbidden_urls))[:200]
+        if not forbidden_urls:
+            print(f"{Colors.YELLOW}[!] No 403 URLs to test{Colors.RESET}")
+            return
+        
+        out_file = f"{out_dir}/bypass_results.txt"
+        for url in forbidden_urls[:50]:
+            cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {out_file}"
+            self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}")
+        
+        count = self.count_file_lines(out_file)
+        self.results['bypass_403'] = count
+        print(f"{Colors.GREEN}[✔] nomore403: {count} potential bypasses found{Colors.RESET}")
+
     def run_full_spectrum_scan(self, force_fresh=False):
         """Run every single Oculus module in perfect dependency order with concurrency where safe.
         Supports smart resume: if previous data exists, user can skip completed steps.
@@ -3104,7 +3680,11 @@ class Oculus:
             'urls': 'URLs', 'urls_final': 'URLs Final', 'waf_detected': 'WAF',
             'vulnerabilities': 'Vulns', 'parameters': 'Params',
             'js_endpoints': 'JS', 'gf_filters': 'GF',
-            'xss_findings': 'XSS', 'cors_findings': 'CORS'
+            'xss_findings': 'XSS', 'cors_findings': 'CORS',
+            'cariddi_findings': 'Cariddi', 'jaeles_findings': 'Jaeles',
+            'ssti_findings': 'SSTI', 'crlf_findings': 'CRLF',
+            'internetdb_hosts': 'InternetDB', 'nikto_scanned': 'Nikto',
+            'tlsx_sans': 'TLSX', 'bypass_403': '403 Bypass'
         }
         existing = self._detect_existing_data(scan_keys)
         skip_completed = False
@@ -3139,7 +3719,7 @@ class Oculus:
         else:
             if not self.config.get('auto_confirm', False):
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
-                print(f"  FULL SPECTRUM SCAN will run ALL 29 modules across 5 phases.")
+                print(f"  FULL SPECTRUM SCAN will run ALL 37 modules across 5 phases.")
                 print(f"  Estimated runtime: 2-6 hours depending on target size.")
                 print(f"{Colors.RESET}")
                 yn = input(f"{Colors.YELLOW}[!] Launch Full Spectrum Scan on {self.domain}? (y/n): {Colors.RESET}")
@@ -3239,11 +3819,11 @@ class Oculus:
                 futures = {}
                 for spec in step_list:
                     futures[executor.submit(
-                        _run_step,
-                        spec['name'],
-                        spec['func'],
-                        spec.get('result_key'),
-                        spec.get('marker_files'),
+                         _run_step,
+                         spec['name'],
+                         spec['func'],
+                         spec.get('result_key'),
+                         spec.get('marker_files'),
                     )] = spec['name']
                 for future in as_completed(futures):
                     try:
@@ -3261,6 +3841,7 @@ class Oculus:
                  marker_files=["massdns_out.txt"])
             step("DNS Resolution", self.run_dns_resolution, result_key="dns_resolved")
             step("Alive Hosts Check", self.run_alive_hosts_check, result_key="alive_hosts")
+            step("TLS Certificate Scan", self.run_tlsx_scan, result_key="tlsx_sans")
 
             _run_concurrent([
                 cstep("ASN Discovery", self.run_asn_discovery, marker_files=["asn/asn_ranges.txt"]),
@@ -3281,10 +3862,12 @@ class Oculus:
                 self.current_phase = "Phase 2/5: Infrastructure"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
 
-                # Start Nmap in the background to not block the rest of the scan
+                # Start Nmap and Nikto in background threads concurrently
                 self._nmap_thread = threading.Thread(target=self.run_full_port_scan, daemon=True)
                 self._nmap_thread.start()
-                self.logger.info("[*] Full Port Scan (Nmap) started in background. It will not block other tools.")
+                self._nikto_thread = threading.Thread(target=self.run_nikto_scan, daemon=True)
+                self._nikto_thread.start()
+                self.logger.info("[*] Full Port Scan (Nmap) and Web Server Scan (Nikto) started in background.")
 
                 _run_concurrent([
                     cstep("Fast Port Scan", self.run_fast_port_scan, result_key="fast_ports"),
@@ -3292,6 +3875,7 @@ class Oculus:
                           marker_files=["tech_scan/whatweb_results.json"]),
                     cstep("WAF Detection", self.run_waf_detection, result_key="waf_detected"),
                     cstep("Screenshot Capture", self.run_screenshot_capture, marker_files=["screenshots"]),
+                    cstep("InternetDB Lookup", self.run_internetdb_scan, result_key="internetdb_hosts"),
                 ])
 
                 self.save_session()
@@ -3303,6 +3887,11 @@ class Oculus:
 
                 step("URL Collection", self.run_url_collection, result_key="urls")
                 step("Advanced URL Enum", self.run_advanced_url_enum, result_key="urls_final")
+
+                # Start Cariddi scan in the background
+                self._cariddi_thread = threading.Thread(target=self.run_cariddi_scan, daemon=True)
+                self._cariddi_thread.start()
+                self.logger.info("[*] URL Crawl (Cariddi) started in background.")
 
                 _run_concurrent([
                     cstep("Parameter Discovery", self.run_parameter_discovery, result_key="parameters"),
@@ -3323,6 +3912,11 @@ class Oculus:
                 step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, result_key="vulnerabilities")
                 step("GF Filters", self.run_gf_filters, result_key="gf_filters")
 
+                # Start Jaeles scan in the background
+                self._jaeles_thread = threading.Thread(target=self.run_jaeles_scan, daemon=True)
+                self._jaeles_thread.start()
+                self.logger.info("[*] Vulnerability Scan (Jaeles) started in background.")
+
                 _run_concurrent([
                     cstep("Directory Fuzzing", self.run_directory_fuzzing, marker_files=["fuzzing"]),
                     cstep("API Fuzzing", self.run_api_fuzzing, marker_files=["api_fuzzing"]),
@@ -3339,6 +3933,9 @@ class Oculus:
                     cstep("SQLi Scan", self.run_sqlmap_scan, marker_files=["sqlmap"]),
                     cstep("XSS Scan (Dalfox)", self.run_xss_scan, result_key="xss_findings"),
                     cstep("Open Redirect Scan", self.run_open_redirect_scan, marker_files=["redirects"]),
+                    cstep("CRLF Injection (CRLFuzz)", self.run_crlfuzz_scan, result_key="crlf_findings"),
+                    cstep("SSTI Scan (Tplmap)", self.run_tplmap_scan, result_key="ssti_findings"),
+                    cstep("403 Bypass (nomore403)", self.run_nomore403_scan, result_key="bypass_403"),
                 ])
 
                 _run_concurrent([
@@ -3356,12 +3953,21 @@ class Oculus:
             aborted = True
             print(f"\n{Colors.YELLOW}[!] Scan aborted via API request{Colors.RESET}")
             
-        if not aborted and hasattr(self, '_nmap_thread') and self._nmap_thread.is_alive():
-            msg = "[*] All phases complete. Waiting for Nmap background scan to finish..."
-            print(f"\n{Colors.CYAN}{msg}{Colors.RESET}")
-            self.logger.info(msg)
-            self._nmap_thread.join()
-            self.logger.info("[✔] Nmap background scan completed.")
+        # Join/wait for all background tasks
+        for thread_attr, tool_name in [
+            ('_nmap_thread', 'Nmap'),
+            ('_nikto_thread', 'Nikto'),
+            ('_cariddi_thread', 'Cariddi'),
+            ('_jaeles_thread', 'Jaeles')
+        ]:
+            if not aborted and hasattr(self, thread_attr):
+                t = getattr(self, thread_attr)
+                if t.is_alive():
+                    msg = f"[*] Waiting for background {tool_name} scan to finish..."
+                    print(f"\n{Colors.CYAN}{msg}{Colors.RESET}")
+                    self.logger.info(msg)
+                    t.join()
+                    self.logger.info(f"[✔] Background {tool_name} scan completed.")
 
         # FINAL: REPORTING (always runs, even on abort)
         duration = int(time.time() - start_time)
@@ -3418,42 +4024,68 @@ class Oculus:
                 f.write("-" * 80 + "\n")
                 f.write("                           DISCOVERY RESULTS\n")
                 f.write("-" * 80 + "\n\n")
+                
+                # Check WAF details
+                waf_d = self.results.get('waf_detected', 0)
+                waf_t = self.results.get('waf_total', 0)
+                waf_str = f"{waf_d}/{waf_t}" if waf_t > 0 else "0"
+
                 metrics = [
                     ('Subdomains Discovered', 'subdomains', f'{self.output_dir}/subdomains.txt'),
+                    ('DNS Bruteforce Checked', 'dns_brute', f'{self.output_dir}/massdns_out.txt'),
                     ('DNS Records Resolved', 'dns_resolved', f'{self.output_dir}/dns_resolved.txt'),
                     ('Alive Hosts Found', 'alive_hosts', f'{self.output_dir}/alive.txt'),
+                    ('TLS Certificate SANs', 'tlsx_sans', f'{self.output_dir}/tlsx/tlsx_sans.txt'),
                     ('Open Ports (Fast)', 'fast_ports', f'{self.output_dir}/ports_fast.txt'),
                     ('Service Details (Full)', 'full_ports', f'{self.output_dir}/ports_full.txt'),
+                    ('Tech Scan Results', 'tech_scan', f'{self.output_dir}/tech_scan/whatweb_results.json'),
+                    ('WAF Protected Hosts', 'waf_detected', ''),
+                    ('InternetDB Hosts', 'internetdb_hosts', f'{self.output_dir}/internetdb/internetdb_results.json'),
+                    ('Nikto Scanned Hosts', 'nikto_scanned', f'{self.output_dir}/nikto/'),
+                    ('Screenshot Capture', 'screenshots', f'{self.output_dir}/screenshots/'),
+                    ('ASN IP Ranges', 'asn_ranges', f'{self.output_dir}/asn/asn_ranges.txt'),
                     ('URLs Collected', 'urls', f'{self.output_dir}/urls.txt'),
+                    ('Advanced URLs Enum', 'urls_final', f'{self.output_dir}/urls_final.txt'),
                     ('JS Endpoints', 'js_endpoints', f'{self.output_dir}/js_endpoints/endpoints.txt'),
                     ('Parameters Discovered', 'parameters', f'{self.output_dir}/parameters/parameters_final.txt'),
+                    ('Directory Fuzz Findings', 'fuzz_findings', f'{self.output_dir}/fuzzing/'),
                     ('API Endpoints Fuzzed', 'api_fuzz', f'{self.output_dir}/api_fuzzing/'),
-                    ('ASN IP Ranges', 'asn_ranges', f'{self.output_dir}/asn/asn_ranges.txt'),
+                    ('Cariddi Findings', 'cariddi_findings', f'{self.output_dir}/cariddi/cariddi_results.txt'),
+                    ('Cloud Assets', 'cloud_assets', f'{self.output_dir}/cloud/s3_buckets.txt'),
+                    ('Leaked Secrets (GitHub)', 'github_secrets', f'{self.output_dir}/github/github_secrets.txt'),
+                    ('OSINT Harvesting', 'osint_findings', f'{self.output_dir}/osint/theharvester.html'),
+                    ('Shodan Recon', 'shodan_results', f'{self.output_dir}/shodan/shodan_results.txt'),
+                    ('Vulnerabilities (Nuclei)', 'vulnerabilities', f'{self.output_dir}/nuclei_output.jsonl'),
+                    ('Jaeles Vulns', 'jaeles_findings', f'{self.output_dir}/jaeles/'),
                     ('XSS Findings', 'xss_findings', f'{self.output_dir}/xss_findings/'),
+                    ('SQLMap Findings', 'sqlmap', f'{self.output_dir}/sqlmap/'),
+                    ('Open Redirect Vulns', 'open_redirects', f'{self.output_dir}/redirects/open_redirects.txt'),
+                    ('SSTI Vulns (tplmap)', 'ssti_findings', f'{self.output_dir}/tplmap/tplmap_results.txt'),
+                    ('CRLF Vulns (crlfuzz)', 'crlf_findings', f'{self.output_dir}/crlfuzz/crlfuzz_results.txt'),
+                    ('403 Bypasses (nomore403)', 'bypass_403', f'{self.output_dir}/nomore403/bypass_results.txt'),
                     ('CORS Findings', 'cors_findings', f'{self.output_dir}/cors_findings/'),
+                    ('HTTP Smuggling', 'smuggler', f'{self.output_dir}/smuggling/smuggler_results.txt'),
                     ('Takeover Findings', 'takeover', f'{self.output_dir}/takeover/'),
-                    ('SQLMap Scanned', 'sqlmap', f'{self.output_dir}/sqlmap/'),
-                    ('Tech Scan Results', 'tech_scan', f'{self.output_dir}/tech_scan/'),
                 ]
                 for label, key, path in metrics:
                     val = self.results.get(key, 0)
-                    f.write(f"{label}: {val}\n")
-                    if val:
+                    if key == 'waf_detected':
+                        f.write(f"{label}: {waf_str}\n")
+                    else:
+                        f.write(f"{label}: {val}\n")
+                    if val and path:
                         f.write(f"  • {path}\n")
-                # WAF
-                waf_d = self.results.get('waf_detected', 0)
-                waf_t = self.results.get('waf_total', 0)
-                f.write(f"WAF Protected: {waf_d}/{waf_t}\n")
-                # Vulns
+
+                # Vulns summary breakdown
                 vulns = self.results.get('vulnerabilities', 0)
                 if vulns:
-                    f.write(f"Vulnerabilities: {vulns}\n")
+                    f.write(f"\nVulnerability Details:\n")
                     f.write(f"  • Critical: {self.results.get('critical_vulns', 0)}\n")
                     f.write(f"  • High: {self.results.get('high_vulns', 0)}\n")
                 # GF
                 gf = self.results.get('gf_filters', {})
                 if gf:
-                    f.write("GF Findings:\n")
+                    f.write("\nGF Findings:\n")
                     for k, v in gf.items():
                         f.write(f"  • {k.upper()}: {v}\n")
                 f.write("\n" + "-" * 80 + "\n")
@@ -3468,7 +4100,9 @@ class Oculus:
             print(f"\n{Colors.CYAN}{Colors.BOLD}[*] RECON SUMMARY:{Colors.RESET}")
             for label, key, _ in metrics[:8]:
                 val = self.results.get(key, 0)
-                if val:
+                if key == 'waf_detected':
+                    print(f"  {Colors.WHITE}• {label}: {waf_str}{Colors.RESET}")
+                elif val:
                     print(f"  {Colors.WHITE}• {label}: {val}{Colors.RESET}")
         except Exception as e:
             self.logger.error(f"Summary generation: {e}")
@@ -3482,6 +4116,8 @@ class Oculus:
         
         # Collect data
         subs = self.read_file_lines(f"{self.output_dir}/subdomains.txt")
+        dns_brute = self.read_file_lines(f"{self.output_dir}/massdns_out.txt")
+        dns_resolved = self.read_file_lines(f"{self.output_dir}/dns_resolved.txt")
         alive = self.read_file_lines(f"{self.output_dir}/alive.txt")
         ports = self.read_file_lines(f"{self.output_dir}/ports_full.txt")
         if not ports:
@@ -3489,17 +4125,65 @@ class Oculus:
         params = self.read_file_lines(f"{self.output_dir}/parameters/parameters_final.txt")
         urls = self.read_file_lines(f"{self.output_dir}/urls_final.txt")
         asn_ranges = self.read_file_lines(f"{self.output_dir}/asn/asn_ranges.txt")
-        dns_resolved = self.read_file_lines(f"{self.output_dir}/dns_resolved.txt")
         js_endpoints = self.read_file_lines(f"{self.output_dir}/js_endpoints/endpoints.txt")
         
         dalfox = self.read_file_lines(f"{self.output_dir}/xss_findings/dalfox_results.txt")
         cors = self.read_file_lines(f"{self.output_dir}/cors_findings/cors_results.txt")
         takeovers = self.read_file_lines(f"{self.output_dir}/takeover/takeovers.txt")
-        smuggler = self.read_file_lines(f"{self.output_dir}/smuggler_results.txt")
+        smuggler = self.read_file_lines(f"{self.output_dir}/smuggling/smuggler_results.txt")
         s3_buckets = self.read_file_lines(f"{self.output_dir}/cloud/s3_buckets.txt")
         github_secrets = self.read_file_lines(f"{self.output_dir}/github/github_secrets.txt")
         shodan_results = self.read_file_lines(f"{self.output_dir}/shodan/shodan_results.txt")
         open_redirects = self.read_file_lines(f"{self.output_dir}/redirects/open_redirects.txt")
+        
+        cariddi = self.read_file_lines(f"{self.output_dir}/cariddi/cariddi_results.txt")
+        tplmap = self.read_file_lines(f"{self.output_dir}/tplmap/tplmap_results.txt")
+        crlfuzz = self.read_file_lines(f"{self.output_dir}/crlfuzz/crlfuzz_results.txt")
+        nomore403 = self.read_file_lines(f"{self.output_dir}/nomore403/bypass_results.txt")
+        tlsx = self.read_file_lines(f"{self.output_dir}/tlsx/tlsx_sans.txt")
+        
+        # Parse FFUF directory fuzzing JSONs
+        fuzz_endpoints = []
+        fuzz_dir = Path(f"{self.output_dir}/fuzzing")
+        if fuzz_dir.exists():
+            for json_file in fuzz_dir.glob('ffuf_*.json'):
+                try:
+                    data = json.loads(json_file.read_text(encoding='utf-8'))
+                    for res in data.get('results', []):
+                        fuzz_endpoints.append(f"[{res.get('status')}] {res.get('url')}")
+                except Exception:
+                    pass
+
+        # OSINT report link
+        osint_report = []
+        if os.path.exists(f"{self.output_dir}/osint/theharvester.html"):
+            osint_report.append(f'<a href="osint/theharvester.html" target="_blank" style="color: #00ffcc; text-decoration: underline;">View theHarvester HTML Report</a>')
+
+        internetdb = []
+        idb_path = Path(f"{self.output_dir}/internetdb/internetdb_results.json")
+        if idb_path.exists():
+            try:
+                idb_data = json.loads(idb_path.read_text(encoding='utf-8'))
+                for host in idb_data:
+                    ip = host.get('ip', '')
+                    ports_list = ', '.join(str(p) for p in host.get('ports', []))
+                    cpes = ', '.join(host.get('cpes', []))
+                    vulns_list = ', '.join(host.get('vulns', []))
+                    internetdb.append(f"IP: {ip} | Ports: {ports_list} | CPEs: {cpes} | Vulns: {vulns_list}")
+            except Exception:
+                pass
+
+        jaeles = []
+        jaeles_dir = Path(f"{self.output_dir}/jaeles")
+        if jaeles_dir.exists():
+            for txt_file in jaeles_dir.rglob('*.txt'):
+                jaeles.extend(self.read_file_lines(str(txt_file)))
+
+        nikto = []
+        nikto_dir = Path(f"{self.output_dir}/nikto")
+        if nikto_dir.exists():
+            for txt_file in nikto_dir.glob('*.txt'):
+                nikto.extend(self.read_file_lines(str(txt_file)))
         
         sqlmap = []
         sqlmap_dir = Path(f"{self.output_dir}/sqlmap")
@@ -3634,6 +4318,7 @@ function sortTable(n) {
 
         sections = [
             ("Subdomains", "globe", subs, 200),
+            ("DNS Bruteforce", "search", dns_brute, 200),
             ("DNS Records Resolved", "search", dns_resolved, 200),
             ("Alive Hosts", "activity", alive, 200),
             ("Open Ports", "plug", ports, 200),
@@ -3649,7 +4334,17 @@ function sortTable(n) {
             ("Cloud Buckets / Assets", "cloud", s3_buckets, 200),
             ("Leaked Secrets (GitHub)", "key", github_secrets, 200),
             ("Shodan Host Intelligence", "radar", shodan_results, 200),
-            ("Open Redirects", "external-link", open_redirects, 200)
+            ("OSINT Harvesting", "users", osint_report, 200),
+            ("Open Redirects", "external-link", open_redirects, 200),
+            ("Directory Fuzzing", "folder", fuzz_endpoints, 200),
+            ("Cariddi Crawl Findings", "link-2", cariddi, 200),
+            ("Jaeles Vulnerabilities", "shield-alert", jaeles, 200),
+            ("SSTI Vulnerabilities (Tplmap)", "cpu", tplmap, 200),
+            ("CRLF Vulnerabilities (CRLFuzz)", "alert-triangle", crlfuzz, 200),
+            ("InternetDB Passive Lookup", "database", internetdb, 200),
+            ("Nikto Web Server Scan", "server", nikto, 200),
+            ("TLS Certificate SANs", "lock", tlsx, 200),
+            ("403 Bypasses (nomore403)", "unlock", nomore403, 200)
         ]
         
         for title, icon, data, limit in sections:
@@ -3687,12 +4382,48 @@ function sortTable(n) {
             for log in sqlmap_dir.rglob('log'):
                 sqlmap.extend(self.read_file_lines(str(log)))
 
+        jaeles = []
+        jaeles_dir = Path(f"{self.output_dir}/jaeles")
+        if jaeles_dir.exists():
+            for txt_file in jaeles_dir.rglob('*.txt'):
+                jaeles.extend(self.read_file_lines(str(txt_file)))
+
+        nikto = []
+        nikto_dir = Path(f"{self.output_dir}/nikto")
+        if nikto_dir.exists():
+            for txt_file in nikto_dir.glob('*.txt'):
+                nikto.extend(self.read_file_lines(str(txt_file)))
+
+        # Parse FFUF directory fuzzing JSONs
+        fuzz_endpoints = []
+        fuzz_dir = Path(f"{self.output_dir}/fuzzing")
+        if fuzz_dir.exists():
+            for json_file in fuzz_dir.glob('ffuf_*.json'):
+                try:
+                    data = json.loads(json_file.read_text(encoding='utf-8'))
+                    for res in data.get('results', []):
+                        fuzz_endpoints.append(f"[{res.get('status')}] {res.get('url')}")
+                except Exception:
+                    pass
+
+        # Capture screenshots list
+        screenshots_dir = Path(f"{self.output_dir}/screenshots")
+        screenshot_exts = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+        screenshots_list = []
+        if screenshots_dir.exists():
+            screenshots_list = [
+                str(img.relative_to(self.output_dir)).replace(os.sep, '/')
+                for img in sorted(screenshots_dir.rglob('*'))
+                if img.is_file() and img.suffix.lower() in screenshot_exts
+            ]
+
         report = {
             'domain': self.domain,
             'version': VERSION,
             'scan_date': datetime.now().isoformat(),
             'results': self.results,
             'subdomains': self.read_file_lines(f"{self.output_dir}/subdomains.txt"),
+            'dns_brute': self.read_file_lines(f"{self.output_dir}/massdns_out.txt"),
             'dns_resolved': self.read_file_lines(f"{self.output_dir}/dns_resolved.txt"),
             'alive_hosts': self.read_file_lines(f"{self.output_dir}/alive.txt"),
             'open_ports': ports,
@@ -3704,11 +4435,22 @@ function sortTable(n) {
             'sql_injections': sqlmap,
             'takeovers': self.read_file_lines(f"{self.output_dir}/takeover/takeovers.txt"),
             'cors': self.read_file_lines(f"{self.output_dir}/cors_findings/cors_results.txt"),
-            'smuggler': self.read_file_lines(f"{self.output_dir}/smuggler_results.txt"),
+            'smuggler': self.read_file_lines(f"{self.output_dir}/smuggling/smuggler_results.txt"),
             'cloud_assets': self.read_file_lines(f"{self.output_dir}/cloud/s3_buckets.txt"),
             'leaked_secrets': self.read_file_lines(f"{self.output_dir}/github/github_secrets.txt"),
             'shodan_results': self.read_file_lines(f"{self.output_dir}/shodan/shodan_results.txt"),
+            'osint_report': f"osint/theharvester.html" if os.path.exists(f"{self.output_dir}/osint/theharvester.html") else None,
             'open_redirects': self.read_file_lines(f"{self.output_dir}/redirects/open_redirects.txt"),
+            'fuzz_findings': fuzz_endpoints,
+            'cariddi_findings': self.read_file_lines(f"{self.output_dir}/cariddi/cariddi_results.txt"),
+            'jaeles_vulns': jaeles,
+            'ssti_findings': self.read_file_lines(f"{self.output_dir}/tplmap/tplmap_results.txt"),
+            'crlf_findings': self.read_file_lines(f"{self.output_dir}/crlfuzz/crlfuzz_results.txt"),
+            'internetdb_findings': self.read_file_lines(f"{self.output_dir}/internetdb/internetdb_results.json"),
+            'nikto_results': nikto,
+            'tlsx_sans': self.read_file_lines(f"{self.output_dir}/tlsx/tlsx_sans.txt"),
+            'bypass_403': self.read_file_lines(f"{self.output_dir}/nomore403/bypass_results.txt"),
+            'screenshots': screenshots_list,
         }
         # Parse vulnerabilities
         vulns_file = f"{self.output_dir}/nuclei_output.jsonl"
@@ -3732,6 +4474,7 @@ function sortTable(n) {
         path = f"{self.output_dir}/report.md"
         
         subs = self.read_file_lines(f"{self.output_dir}/subdomains.txt")
+        dns_brute = self.read_file_lines(f"{self.output_dir}/massdns_out.txt")
         dns_resolved = self.read_file_lines(f"{self.output_dir}/dns_resolved.txt")
         alive = self.read_file_lines(f"{self.output_dir}/alive.txt")
         ports = self.read_file_lines(f"{self.output_dir}/ports_full.txt")
@@ -3744,7 +4487,7 @@ function sortTable(n) {
         dalfox = self.read_file_lines(f"{self.output_dir}/xss_findings/dalfox_results.txt")
         cors = self.read_file_lines(f"{self.output_dir}/cors_findings/cors_results.txt")
         takeovers = self.read_file_lines(f"{self.output_dir}/takeover/takeovers.txt")
-        smuggler = self.read_file_lines(f"{self.output_dir}/smuggler_results.txt")
+        smuggler = self.read_file_lines(f"{self.output_dir}/smuggling/smuggler_results.txt")
         
         sqlmap = []
         sqlmap_dir = Path(f"{self.output_dir}/sqlmap")
@@ -3756,6 +4499,50 @@ function sortTable(n) {
         github_secrets = self.read_file_lines(f"{self.output_dir}/github/github_secrets.txt")
         shodan_results = self.read_file_lines(f"{self.output_dir}/shodan/shodan_results.txt")
         open_redirects = self.read_file_lines(f"{self.output_dir}/redirects/open_redirects.txt")
+
+        cariddi = self.read_file_lines(f"{self.output_dir}/cariddi/cariddi_results.txt")
+        tplmap = self.read_file_lines(f"{self.output_dir}/tplmap/tplmap_results.txt")
+        crlfuzz = self.read_file_lines(f"{self.output_dir}/crlfuzz/crlfuzz_results.txt")
+        nomore403 = self.read_file_lines(f"{self.output_dir}/nomore403/bypass_results.txt")
+        tlsx = self.read_file_lines(f"{self.output_dir}/tlsx/tlsx_sans.txt")
+        
+        # Parse FFUF directory fuzzing JSONs
+        fuzz_endpoints = []
+        fuzz_dir = Path(f"{self.output_dir}/fuzzing")
+        if fuzz_dir.exists():
+            for json_file in fuzz_dir.glob('ffuf_*.json'):
+                try:
+                    data = json.loads(json_file.read_text(encoding='utf-8'))
+                    for res in data.get('results', []):
+                        fuzz_endpoints.append(f"[{res.get('status')}] {res.get('url')}")
+                except Exception:
+                    pass
+
+        internetdb = []
+        idb_path = Path(f"{self.output_dir}/internetdb/internetdb_results.json")
+        if idb_path.exists():
+            try:
+                idb_data = json.loads(idb_path.read_text(encoding='utf-8'))
+                for host in idb_data:
+                    ip = host.get('ip', '')
+                    ports_list = ', '.join(str(p) for p in host.get('ports', []))
+                    cpes = ', '.join(host.get('cpes', []))
+                    vulns_list = ', '.join(host.get('vulns', []))
+                    internetdb.append(f"IP: {ip} | Ports: {ports_list} | CPEs: {cpes} | Vulns: {vulns_list}")
+            except Exception:
+                pass
+
+        jaeles = []
+        jaeles_dir = Path(f"{self.output_dir}/jaeles")
+        if jaeles_dir.exists():
+            for txt_file in jaeles_dir.rglob('*.txt'):
+                jaeles.extend(self.read_file_lines(str(txt_file)))
+
+        nikto = []
+        nikto_dir = Path(f"{self.output_dir}/nikto")
+        if nikto_dir.exists():
+            for txt_file in nikto_dir.glob('*.txt'):
+                nikto.extend(self.read_file_lines(str(txt_file)))
         
         # Collect screenshots
         screenshots_dir = Path(f"{self.output_dir}/screenshots")
@@ -3774,7 +4561,7 @@ function sortTable(n) {
             
             # Summary Table
             f.write("## Summary\n\n| Metric | Count |\n|---|---|\n")
-            for k, v in self.results.items():
+            for k, v in sorted(self.results.items()):
                 if isinstance(v, (int, float)):
                     f.write(f"| {k.replace('_', ' ').title()} | {v} |\n")
             f.write("\n---\n\n")
@@ -3782,16 +4569,16 @@ function sortTable(n) {
             # Vulnerabilities
             vulns_file = f"{self.output_dir}/nuclei_output.jsonl"
             if os.path.exists(vulns_file):
-                vulns = []
+                vulns_list = []
                 for line in self.read_file_lines(vulns_file):
                     try:
-                        vulns.append(json.loads(line))
+                        vulns_list.append(json.loads(line))
                     except Exception:
                         pass
-                if vulns:
+                if vulns_list:
                     f.write("## 🔴 Vulnerabilities\n\n")
                     f.write("| Severity | Name | Template | Matched At |\n|---|---|---|---|\n")
-                    for v in sorted(vulns, key=lambda x: {'critical':0, 'high':1, 'medium':2, 'low':3, 'info':4}.get(x.get('info',{}).get('severity','info').lower(), 5)):
+                    for v in sorted(vulns_list, key=lambda x: {'critical':0, 'high':1, 'medium':2, 'low':3, 'info':4}.get(x.get('info',{}).get('severity','info').lower(), 5)):
                         sev = v.get('info',{}).get('severity','info').lower().upper()
                         name = v.get("info",{}).get("name","")
                         template = v.get("template-id","")
@@ -3817,6 +4604,15 @@ function sortTable(n) {
                     f.write(f"- {s}\n")
                 if len(subs) > 100:
                     f.write(f"\n*... and {len(subs) - 100} more subdomains*\n")
+                f.write("\n---\n\n")
+
+            # DNS Bruteforce
+            if dns_brute:
+                f.write(f"## 🔎 DNS Bruteforce ({len(dns_brute)})\n\n")
+                for db in dns_brute[:100]:
+                    f.write(f"- {db}\n")
+                if len(dns_brute) > 100:
+                    f.write(f"\n*... and {len(dns_brute) - 100} more DNS bruteforce records*\n")
                 f.write("\n---\n\n")
                 
             # Alive Hosts
@@ -3959,6 +4755,11 @@ function sortTable(n) {
                     f.write(f"\n*... and {len(shodan_results) - 100} more Shodan results*\n")
                 f.write("\n---\n\n")
 
+            # OSINT
+            if os.path.exists(f"{self.output_dir}/osint/theharvester.html"):
+                f.write("## 👥 OSINT Harvesting (theHarvester)\n\n")
+                f.write("- [theHarvester HTML Report](osint/theharvester.html)\n\n---\n\n")
+
             # Open Redirects
             if open_redirects:
                 f.write(f"## ↩️ Open Redirects ({len(open_redirects)})\n\n")
@@ -3966,6 +4767,87 @@ function sortTable(n) {
                     f.write(f"- {o}\n")
                 if len(open_redirects) > 100:
                     f.write(f"\n*... and {len(open_redirects) - 100} more open redirects*\n")
+                f.write("\n---\n\n")
+
+            # Directory Fuzzing
+            if fuzz_endpoints:
+                f.write(f"## 📁 Directory Fuzzing ({len(fuzz_endpoints)})\n\n")
+                for fe in fuzz_endpoints[:100]:
+                    f.write(f"- {fe}\n")
+                if len(fuzz_endpoints) > 100:
+                    f.write(f"\n*... and {len(fuzz_endpoints) - 100} more fuzz findings*\n")
+                f.write("\n---\n\n")
+
+            # Cariddi
+            if cariddi:
+                f.write(f"## 🕷️ Cariddi Crawl Findings ({len(cariddi)})\n\n")
+                for c in cariddi[:100]:
+                    f.write(f"- {c}\n")
+                if len(cariddi) > 100:
+                    f.write(f"\n*... and {len(cariddi) - 100} more crawl findings*\n")
+                f.write("\n---\n\n")
+
+            # Jaeles
+            if jaeles:
+                f.write(f"## 🛡️ Jaeles Vulnerability Findings ({len(jaeles)})\n\n")
+                for j in jaeles[:100]:
+                    f.write(f"- {j}\n")
+                if len(jaeles) > 100:
+                    f.write(f"\n*... and {len(jaeles) - 100} more Jaeles vulnerabilities*\n")
+                f.write("\n---\n\n")
+
+            # Tplmap
+            if tplmap:
+                f.write(f"## ⚙️ SSTI Vulnerabilities (Tplmap) ({len(tplmap)})\n\n")
+                for t in tplmap[:100]:
+                    f.write(f"- {t}\n")
+                if len(tplmap) > 100:
+                    f.write(f"\n*... and {len(tplmap) - 100} more SSTI vulnerabilities*\n")
+                f.write("\n---\n\n")
+
+            # CRLF
+            if crlfuzz:
+                f.write(f"## 🧬 CRLF Vulnerabilities (CRLFuzz) ({len(crlfuzz)})\n\n")
+                for cr in crlfuzz[:100]:
+                    f.write(f"- {cr}\n")
+                if len(crlfuzz) > 100:
+                    f.write(f"\n*... and {len(crlfuzz) - 100} more CRLF vulnerabilities*\n")
+                f.write("\n---\n\n")
+
+            # InternetDB
+            if internetdb:
+                f.write(f"## 🗄️ InternetDB Passive Lookup ({len(internetdb)})\n\n")
+                for i in internetdb[:100]:
+                    f.write(f"- {i}\n")
+                if len(internetdb) > 100:
+                    f.write(f"\n*... and {len(internetdb) - 100} more Shodan InternetDB records*\n")
+                f.write("\n---\n\n")
+
+            # Nikto
+            if nikto:
+                f.write(f"## 🗃️ Nikto Web Server Scan ({len(nikto)})\n\n")
+                for ni in nikto[:100]:
+                    f.write(f"- {ni}\n")
+                if len(nikto) > 100:
+                    f.write(f"\n*... and {len(nikto) - 100} more Nikto results*\n")
+                f.write("\n---\n\n")
+
+            # TLSX
+            if tlsx:
+                f.write(f"## 🔒 TLS Certificate SANs ({len(tlsx)})\n\n")
+                for tl in tlsx[:100]:
+                    f.write(f"- {tl}\n")
+                if len(tlsx) > 100:
+                    f.write(f"\n*... and {len(tlsx) - 100} more TLS certificate SANs*\n")
+                f.write("\n---\n\n")
+
+            # Nomore403
+            if nomore403:
+                f.write(f"## 🔓 403 Bypasses (nomore403) ({len(nomore403)})\n\n")
+                for no in nomore403[:100]:
+                    f.write(f"- {no}\n")
+                if len(nomore403) > 100:
+                    f.write(f"\n*... and {len(nomore403) - 100} more 403 bypass records*\n")
                 f.write("\n\n")
 
         print(f"{Colors.GREEN}[✔] Markdown report: {path}{Colors.RESET}")
@@ -4066,6 +4948,22 @@ function sortTable(n) {
                 "[28]", "Shodan Recon",
                 "[29]", "Open Redirect Scan"
             )
+            table.add_row(
+                "[30]", get_status("cariddi_findings", "Cariddi Scan"),
+                "[31]", get_status("jaeles_findings", "Jaeles Scan")
+            )
+            table.add_row(
+                "[32]", get_status("ssti_findings", "Tplmap SSTI Scan"),
+                "[33]", get_status("crlf_findings", "CRLFuzz CRLF Scan")
+            )
+            table.add_row(
+                "[34]", get_status("internetdb_hosts", "InternetDB Lookup"),
+                "[35]", get_status("nikto_scanned", "Nikto Scanner")
+            )
+            table.add_row(
+                "[36]", get_status("tlsx_sans", "TLSX Cert Scan"),
+                "[37]", get_status("bypass_403", "Nomore403 Bypass")
+            )
 
             table.add_row("", "", "", "")
 
@@ -4079,7 +4977,7 @@ function sortTable(n) {
                 "[D]", "[bold bright_magenta]Deep Recon         (Advanced)[/]"
             )
             table.add_row(
-                "[U]", "[bold bright_red]Full Spectrum Scan (All 29)[/]",
+                "[U]", "[bold bright_red]Full Spectrum Scan (All 37)[/]",
                 "[R]", "Generate Reports"
             )
             table.add_row(
@@ -4158,8 +5056,11 @@ function sortTable(n) {
             print("7. WAF Detect  | 8. Vuln Scan   | 20. SQLi Scan  | 21. XSS Scan   | 22. CORS")
             print(f"{Colors.YELLOW}[ OSINT & MORE ]{Colors.RESET}")
             print("14. Takeover   | 17. DNS Brute  | 24. ASN        | 25. Cloud      | 26-29. OSINT")
+            print(f"{Colors.YELLOW}[ ADVANCED SCAFFOLDING ]{Colors.RESET}")
+            print("30. Cariddi    | 31. Jaeles     | 32. Tplmap     | 33. CRLFuzz    | 34. InternetDB")
+            print("35. Nikto      | 36. TLSX       | 37. Nomore403")
             print(f"{Colors.YELLOW}[ AUTOMATION & SYSTEM ]{Colors.RESET}")
-            print("9. Full Auto   | D. Deep Recon  | U. Full Spectrum| C. Domain     | Q. Quit")
+            print("9. Full Auto   | D. Deep Recon  | U. Full Spectrum (All 37)| C. Domain     | Q. Quit")
             print(f"{Colors.CYAN}-------------------{Colors.RESET}\n")
             
             if self.domain:
@@ -4243,6 +5144,14 @@ function sortTable(n) {
                 '27': self.run_osint_harvesting,
                 '28': self.run_shodan_integration,
                 '29': self.run_open_redirect_scan,
+                '30': self.run_cariddi_scan,
+                '31': self.run_jaeles_scan,
+                '32': self.run_tplmap_scan,
+                '33': self.run_crlfuzz_scan,
+                '34': self.run_internetdb_scan,
+                '35': self.run_nikto_scan,
+                '36': self.run_tlsx_scan,
+                '37': self.run_nomore403_scan,
                 'D': self.run_deep_recon_mode,
                 'U': self.run_full_spectrum_scan,
                 'R': lambda: (self.generate_html_report(), self.generate_json_report(), self.generate_markdown_report()),
@@ -4317,6 +5226,14 @@ MODULE_MAP = {
     'osint': 'run_osint_harvesting',
     'shodan': 'run_shodan_integration',
     'redirect': 'run_open_redirect_scan',
+    'cariddi': 'run_cariddi_scan',
+    'jaeles': 'run_jaeles_scan',
+    'tplmap': 'run_tplmap_scan',
+    'crlfuzz': 'run_crlfuzz_scan',
+    'internetdb': 'run_internetdb_scan',
+    'nikto': 'run_nikto_scan',
+    'tlsx': 'run_tlsx_scan',
+    'nomore403': 'run_nomore403_scan',
 }
 
 

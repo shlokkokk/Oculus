@@ -58,7 +58,7 @@ The **Oculus Web Interface** is a sleek, high-performance browser dashboard buil
 > Zero-database design that queries directly from `output-*/` session files, ensuring absolute synchronicity between CLI commands and browser operations.
 
 #### 🩺 **Operational Pre-flight Checks (Live Tool Status)**
-> Built-in diagnostics checking 29 system tools, matching exact Go directories, apt binaries, and `/opt/recontools/` Python modules to provide a full dependency status overview.
+> Built-in diagnostics checking 37 system tools, matching exact Go directories, apt binaries, and `/opt/recontools/` Python modules to provide a full dependency status overview.
 
 <br>
 
@@ -71,7 +71,7 @@ Browser (React SPA)
     │
     ├── [ REST API ] ──── FastAPI Backend ──── Oculus Core (oculus.py)
     │                                              │
-    └── [ WebSocket ] ── Live Log Stream           └── 29+ Kali Modules
+    └── [ WebSocket ] ── Live Log Stream           └── 37+ Kali Modules
 ```
 
 - **Backend (`web/backend/`)**: A fast, asynchronous API built with FastAPI. It imports the `Oculus` Python class directly to execute scans without spawning dangerous subprocesses.
@@ -94,7 +94,7 @@ From the **project root** (`Oculus/`):
 chmod +x install.sh
 ./install.sh
 ```
-*(This installs all 29+ required tools into your system path and `/opt/recontools/`)*.
+*(This installs all 37+ required tools into your system path and `/opt/recontools/`)*.
 
 ### Step 1: Install Web Dependencies
 
@@ -149,14 +149,14 @@ Navigate to **http://localhost:8000** in your browser.
 
 ## 🐳 Running the Web Interface in Docker (Recommended for Windows & macOS)
 
-If you are on Windows, macOS, or do not want to install Node, Python, and the 29 underlying security tools on your host machine, you can run the entire Web UI ecosystem inside a fully pre-configured container environment with one command.
+If you are on Windows, macOS, or do not want to install Node, Python, and the 37 underlying security tools on your host machine, you can run the entire Web UI ecosystem inside a fully pre-configured container environment with one command.
 
 ### Method A: Single-Command Launch (Docker Compose)
 From the project root directory:
 ```bash
 docker compose up --build
 ```
-This command automatically builds the Node frontend stage, compiles the React assets, downloads all 29 tools inside a Kali Linux container, forwards ports, and starts the FastAPI server.
+This command automatically builds the Node frontend stage, compiles the React assets, downloads all 37 tools inside a Kali Linux container, forwards ports, and starts the FastAPI server.
 
 Open your browser to:
 👉 **[http://localhost:8000](http://localhost:8000)**

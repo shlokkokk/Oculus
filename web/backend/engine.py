@@ -39,7 +39,8 @@ def kill_zombie_scanners():
             "dalfox", "sqlmap", "theHarvester", "nuclei", "naabu",
             "gowitness", "EyeWitness.py", "eyewitness.py",
             "ffuf", "subfinder", "massdns", "dnsx", "amass",
-            "assetfinder", "katana", "gau", "waybackurls", "whatweb", "chromium"
+            "assetfinder", "katana", "gau", "waybackurls", "whatweb", "chromium",
+            "puredns", "cariddi", "jaeles", "tplmap", "crlfuzz", "tlsx", "alterx", "nomore403", "whatwaf", "notify"
         ]
         pattern = "|".join(tools)
         # Using WSL if on Windows, or direct call on Linux
@@ -83,6 +84,17 @@ MODULE_SUBTOOLS = {
     "CORS Scanner": ["CORS Scan"],
     "CORS Scan": ["CORS Scan"],
     "HTTP Smuggling": ["Smuggler scan"],
+    "TLS Certificate Scan": ["tlsx"],
+    "InternetDB Lookup": ["internetdb"],
+    "Cariddi": ["cariddi"],
+    "Cariddi Scan": ["cariddi"],
+    "Jaeles": ["jaeles"],
+    "Jaeles Scan": ["jaeles"],
+    "CRLF Injection (CRLFuzz)": ["crlfuzz"],
+    "SSTI Scan (Tplmap)": ["tplmap"],
+    "403 Bypass (nomore403)": ["nomore403"],
+    "Nikto Scanner": ["nikto"],
+    "Nikto": ["nikto"],
 }
 
 
@@ -649,7 +661,7 @@ class ScanEngine:
                     ("SQLi Scan", oc.run_sqlmap_scan),
                 ]
             elif mode == "full_spectrum":
-                self._total_modules = 29
+                self._total_modules = 37
                 # Use the built-in full spectrum method
                 self._current_module = "Full Spectrum Scan"
                 oc.run_full_spectrum_scan(force_fresh=not resume)
@@ -666,9 +678,9 @@ class ScanEngine:
             elif mode == "custom" and modules:
                 # Chronological execution order matching Oculus's natural phase dependencies
                 custom_order = [
-                    'subdomain', 'dnsbrute', 'dns', 'alive', 'asn', 'cloud', 'osint', 'shodan', 'github',
-                    'ports', 'fullports', 'tech', 'waf', 'screenshots', 'urls', 'hakrawler', 'params', 'js',
-                    'takeover', 'vuln', 'gf', 'fuzz', 'api', 'sqli', 'xss', 'redirect', 'cors', 'smuggling'
+                    'subdomain', 'dnsbrute', 'dns', 'alive', 'tlsx', 'asn', 'cloud', 'osint', 'shodan', 'github',
+                    'ports', 'fullports', 'tech', 'waf', 'screenshots', 'internetdb', 'nikto', 'urls', 'hakrawler', 'cariddi', 'params', 'js',
+                    'takeover', 'vuln', 'jaeles', 'gf', 'fuzz', 'api', 'sqli', 'xss', 'redirect', 'crlfuzz', 'tplmap', 'nomore403', 'cors', 'smuggling'
                 ]
                 # Sort custom selection list to respect the pipeline stages
                 sorted_mods = [m for m in custom_order if m in modules]

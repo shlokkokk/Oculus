@@ -2,7 +2,7 @@
   <br>
   <samp><b>O C U L U S</b></samp>
   <br><br>
-  <sub><i>v4.1 · one lens. full surface.</i></sub>
+  <sub><i>v4.2 · one lens. full surface.</i></sub>
   <br><br>
   <a href="#quick-start"><img alt="Quick start" src="https://img.shields.io/badge/setup-install.sh-00d4aa?style=flat-square"></a>
   <a href="#expandable-guides"><img alt="Guides" src="https://img.shields.io/badge/docs-expandable-9333ea?style=flat-square"></a>
@@ -37,7 +37,7 @@
 
 ## Run in Browser (New Web UI!)
 
-Oculus v4.1 now features a complete, real-time web interface. You can configure scans, monitor live terminal output, and view generated reports directly in your browser without ever touching the CLI.
+Oculus v4.2 now features a complete, real-time web interface. You can configure scans, monitor live terminal output, and view generated reports directly in your browser without ever touching the CLI.
 
 **Launch in Developer Mode (Standard / Live Reloading):**
 ```bash
@@ -56,7 +56,7 @@ npm run dev # Open http://localhost:5173
 *   🔄 **Zero-Latency Reset Core**: Instantly purges and re-syncs state configurations to pristine system baselines, eliminating static parameters via recursive async calls directly to the FastAPI config registry.
 *   🛡️ **Accidental Abort Interception Layer**: Replaced fragile, instantly destructive termination calls with a threat-crimson modal warning engine. Leverages SVG `<ShieldAlert />` vector isolation, preventing accidental process interrupts on parallel scanning threads.
 *   🎨 **Interactive Cyan Cyber-Glow Aesthetics**: The Jitter element has been elevated into a 100% clickable glassmorphic telemetry container. Uses fluid `0.3s` ease transitions, active micro-animations, glowing borders, active text shadows, and custom cyberpunk neon accents.
-*   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `29/29 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
+*   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `37/37 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
 
 *   🖼️ **Domain-Wise Screenshot Review**: Results and Reports include a Screenshots tab that groups captures by inferred domain/subdomain, supports both screenshot engines, and opens screenshots in a near full-screen viewer for readable triage.
 
@@ -128,8 +128,16 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 | **27** | `osint` | theHarvester | Broad OSINT (`-b all`) → **`osint/`** HTML |
 | **28** | `shodan` | Shodan API | Passive **hostname:** hits for exposed services (**API key** in YAML) → **`shodan/`** |
 | **29** | `redirect` | Python | Fuzz redirect params from **`gf/redirect.txt`**; may auto-run **gf** first → **`redirects/`** |
-| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **24 → 10→11→12→13→14→15→16→18→19→21→22→23→20** (ASN first, **sqlmap** last). **Skips** menus **1–9**, **17**, **25–29**. Needs prior **`alive.txt`** / URLs from **9** or manual **1–8**+**6**. |
-| **U** | `--full-spectrum` | *(all 29 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
+| **30** | `cariddi` | Cariddi | Crawl URLs from `alive.txt` for secrets, endpoints, juicy extensions → **`cariddi/`** |
+| **31** | `jaeles` | Jaeles | Signature-based vulnerability scanner targeting `alive.txt` → **`jaeles/`** |
+| **32** | `tplmap` | Tplmap | Server-Side Template Injection (SSTI) scanner in safe detection mode → **`tplmap/`** |
+| **33** | `crlfuzz` | CRLFuzz | CRLF injection scanner feeding hosts from `alive.txt` → **`crlfuzz/`** |
+| **34** | `internetdb` | Shodan InternetDB API | Zero-authentication passive port, vulnerability, and CPE lookup → **`internetdb/`** |
+| **35** | `nikto` | Nikto | Comprehensive web server security/configuration scanner → **`nikto/`** |
+| **36** | `tlsx` | TLSX | TLS certificate scanning with CN/SAN parsing to discover extra subdomains → **`tlsx/`** |
+| **37** | `nomore403` | nomore403 | Automated 403/401 Forbidden bypass techniques scanner → **`nomore403/`** |
+| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **24 → 10→11→12→13→14→15→16→18→19→21→22→23→20** (ASN first, **sqlmap** last). **Skips** menus **1–9**, **17**, **25–29**, **30–37**. Needs prior **`alive.txt`** / URLs from **9** or manual **1–8**+**6**. |
+| **U** | `--full-spectrum` | *(all 37 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
 | **R** | — | *(generators)* | Rebuild **`report.html`**, **`findings.json`**, **`report.md`** from disk artifacts |
 
 ---
@@ -141,11 +149,11 @@ Oculus has three preset automation modes. Pick the one that matches your scope a
 | | **[9] Full Auto Recon** | **[D] Deep Recon** | **[U] Full Spectrum Scan** |
 |:---|:---|:---|:---|
 | **Scope** | Core recon pipeline | Advanced modules only | Everything — recon through exploitation |
-| **Modules run** | 7 (steps 1→8, skips 5) | 14 fixed advanced steps | All 29 modules |
+| **Modules run** | 7 (steps 1→8, skips 5) | 14 fixed advanced steps | All 37 modules |
 | **Prerequisite** | Just set a domain | Needs `alive.txt` + URLs (run 9 first) | Just set a domain |
 | **Concurrency** | Subdomain tools + URL tools in parallel | Sequential only | Full concurrent scheduling per phase |
 | **Estimated time** | 15–45 min | 1–3 hours | 2–6 hours |
-| **What it skips** | Advanced modules (10–29) | Core (1–9), DNS brute (17), Cloud/OSINT/Shodan/GitHub/Redirect (25–29) | Nothing — runs every module |
+| **What it skips** | Advanced modules (10–29, 30–37) | Core (1–9), DNS brute (17), Cloud/OSINT/Shodan/GitHub/Redirect (25–29), 30–37 | Nothing — runs every module |
 | **Reports** | HTML + JSON + summary | Summary only (run R for full) | HTML + JSON + Markdown + summary |
 | **Ctrl+C safe** | Stops at current step | Stops at current step | Graceful abort, saves progress, still generates reports |
 | **Thread safety** | Basic | Basic | Full `threading.Lock` protection |
@@ -155,23 +163,26 @@ Oculus has three preset automation modes. Pick the one that matches your scope a
 
 ```
 PHASE 1: DISCOVERY
-  [Sequential]  Subdomain Enum → DNS Bruteforce → DNS Resolution → Alive Hosts
+  [Sequential]  Subdomain Enum → DNS Bruteforce → DNS Resolution → Alive Hosts → TLS Certificate Scan
   [Concurrent]  ASN + Cloud Assets + OSINT + Shodan + GitHub Dorking
 
 PHASE 2: INFRASTRUCTURE
-  [Concurrent]  Fast Port Scan + Full Port Scan + Tech Scan + WAF Detection + Screenshots
+  [Concurrent]  Fast Port Scan + Tech Scan + WAF Detection + Screenshots + InternetDB Lookup
+  [Background]  Full Port Scan (Nmap) & Web Server Scan (Nikto) run concurrently in background
 
 PHASE 3: CONTENT DISCOVERY
   [Sequential]  URL Collection → Advanced URL Enum
+  [Background]  URL Crawl (Cariddi) runs in background
   [Concurrent]  Parameter Discovery + JS Endpoint Extraction
   [Sequential]  Subdomain Takeover Check
 
 PHASE 4: VULNERABILITY ANALYSIS
   [Sequential]  Nuclei Vulnerability Scan → GF Filters
+  [Background]  Vulnerability Scan (Jaeles) runs in background
   [Concurrent]  Directory Fuzzing + API Fuzzing
 
 PHASE 5: TARGETED EXPLOITATION
-  [Concurrent]  SQLi Scan + XSS Scan + Open Redirect Scan
+  [Concurrent]  SQLi Scan + XSS Scan + Open Redirect Scan + CRLF Injection + SSTI Scan + 403 Bypass
   [Concurrent]  CORS Scanner + HTTP Smuggling
 ```
 
@@ -474,7 +485,7 @@ python3 oculus.py -d example.com --full-recon --no-confirm
 # Deep mode = fixed 14 advanced steps (NOT menus 1–9). Run full recon first so alive.txt / URLs exist.
 python3 oculus.py -d example.com --deep --no-confirm
 
-# Full Spectrum Scan = ALL 29 modules in 5 phases with concurrency. Set it and forget it.
+# Full Spectrum Scan = ALL 37 modules in 5 phases with concurrency. Set it and forget it.
 python3 oculus.py -d example.com --full-spectrum --no-confirm
 
 # Pick modules à la carte (order runs left → right)
@@ -594,7 +605,7 @@ Then: **session diff**, **`summary.txt`**, **`report.html`**, **`findings.json`*
 
 Runs **exactly** this fixed sequence (same as `run_deep_recon_mode` in code): **24** ASN → **10** params → **11** JS → **12** ffuf → **13** kr → **14** takeover → **15** hakrawler → **16** screenshots (gowitness + EyeWitness when installed) → **18** gf → **19** whatweb → **21** dalfox → **22** CORS → **23** smuggling → **20** sqlmap.
 
-**Does not run:** core **1–8** (subdomain, DNS, alive, ports, URLs, WAF, nuclei), **9**, **17** dnsbrute, **25** cloud, **26** github, **27** osint, **28** shodan, **29** redirect.
+**Does not run:** core **1–8** (subdomain, DNS, alive, ports, URLs, WAF, nuclei), **9**, **17** dnsbrute, **25** cloud, **26** github, **27** osint, **28** shodan, **29** redirect, and advanced scaffolding **30–37** (cariddi, jaeles, tplmap, crlfuzz, internetdb, nikto, tlsx, nomore403).
 
 **Prerequisite:** you usually want **`alive.txt`** and URL data first — e.g. run **`--full-recon`** or at least **1→8** (and **6** for URLs) before **`--deep`**, otherwise several deep steps may no-op or fail on missing files.
 
@@ -602,7 +613,7 @@ Then: **session diff** + **`summary.txt`** only — run **R** for HTML / JSON / 
 
 **Full Spectrum Scan** (`--full-spectrum` / menu **U**) — **every module, optimal order:**
 
-Runs all 29 modules across 5 phases with intelligent concurrency. See **[Automation modes compared](#automation-modes-compared)** for the full pipeline diagram. Thread-safe tracking, graceful Ctrl+C abort (saves progress and still generates reports), and session checkpoints between every phase.
+Runs all 37 modules across 5 phases with intelligent concurrency. See **[Automation modes compared](#automation-modes-compared)** for the full pipeline diagram. Thread-safe tracking, graceful Ctrl+C abort (saves progress and still generates reports), and session checkpoints between every phase.
 
 **No prerequisite:** Just set a domain. Full Spectrum handles the entire dependency chain from subdomain enumeration through targeted exploitation. Auto-generates HTML, JSON, and Markdown reports at completion.
 
@@ -650,8 +661,16 @@ Runs all 29 modules across 5 phases with intelligent concurrency. See **[Automat
 | `osint` | 27 | **theHarvester** `-b all` |
 | `shodan` | 28 | **Shodan** hostname search |
 | `redirect` | 29 | Open redirect probes on `gf/redirect.txt` |
+| `cariddi` | 30 | **Cariddi** crawler seeking endpoints/secrets/sensitive files from `alive.txt` → `cariddi/` |
+| `jaeles` | 31 | **Jaeles** signature-based vulnerability scanner (concurrency / max_hosts configurable) |
+| `tplmap` | 32 | **Tplmap** Server-Side Template Injection (SSTI) scanner in safe detection-only mode |
+| `crlfuzz` | 33 | **CRLFuzz** CRLF injection vulnerability scanner over `alive.txt` → `crlfuzz/` |
+| `internetdb` | 34 | **InternetDB** zero-auth passive port, vulnerability, and CPE lookup (Shodan API) |
+| `nikto` | 35 | **Nikto** comprehensive web server scanning over first `max_hosts` targets → `nikto/` |
+| `tlsx` | 36 | **TLSX** certificate scan and CN/SAN parser, merging new subdomains back into `subdomains.txt` |
+| `nomore403` | 37 | **nomore403** automated 403/401 Forbidden bypass techniques scanner over ffuf/general URLs |
 
-Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–9, **not** 17 / 25–29. Menu **U** / **`--full-spectrum`** = **all 29 modules** in 5 concurrent phases — see **[Automation modes compared](#automation-modes-compared)**.
+Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–9, **not** 17 / 25–29 / 30–37. Menu **U** / **`--full-spectrum`** = **all 37 modules** in 5 concurrent phases — see **[Automation modes compared](#automation-modes-compared)**.
 
 </details>
 
@@ -659,7 +678,7 @@ Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + a
 
 ## 🐳 Running in Docker (Web UI & CLI)
 
-Oculus provides a **high-performance multi-stage Docker build** that bundles the CLI tool, the FastAPI backend, and the React frontend on a single mapped port (`8000`), pre-configured with all 29 scanning modules natively.
+Oculus provides a **high-performance multi-stage Docker build** that bundles the CLI tool, the FastAPI backend, and the React frontend on a single mapped port (`8000`), pre-configured with all 37 scanning modules natively.
 
 ### Option A: Launch the Web Control HUD (Recommended)
 From the project root:
@@ -713,8 +732,8 @@ Non-interactive mode requires **`-d`**. More recipes live under **[CLI cookbook]
 |:---|:---|
 | `-d`, `--domain` | Target domain (required for non-interactive runs) |
 | `--full-recon` | Full automated pipeline (core 1→8) |
-| `--deep` | Fixed **14-step** advanced chain (**24→10…→20**); does **not** run **1–9** or **17 / 25–29** |
-| `--full-spectrum` | **All 29 modules** in 5 phases with concurrency — see **[Automation modes compared](#automation-modes-compared)** |
+| `--deep` | Fixed **14-step** advanced chain (**24→10…→20**); does **not** run **1–9**, **17 / 25–29**, or **30–37** |
+| `--full-spectrum` | **All 37 modules** in 5 phases with concurrency — see **[Automation modes compared](#automation-modes-compared)** |
 | `--module` | Comma-separated modules (exact names below) |
 | `--no-confirm` | Skip prompts (CI / automation); sets `auto_confirm` |
 | `--threads N` | Overrides `threads` (httpx) |
@@ -771,8 +790,16 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 | **27** | OSINT (`theHarvester`) |
 | **28** | Shodan passive (needs key) |
 | **29** | Open redirect checks |
-| **D** | **Deep recon** — fixed **14** steps (**24→10→…→20**); not full **1–29** ([details](#feature-catalog)) |
-| **U** | **Full Spectrum Scan** — all **29 modules** in 5 phases with concurrency ([details](#automation-modes-compared)) |
+| **30** | Cariddi web crawler (juicy endpoints / secrets) |
+| **31** | Jaeles signature vulnerability scan |
+| **32** | Tplmap SSTI vulnerability scan |
+| **33** | CRLFuzz CRLF injection vulnerability scan |
+| **34** | InternetDB Shodan passive ports/vulns lookup |
+| **35** | Nikto web server scanner |
+| **36** | TLSX cert scanner & SAN subdomain extractor |
+| **37** | nomore403 bypass scanner |
+| **D** | **Deep recon** — fixed **14** steps (**24→10→…→20**); not full **1–37** ([details](#feature-catalog)) |
+| **U** | **Full Spectrum Scan** — all **37 modules** in 5 phases with concurrency ([details](#automation-modes-compared)) |
 | **R** | Regenerate **HTML + JSON + Markdown** reports |
 | **C** | Set / change target domain + `output-<domain>/` |
 | **I** | Tool installation check |
@@ -790,7 +817,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 
 **Python** ([`requirements.txt`](requirements.txt)): `requests`, `dnspython`, `tldextract`, `rich` (recommended), `pyyaml` (recommended).
 
-**Go / apt / `/opt/recontools`** — [`install.sh`](install.sh) installs **subfinder**, **amass**, **assetfinder**, **dnsx**, **httpx**, **naabu**, **nuclei**, **katana**, **gau**, **waybackurls**, **ffuf**, **dalfox**, **asnmap**, **hakrawler**, **gowitness**, **gf**, **subzy**, **kr**, **nmap**, **massdns**, **wafw00f**, **whatweb**, **sqlmap**, **chromium**, plus **ParamSpider**, **Arjun**, **XSStrike** (cloned; menu XSS uses **Dalfox**), **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness**.
+**Go / apt / `/opt/recontools`** — [`install.sh`](install.sh) installs **subfinder**, **amass**, **assetfinder**, **dnsx**, **httpx**, **naabu**, **nuclei**, **katana**, **gau**, **waybackurls**, **ffuf**, **dalfox**, **asnmap**, **hakrawler**, **gowitness**, **gf**, **subzy**, **kr**, **nmap**, **massdns**, **wafw00f**, **whatweb**, **sqlmap**, **chromium**, plus **ParamSpider**, **Arjun**, **XSStrike** (cloned; menu XSS uses **Dalfox**), **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness**, and new additions: **puredns**, **cariddi**, **jaeles**, **tplmap**, **crlfuzz**, **tlsx**, **alterx**, **nomore403**, and **whatwaf**.
 
 ```
 Oculus/
@@ -800,7 +827,7 @@ Oculus/
 ├── config.yaml.example    # Template → ~/.config/oculus/config.yaml
 ├── Dockerfile             # Kali rolling + Go + install.sh --update
 ├── INSTALLATION.md        # Native / manual / Docker install guide
-├── CHANGELOG.md           # v4.1.0 release notes
+├── CHANGELOG.md           # v4.2.0 release notes
 └── LICENSE                # MIT — Copyright (c) 2025 Shlok Shah
 ```
 

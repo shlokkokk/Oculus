@@ -61,3 +61,24 @@ ffuf:
   extensions: php,html,js,json,txt,bak,old
   status_filter: "200,204,301,302,307,401,403"
   recursion_depth: 2
+
+# Jaeles configuration
+jaeles:
+  concurrency: 20
+  signatures: ""       # Custom signature path (leave empty for default ~/.jaeles)
+  max_hosts: 100       # Maximum hosts to scan (default 100)
+
+# Nikto configuration
+nikto:
+  tuning: "1234"       # Nikto tuning options: 1-9, a-x
+  timeout: 600         # Scan timeout in seconds per host
+  max_hosts: 10        # Maximum hosts to scan
+
+# CRLFuzz configuration
+crlfuzz:
+  concurrency: 25
+
+# PureDNS configuration
+puredns:
+  threads: 100
+  wildcard_batch: 1000000
