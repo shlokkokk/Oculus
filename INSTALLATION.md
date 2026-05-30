@@ -63,6 +63,8 @@ echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
+If you are running `./install.sh` interactively, it will also offer to launch the ntfy setup wizard before finishing. That prompt is skipped in `--non-interactive`, Docker, and other headless runs.
+
 **Wordlists:** Defaults in `config.yaml.example` assume **SecLists** and **dirb** paths under `/usr/share/wordlists/`. Install or adjust YAML to match your system:
 
 ```bash

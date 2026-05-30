@@ -74,6 +74,33 @@ log_warn()    { echo -e "${YELLOW}[!]${RESET} $1"; }
 log_error()   { echo -e "${RED}[✘]${RESET} $1"; }
 log_step()    { echo -e "\n${MAGENTA}${BOLD}━━━ $1 ━━━${RESET}"; }
 
+prompt_ntfy_setup() {
+    if [ "$INTERACTIVE" = false ]; then
+        return 0
+    fi
+
+    if [ ! -f "$SCRIPT_DIR/ntfy_setup.py" ]; then
+        log_warn "ntfy setup wizard not found — skipping"
+        return 0
+    fi
+
+    echo -e ""
+    log_step "Phase 8.5 · ntfy Notifications"
+    echo -e "${CYAN}ntfy can send push notifications for scan start, module completion, findings, and errors.${RESET}"
+    read -rp "Configure ntfy now? (Y/n): " REPLY
+    if [[ "$REPLY" =~ ^[Nn]$ ]]; then
+        log_info "Skipping ntfy setup (you can run: python3 oculus.py --setup-ntfy)"
+        return 0
+    fi
+
+    log_info "Launching ntfy setup wizard..."
+    if python3 "$SCRIPT_DIR/ntfy_setup.py"; then
+        log_success "ntfy setup complete"
+    else
+        log_warn "ntfy setup did not complete cleanly — you can re-run it later"
+    fi
+}
+
 cmd_exists() { command -v "$1" &>/dev/null; }
 
 safe_pip_install() {
@@ -920,6 +947,9 @@ if [ -f "$HOME/.zshrc" ] && ! grep -q 'LOCAL_BIN' "$HOME/.zshrc" 2>/dev/null; th
     } >> "$HOME/.zshrc"
     log_success "Added ~/.local/bin to ~/.zshrc"
 fi
+
+# Offer ntfy setup once the base install is ready.
+prompt_ntfy_setup
 
 # ══════════════════════════════════════════════════════════════
 # Done!

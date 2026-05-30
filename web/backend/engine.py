@@ -630,6 +630,16 @@ class ScanEngine:
                 self._state = "aborted"
                 return
 
+            if mode != "full_spectrum":
+                oc.notify_scan_event(
+                    'scan_start',
+                    f"Oculus scan started: {domain}",
+                    f"{mode.replace('_', ' ').title()} started for {domain}",
+                    priority='default',
+                    tags=['rocket'],
+                    dedupe_key=f"web_scan_start:{mode}:{domain}",
+                )
+
             # Determine what to run
             if mode == "quick":
                 self._total_modules = 7
@@ -704,9 +714,19 @@ class ScanEngine:
                         self._state = "aborted"
                         return
                     self._current_module = step_name
+                    previous_module = oc._current_module
+                    oc._current_module = step_name
                     require_file_failed["value"] = False
                     try:
                         step_func()
+                        oc.notify_scan_event(
+                            'module_complete',
+                            f"Oculus module done: {step_name}",
+                            f"{step_name} completed for {domain}",
+                            priority='default',
+                            tags=['white_check_mark'],
+                            dedupe_key=f"web_module_done:{mode}:{step_name}:{domain}",
+                        )
                         if require_file_failed["value"]:
                             self._modules_failed.append(step_name)
                             self._log_queue.put(f"[ERROR] {step_name} failed: prerequisite file missing")
@@ -718,6 +738,16 @@ class ScanEngine:
                     except Exception as e:
                         self._modules_failed.append(step_name)
                         self._log_queue.put(f"[ERROR] {step_name} failed: {e}")
+                        oc.notify_scan_event(
+                            'error',
+                            f"Oculus error: {step_name}",
+                            f"{step_name} failed for {domain}: {e}",
+                            priority='high',
+                            tags=['warning'],
+                            dedupe_key=f"web_module_error:{mode}:{step_name}:{domain}",
+                        )
+                    finally:
+                        oc._current_module = previous_module
 
                 # Generate reports
                 self._current_module = "Generating Reports"
@@ -731,6 +761,15 @@ class ScanEngine:
 
             self._current_module = None
             self._state = "failed" if self._modules_failed else "completed"
+            if mode != "full_spectrum" and self._state == "completed":
+                oc.notify_scan_event(
+                    'scan_complete',
+                    f"Oculus scan complete: {domain}",
+                    f"{mode.replace('_', ' ').title()} completed for {domain}",
+                    priority='default',
+                    tags=['check'],
+                    dedupe_key=f"web_scan_complete:{mode}:{domain}",
+                )
 
         except Exception as e:
             self._log_queue.put(f"[FATAL] Scan engine error: {e}")

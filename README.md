@@ -81,6 +81,8 @@ echo 'export PATH="$PATH:$HOME/go/bin"' >> ~/.bashrc && source ~/.bashrc
 mkdir -p ~/.config/oculus && cp config.yaml.example ~/.config/oculus/config.yaml
 ```
 
+If you want push notifications, `./install.sh` will offer to configure ntfy during install when you run it interactively. You can also run `python3 oculus.py --setup-ntfy` later if you want to change the topic, server, or auth settings. The wizard only prompts in an interactive terminal, so the web backend and other background runs will skip it cleanly.
+
 **3.** Run—pick **C** to set a domain, then **9** for full automated recon, **U** for the full spectrum scan, or use headless CLI:
 
 ```bash

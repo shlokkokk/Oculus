@@ -22,6 +22,8 @@ import socket
 import random
 import logging
 import argparse
+import inspect
+import base64
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime
@@ -102,6 +104,26 @@ DEFAULT_CONFIG = {
         'enabled': False,
         'provider_config': '',
         'bulk': True,
+    },
+    'ntfy': {
+        'enabled': False,
+        'url': '',
+        'server': 'https://ntfy.sh',
+        'topic': '',
+        'token': '',
+        'username': '',
+        'password': '',
+        'priority': 'default',
+        'tags': 'rocket',
+        'send_scan_start': True,
+        'send_scan_complete': True,
+        'send_module_start': False,
+        'send_module_complete': True,
+        'send_findings': True,
+        'send_errors': True,
+        'send_skips': False,
+        'timeout': 8,
+        'dedupe_window': 20,
     },
     'jaeles': {
         'concurrency': 20,
@@ -205,6 +227,10 @@ class Oculus:
         self._session_lock = threading.Lock()
         self.active_processes = []
         self._proc_lock = threading.Lock()
+        self._ntfy_lock = threading.Lock()
+        self._ntfy_sent = {}
+        self._last_notified_results = {}
+        self._current_module = None
         self._augment_path()
 
     def kill_all_active_processes(self):
@@ -749,6 +775,178 @@ class Oculus:
                         continue
         return False
 
+    def _ntfy_config(self):
+        cfg = self.config.get('ntfy', {}) or {}
+        return cfg if isinstance(cfg, dict) else {}
+
+    def _ntfy_enabled_for(self, event_key):
+        cfg = self._ntfy_config()
+        if not cfg.get('enabled', False):
+            return False
+        flag_map = {
+            'scan_start': 'send_scan_start',
+            'scan_complete': 'send_scan_complete',
+            'module_start': 'send_module_start',
+            'module_complete': 'send_module_complete',
+            'finding': 'send_findings',
+            'error': 'send_errors',
+            'skip': 'send_skips',
+        }
+        flag = flag_map.get(event_key)
+        return True if flag is None else bool(cfg.get(flag, True))
+
+    def _ntfy_endpoint(self):
+        cfg = self._ntfy_config()
+        explicit = str(cfg.get('url', '')).strip()
+        if explicit:
+            return explicit
+        topic = str(cfg.get('topic', '')).strip()
+        if not topic:
+            return None
+        server = str(cfg.get('server', 'https://ntfy.sh')).strip().rstrip('/')
+        if not server:
+            server = 'https://ntfy.sh'
+        return f"{server}/{urllib.parse.quote(topic, safe='')}"
+
+    @staticmethod
+    def _ntfy_metric(value):
+        if isinstance(value, bool):
+            return (1 if value else 0, 'true' if value else 'false')
+        if isinstance(value, (int, float)):
+            return (int(value), str(value))
+        if isinstance(value, dict):
+            return (len(value), f"{len(value)} entries")
+        if isinstance(value, (list, tuple, set)):
+            return (len(value), f"{len(value)} items")
+        text = str(value).strip()
+        return (1 if text else 0, text)
+
+    def _notify_ntfy(self, event_key, title, message, priority=None, tags=None, dedupe_key=None):
+        cfg = self._ntfy_config()
+        if not self._ntfy_enabled_for(event_key):
+            return False
+
+        endpoint = self._ntfy_endpoint()
+        if not endpoint:
+            return False
+
+        dedupe_window = max(int(cfg.get('dedupe_window', 20) or 0), 0)
+        cache_key = dedupe_key or f"{event_key}:{title}:{message}"
+        now = time.time()
+        with self._ntfy_lock:
+            last_sent = self._ntfy_sent.get(cache_key)
+            if last_sent is not None and dedupe_window and (now - last_sent) < dedupe_window:
+                return False
+            self._ntfy_sent[cache_key] = now
+
+        payload = message.encode('utf-8')
+        headers = {
+            'Title': title[:256],
+            'Priority': str(priority or cfg.get('priority', 'default')),
+        }
+        tag_value = tags if tags is not None else cfg.get('tags', '')
+        if isinstance(tag_value, (list, tuple)):
+            tag_value = ','.join(str(tag).strip() for tag in tag_value if str(tag).strip())
+        if tag_value:
+            headers['Tags'] = str(tag_value)
+
+        token = str(cfg.get('token', '')).strip()
+        username = str(cfg.get('username', '')).strip()
+        password = str(cfg.get('password', '')).strip()
+        request = urllib.request.Request(endpoint, data=payload, method='POST', headers=headers)
+        if token:
+            request.add_header('Authorization', f'Bearer {token}')
+        elif username or password:
+            creds = f"{username}:{password}".encode('utf-8')
+            request.add_header('Authorization', f"Basic {base64.b64encode(creds).decode('ascii')}")
+
+        timeout = max(int(cfg.get('timeout', 8) or 8), 1)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout):
+                return True
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"ntfy delivery failed: {e}")
+            return False
+
+    def notify_scan_event(self, event_key, title, message, priority=None, tags=None, dedupe_key=None):
+        """Public wrapper so the web engine can emit ntfy events through the core notifier."""
+        return self._notify_ntfy(event_key, title, message, priority=priority, tags=tags, dedupe_key=dedupe_key)
+
+    def _notify_result_changes(self, module_name=None):
+        current = dict(self.results)
+        previous = self._last_notified_results
+        changes = []
+        for key, value in current.items():
+            if previous.get(key) == value:
+                continue
+            metric, summary = self._ntfy_metric(value)
+            if metric > 0:
+                changes.append((key, metric, summary))
+
+        if changes:
+            scope = module_name or self._current_module or self.domain or 'Oculus'
+            top_key, top_metric, top_summary = changes[0]
+            detail_bits = [f"{key}={metric}" for key, metric, _ in changes[:5]]
+            detail = ', '.join(detail_bits)
+            if len(changes) > 5:
+                detail += f" (+{len(changes) - 5} more)"
+            message = f"{scope}: {detail}"
+            if top_summary and top_summary != str(top_metric):
+                message += f"\nTop result: {top_key} -> {top_summary}"
+            self._notify_ntfy(
+                'finding',
+                f"Oculus findings: {scope}",
+                message,
+                priority='high',
+                tags=['rotating_light'],
+                dedupe_key=f"finding:{scope}:{detail}",
+            )
+
+        self._last_notified_results = current
+
+    def _notify_module_done(self, module_name, result_key=None, marker_files=None):
+        detail = None
+        if result_key and result_key in self.results:
+            metric, summary = self._ntfy_metric(self.results[result_key])
+            if metric > 0:
+                detail = f"{result_key}={summary}"
+        if detail is None and marker_files:
+            for rel in marker_files:
+                if self.output_dir and Oculus._path_has_output(os.path.join(self.output_dir, rel)):
+                    detail = f"artifacts updated: {rel}"
+                    break
+        if detail is None:
+            detail = 'completed'
+        self._notify_ntfy(
+            'module_complete',
+            f"Oculus module done: {module_name}",
+            f"{module_name}: {detail}",
+            priority='default',
+            tags=['white_check_mark'],
+            dedupe_key=f"module_done:{module_name}:{detail}",
+        )
+
+    def _notify_module_start(self, module_name):
+        self._notify_ntfy(
+            'module_start',
+            f"Oculus module started: {module_name}",
+            f"{module_name} started for {self.domain or 'target'}",
+            priority='low',
+            tags=['play_arrow'],
+            dedupe_key=f"module_start:{module_name}:{self.domain}",
+        )
+
+    def _notify_module_error(self, module_name, error_text):
+        self._notify_ntfy(
+            'error',
+            f"Oculus error: {module_name}",
+            f"{module_name} failed: {error_text}",
+            priority='high',
+            tags=['warning'],
+            dedupe_key=f"module_error:{module_name}:{error_text}",
+        )
+
     def save_session(self):
         """Save session state to JSON for resume capability"""
         if not self.output_dir:
@@ -766,6 +964,7 @@ class Oculus:
                 }
                 with open(session_path, 'w', encoding='utf-8') as f:
                     json.dump(session_data, f, indent=2)
+            self._notify_result_changes(self._current_module)
         except Exception as e:
             self.logger.error(f"Session save failed: {e}")
 
@@ -3350,6 +3549,15 @@ class Oculus:
         if not self._require_setup():
             return
 
+        self.notify_scan_event(
+            'scan_start',
+            f"Oculus scan started: {self.domain}",
+            f"Full Auto Recon started for {self.domain}",
+            priority='default',
+            tags=['rocket'],
+            dedupe_key=f"scan_start:full_recon:{self.domain}",
+        )
+
         core_keys = {
             'subdomains': 'Subs', 'dns_resolved': 'DNS', 'alive_hosts': 'Alive',
             'fast_ports': 'Ports', 'urls': 'URLs', 'waf_detected': 'WAF',
@@ -3376,20 +3584,52 @@ class Oculus:
             self.run_vulnerability_scan
         ]
         for step in steps:
+            module_name = step.__name__.replace('run_', '').replace('_', ' ').title()
+            previous_module = self._current_module
+            self._current_module = module_name
+            self.notify_scan_event(
+                'module_start',
+                f"Oculus module started: {module_name}",
+                f"{module_name} started for {self.domain}",
+                priority='low',
+                tags=['play_arrow'],
+                dedupe_key=f"full_recon_start:{module_name}:{self.domain}",
+            )
             try:
                 step()
+                self._notify_module_done(module_name)
             except Exception as e:
+                self._notify_module_error(module_name, str(e))
                 self.logger.error(f"Auto-recon step failed: {e}")
+            finally:
+                self._current_module = previous_module
         self.show_diff()
         self.generate_summary()
         self.generate_html_report()
         self.generate_json_report()
+        self.notify_scan_event(
+            'scan_complete',
+            f"Oculus scan complete: {self.domain}",
+            f"Full Auto Recon completed for {self.domain}",
+            priority='default',
+            tags=['check'],
+            dedupe_key=f"scan_complete:full_recon:{self.domain}",
+        )
         print(f"\n{Colors.GREEN}{Colors.BOLD}[+] FULL AUTOMATED RECON COMPLETED!{Colors.RESET}\n")
 
     def run_deep_recon_mode(self):
         """Run all advanced modules"""
         if not self._require_setup():
             return
+
+        self.notify_scan_event(
+            'scan_start',
+            f"Oculus scan started: {self.domain}",
+            f"Deep Recon started for {self.domain}",
+            priority='default',
+            tags=['rocket'],
+            dedupe_key=f"scan_start:deep_recon:{self.domain}",
+        )
 
         deep_keys = {
             'parameters': 'Params', 'js_endpoints': 'JS', 'urls_final': 'URLs Final',
@@ -3435,12 +3675,35 @@ class Oculus:
             self.run_sqlmap_scan
         ]
         for step in steps:
+            module_name = step.__name__.replace('run_', '').replace('_', ' ').title()
+            previous_module = self._current_module
+            self._current_module = module_name
+            self.notify_scan_event(
+                'module_start',
+                f"Oculus module started: {module_name}",
+                f"{module_name} started for {self.domain}",
+                priority='low',
+                tags=['play_arrow'],
+                dedupe_key=f"deep_recon_start:{module_name}:{self.domain}",
+            )
             try:
                 step()
+                self._notify_module_done(module_name)
             except Exception as e:
+                self._notify_module_error(module_name, str(e))
                 self.logger.error(f"Deep recon step failed: {e}")
+            finally:
+                self._current_module = previous_module
         self.show_diff()
         self.generate_summary()
+        self.notify_scan_event(
+            'scan_complete',
+            f"Oculus scan complete: {self.domain}",
+            f"Deep Recon completed for {self.domain}",
+            priority='default',
+            tags=['check'],
+            dedupe_key=f"scan_complete:deep_recon:{self.domain}",
+        )
         print(f"\n{Colors.GREEN}{Colors.BOLD}[+] DEEP RECON COMPLETED!{Colors.RESET}\n")
 
     def run_cariddi_scan(self):
@@ -3869,6 +4132,15 @@ class Oculus:
                 if yn.lower().strip() != 'y':
                     return
 
+        self.notify_scan_event(
+            'scan_start',
+            f"Oculus scan started: {self.domain}",
+            f"Full Spectrum started for {self.domain}",
+            priority='default',
+            tags=['rocket'],
+            dedupe_key=f"scan_start:full_spectrum:{self.domain}",
+        )
+
         start_time = time.time()
         mode_label = "RESUME" if skip_completed else "FULL"
 
@@ -3909,12 +4181,24 @@ class Oculus:
                 with _lock:
                     skipped_steps.append(name)
                     self.completed_modules.append(name)
+                self._notify_ntfy(
+                    'skip',
+                    f"Oculus module skipped: {name}",
+                    f"{name} already completed ({hint})",
+                    priority='min',
+                    tags=['fast_forward'],
+                    dedupe_key=f"skip:{name}:{hint}",
+                )
                 return
             try:
+                previous_module = self._current_module
+                self._current_module = name
+                self._notify_module_start(name)
                 print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*60}")
                 print(f"  STEP: {name}")
                 print(f"{'='*60}{Colors.RESET}")
                 func()
+                self._notify_module_done(name, result_key=result_key, marker_files=marker_files)
                 with _lock:
                     self.completed_modules.append(name)
             except KeyboardInterrupt:
@@ -3925,7 +4209,10 @@ class Oculus:
                 with _lock:
                     self.failed_modules.append((name, str(e)))
                 self.logger.error(f"Full Spectrum step failed [{name}]: {e}")
+                self._notify_module_error(name, str(e))
                 print(f"{Colors.RED}[!] STEP FAILED: {name} -- {e}{Colors.RESET}")
+            finally:
+                self._current_module = previous_module
 
         def step(name, func, result_key=None, marker_files=None):
             """Queue one sequential step (keyword args — no positional None)."""
@@ -4142,6 +4429,13 @@ class Oculus:
                     self.logger.info(msg)
                     t.join()
                     self.logger.info(f"[✔] Background {tool_name} scan completed.")
+                result_key = {
+                    'Full Port Scan': 'full_ports',
+                    'Nikto Scanner': 'nikto_scanned',
+                    'Cariddi Scan': 'cariddi_findings',
+                    'Jaeles Scan': 'jaeles_findings',
+                }.get(module_name)
+                self._notify_module_done(module_name, result_key=result_key)
                 if module_name == "Cariddi Scan":
                     merged_cariddi = self._merge_cariddi_secrets_into_js()
                     if merged_cariddi:
@@ -4162,6 +4456,14 @@ class Oculus:
             self.generate_html_report()
             self.generate_json_report()
             self.generate_markdown_report()
+            self.notify_scan_event(
+                'scan_complete',
+                f"Oculus scan complete: {self.domain}",
+                f"Full Spectrum completed for {self.domain}",
+                priority='default',
+                tags=['check'],
+                dedupe_key=f"scan_complete:full_spectrum:{self.domain}",
+            )
         except Exception as e:
             self.logger.error(f"Report generation failed: {e}")
 
@@ -5360,7 +5662,29 @@ function sortTable(n) {
                 break
             elif choice in dispatch:
                 try:
-                    dispatch[choice]()
+                    func = dispatch[choice]
+                    if choice.isdigit() and choice not in {'9'}:
+                        module_name = func.__name__.replace('run_', '').replace('_', ' ').title()
+                        previous_module = self._current_module
+                        self._current_module = module_name
+                        self.notify_scan_event(
+                            'module_start',
+                            f"Oculus module started: {module_name}",
+                            f"{module_name} started for {self.domain}",
+                            priority='low',
+                            tags=['play_arrow'],
+                            dedupe_key=f"tui_module_start:{module_name}:{self.domain}",
+                        )
+                        try:
+                            func()
+                            self._notify_module_done(module_name)
+                        except Exception as e:
+                            self._notify_module_error(module_name, str(e))
+                            raise
+                        finally:
+                            self._current_module = previous_module
+                    else:
+                        func()
                 except KeyboardInterrupt:
                     print(f"\n{Colors.YELLOW}[!] Module interrupted{Colors.RESET}")
                 except Exception as e:
@@ -5386,6 +5710,7 @@ def build_parser():
     parser.add_argument('--no-confirm', action='store_true', help='Skip all confirmation prompts')
     parser.add_argument('--threads', type=int, help='Thread count')
     parser.add_argument('--timeout', type=int, help='Default timeout in seconds')
+    parser.add_argument('--setup-ntfy', action='store_true', help='Run the interactive ntfy setup wizard')
     parser.add_argument('--update', action='store_true', help='Update Oculus framework and dependencies')
     parser.add_argument('--jitter', action='store_true', help='Enable random delays between tool calls')
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
@@ -5437,6 +5762,11 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
+    if getattr(args, 'setup_ntfy', False):
+        from ntfy_setup import setup_ntfy
+        setup_ntfy()
+        sys.exit(0)
+
     if getattr(args, 'update', False):
         print(f"{Colors.CYAN}[*] Updating Oculus framework from GitHub...{Colors.RESET}")
         os.system("git pull")
@@ -5486,7 +5816,25 @@ def main():
                     method = MODULE_MAP.get(mod)
                     if method and hasattr(recon, method):
                         print(f"\n{Colors.CYAN}[*] Running module: {mod}{Colors.RESET}")
-                        getattr(recon, method)()
+                        module_name = method.replace('run_', '').replace('_', ' ').title()
+                        previous_module = recon._current_module
+                        recon._current_module = module_name
+                        recon.notify_scan_event(
+                            'module_start',
+                            f"Oculus module started: {module_name}",
+                            f"{module_name} started for {recon.domain}",
+                            priority='low',
+                            tags=['play_arrow'],
+                            dedupe_key=f"cli_module_start:{module_name}:{recon.domain}",
+                        )
+                        try:
+                            getattr(recon, method)()
+                            recon._notify_module_done(module_name)
+                        except Exception as e:
+                            recon._notify_module_error(module_name, str(e))
+                            raise
+                        finally:
+                            recon._current_module = previous_module
                     else:
                         print(f"{Colors.RED}[!] Unknown module: {mod}{Colors.RESET}")
                         print(f"    Available: {', '.join(MODULE_MAP.keys())}")

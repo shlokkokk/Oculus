@@ -63,6 +63,28 @@ ffuf:
   recursion_depth: 2
   max_hosts: 25        # Maximum alive hosts to fuzz
 
+# ntfy push notifications
+ntfy:
+  enabled: true
+  # Use either a full topic URL or server + topic.
+  url: ""
+  server: https://ntfy.sh
+  topic: "oculus"
+  token: ""
+  username: ""
+  password: ""
+  priority: default
+  tags: rocket
+  send_scan_start: true
+  send_scan_complete: true
+  send_module_start: false
+  send_module_complete: true
+  send_findings: true
+  send_errors: true
+  send_skips: false
+  timeout: 8
+  dedupe_window: 20
+
 # Jaeles configuration
 jaeles:
   concurrency: 20
