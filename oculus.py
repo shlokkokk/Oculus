@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                 Oculus - Professional Recon Framework v4.0                   ║
-║                              for Kali Linux                                  ║
 ║                                                                              ║
-║    A beautiful, powerful, automated, and intelligent reconnaissance tool     ║
-║                    for bug bounty hunters and pentesters                     ║
+║                              O C U L U S                                     ║
+║                    Full-Spectrum Recon Orchestration                         ║
+║                                                                              ║
+║          recon through exploitation  ·  Kali Linux  ·  bug bounty            ║
+║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -829,7 +830,7 @@ class Oculus:
    ╚██████╔╝╚██████╗╚██████╔╝███████╗╚██████╔╝███████║
      ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝"""
             
-            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]37 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
+            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]36 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
             
             panel_content = Align.center(Text.from_markup(ascii_art + "\n" + desc), vertical="middle")
             
@@ -851,7 +852,7 @@ class Oculus:
     ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝
      
          {Colors.WHITE}Full-Spectrum Attack Surface Intelligence  v{VERSION}{Colors.CYAN}
-         {Colors.DIM}37 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
+         {Colors.DIM}36 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
 ================================================================================
 {Colors.RESET}"""
             print(banner)
@@ -3744,7 +3745,7 @@ class Oculus:
         else:
             if not self.config.get('auto_confirm', False):
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
-                print(f"  FULL SPECTRUM SCAN will run ALL 37 modules across 5 phases.")
+                print(f"  FULL SPECTRUM SCAN will run ALL 36 modules across 5 phases.")
                 print(f"  Estimated runtime: 2-6 hours depending on target size.")
                 print(f"{Colors.RESET}")
                 yn = input(f"{Colors.YELLOW}[!] Launch Full Spectrum Scan on {self.domain}? (y/n): {Colors.RESET}")
@@ -5026,7 +5027,7 @@ function sortTable(n) {
                 "[D]", "[bold bright_magenta]Deep Recon         (Advanced)[/]"
             )
             table.add_row(
-                "[U]", "[bold bright_red]Full Spectrum Scan (All 37)[/]",
+                "[U]", "[bold bright_red]Full Spectrum Scan (All 36)[/]",
                 "[R]", "Generate Reports"
             )
             table.add_row(
@@ -5109,7 +5110,7 @@ function sortTable(n) {
             print("30. Cariddi    | 31. Jaeles     | 32. Tplmap     | 33. CRLFuzz    | 34. InternetDB")
             print("35. Nikto      | 36. TLSX       | 37. Nomore403")
             print(f"{Colors.YELLOW}[ AUTOMATION & SYSTEM ]{Colors.RESET}")
-            print("9. Full Auto   | D. Deep Recon  | U. Full Spectrum (All 37)| C. Domain     | Q. Quit")
+            print("9. Full Auto   | D. Deep Recon  | U. Full Spectrum (All 36)| C. Domain     | Q. Quit")
             print(f"{Colors.CYAN}-------------------{Colors.RESET}\n")
             
             if self.domain:
