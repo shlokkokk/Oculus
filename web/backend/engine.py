@@ -661,7 +661,7 @@ class ScanEngine:
                     ("SQLi Scan", oc.run_sqlmap_scan),
                 ]
             elif mode == "full_spectrum":
-                self._total_modules = 37
+                self._total_modules = 36
                 # Use the built-in full spectrum method
                 self._current_module = "Full Spectrum Scan"
                 oc.run_full_spectrum_scan(force_fresh=not resume)

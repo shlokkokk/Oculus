@@ -3445,12 +3445,23 @@ class Oculus:
         out_file = f"{out_dir}/tplmap_results.txt"
         for url in ssti_candidates:
             # Safe detection only - no --os-cmd execution to avoid target bans
-            cmd = f"python3 {tplmap_path} -u {shlex.quote(url)} --level 5 2>&1"
-            result = self.run_command(cmd, timeout=120, label=f"tplmap:{url[:40]}")
-            if result:
-                with open(out_file, 'a') as f:
-                    f.write(f"[DETECTED] {url}\n")
-                findings += 1
+            temp_log = f"{out_dir}/tplmap_temp.log"
+            cmd = f"python3 {tplmap_path} -u {shlex.quote(url)} --level 5"
+            self.run_command(cmd, output_file=temp_log, timeout=120, label=f"tplmap:{url[:40]}")
+            if os.path.exists(temp_log):
+                try:
+                    with open(temp_log, 'r', encoding='utf-8', errors='ignore') as lf:
+                        content = lf.read()
+                    if any(marker in content for marker in ["vulnerable", "[+]", "Engine:", "Injection:"]):
+                        with open(out_file, 'a', encoding='utf-8') as f:
+                            f.write(f"[DETECTED] {url}\n")
+                        findings += 1
+                except Exception as e:
+                    self.logger.error(f"Error parsing tplmap log: {e}")
+                try:
+                    os.remove(temp_log)
+                except OSError:
+                    pass
         
         self.results['ssti_findings'] = findings
         print(f"{Colors.GREEN}[✔] Tplmap: tested {len(ssti_candidates)} URLs, found {findings} vulnerabilities{Colors.RESET}")
@@ -3654,12 +3665,26 @@ class Oculus:
             print(f"{Colors.YELLOW}[!] No 403 URLs to test{Colors.RESET}")
             return
         
-        out_file = f"{out_dir}/bypass_results.txt"
-        for url in forbidden_urls[:50]:
-            cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {out_file}"
+        main_out = f"{out_dir}/bypass_results.txt"
+        for idx, url in enumerate(forbidden_urls[:50]):
+            temp_out = f"{out_dir}/temp_nomore403_{idx}.txt"
+            cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {temp_out}"
             self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}")
+            if os.path.exists(temp_out):
+                try:
+                    lines = self.read_file_lines(temp_out)
+                    if lines:
+                        with open(main_out, 'a', encoding='utf-8') as f:
+                            for line in lines:
+                                f.write(line + '\n')
+                except Exception as e:
+                    self.logger.error(f"Error merging nomore403 temp output: {e}")
+                try:
+                    os.remove(temp_out)
+                except OSError:
+                    pass
         
-        count = self.count_file_lines(out_file)
+        count = self.count_file_lines(main_out)
         self.results['bypass_403'] = count
         print(f"{Colors.GREEN}[✔] nomore403: {count} potential bypasses found{Colors.RESET}")
 
@@ -3862,12 +3887,24 @@ class Oculus:
                 self.current_phase = "Phase 2/5: Infrastructure"
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}--- PHASE 2/5: INFRASTRUCTURE ---{Colors.RESET}")
 
-                # Start Nmap and Nikto in background threads concurrently
-                self._nmap_thread = threading.Thread(target=self.run_full_port_scan, daemon=True)
-                self._nmap_thread.start()
-                self._nikto_thread = threading.Thread(target=self.run_nikto_scan, daemon=True)
-                self._nikto_thread.start()
-                self.logger.info("[*] Full Port Scan (Nmap) and Web Server Scan (Nikto) started in background.")
+                # Start Nmap and Nikto in background threads concurrently if not already completed
+                nmap_done, _ = _step_already_done("full_ports", ["ports_full.txt"])
+                if nmap_done:
+                    print(f"\n{Colors.BLUE}[SKIP] Full Port Scan (Nmap) -- already completed{Colors.RESET}")
+                    self.completed_modules.append("Full Port Scan")
+                else:
+                    self._nmap_thread = threading.Thread(target=self.run_full_port_scan, daemon=True)
+                    self._nmap_thread.start()
+                    self.logger.info("[*] Full Port Scan (Nmap) started in background.")
+
+                nikto_done, _ = _step_already_done("nikto_scanned", ["nikto/"])
+                if nikto_done:
+                    print(f"\n{Colors.BLUE}[SKIP] Nikto Web Server Scan -- already completed{Colors.RESET}")
+                    self.completed_modules.append("Nikto Scanner")
+                else:
+                    self._nikto_thread = threading.Thread(target=self.run_nikto_scan, daemon=True)
+                    self._nikto_thread.start()
+                    self.logger.info("[*] Web Server Scan (Nikto) started in background.")
 
                 _run_concurrent([
                     cstep("Fast Port Scan", self.run_fast_port_scan, result_key="fast_ports"),
@@ -3888,10 +3925,15 @@ class Oculus:
                 step("URL Collection", self.run_url_collection, result_key="urls")
                 step("Advanced URL Enum", self.run_advanced_url_enum, result_key="urls_final")
 
-                # Start Cariddi scan in the background
-                self._cariddi_thread = threading.Thread(target=self.run_cariddi_scan, daemon=True)
-                self._cariddi_thread.start()
-                self.logger.info("[*] URL Crawl (Cariddi) started in background.")
+                # Start Cariddi scan in the background if not already done
+                cariddi_done, _ = _step_already_done("cariddi_findings", ["cariddi/cariddi_results.txt"])
+                if cariddi_done:
+                    print(f"\n{Colors.BLUE}[SKIP] Cariddi Crawl -- already completed{Colors.RESET}")
+                    self.completed_modules.append("Cariddi Scan")
+                else:
+                    self._cariddi_thread = threading.Thread(target=self.run_cariddi_scan, daemon=True)
+                    self._cariddi_thread.start()
+                    self.logger.info("[*] URL Crawl (Cariddi) started in background.")
 
                 _run_concurrent([
                     cstep("Parameter Discovery", self.run_parameter_discovery, result_key="parameters"),
@@ -3912,10 +3954,15 @@ class Oculus:
                 step("Vulnerability Scan (Nuclei)", self.run_vulnerability_scan, result_key="vulnerabilities")
                 step("GF Filters", self.run_gf_filters, result_key="gf_filters")
 
-                # Start Jaeles scan in the background
-                self._jaeles_thread = threading.Thread(target=self.run_jaeles_scan, daemon=True)
-                self._jaeles_thread.start()
-                self.logger.info("[*] Vulnerability Scan (Jaeles) started in background.")
+                # Start Jaeles scan in the background if not already completed
+                jaeles_done, _ = _step_already_done("jaeles_findings", ["jaeles/"])
+                if jaeles_done:
+                    print(f"\n{Colors.BLUE}[SKIP] Jaeles Vuln Scan -- already completed{Colors.RESET}")
+                    self.completed_modules.append("Jaeles Scan")
+                else:
+                    self._jaeles_thread = threading.Thread(target=self.run_jaeles_scan, daemon=True)
+                    self._jaeles_thread.start()
+                    self.logger.info("[*] Vulnerability Scan (Jaeles) started in background.")
 
                 _run_concurrent([
                     cstep("Directory Fuzzing", self.run_directory_fuzzing, marker_files=["fuzzing"]),
@@ -3954,11 +4001,11 @@ class Oculus:
             print(f"\n{Colors.YELLOW}[!] Scan aborted via API request{Colors.RESET}")
             
         # Join/wait for all background tasks
-        for thread_attr, tool_name in [
-            ('_nmap_thread', 'Nmap'),
-            ('_nikto_thread', 'Nikto'),
-            ('_cariddi_thread', 'Cariddi'),
-            ('_jaeles_thread', 'Jaeles')
+        for thread_attr, tool_name, module_name in [
+            ('_nmap_thread', 'Nmap', 'Full Port Scan'),
+            ('_nikto_thread', 'Nikto', 'Nikto Scanner'),
+            ('_cariddi_thread', 'Cariddi', 'Cariddi Scan'),
+            ('_jaeles_thread', 'Jaeles', 'Jaeles Scan')
         ]:
             if not aborted and hasattr(self, thread_attr):
                 t = getattr(self, thread_attr)
@@ -3968,6 +4015,8 @@ class Oculus:
                     self.logger.info(msg)
                     t.join()
                     self.logger.info(f"[✔] Background {tool_name} scan completed.")
+                if module_name not in self.completed_modules:
+                    self.completed_modules.append(module_name)
 
         # FINAL: REPORTING (always runs, even on abort)
         duration = int(time.time() - start_time)
