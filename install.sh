@@ -335,7 +335,7 @@ def pip_install_package_dir(opt):
             return True
         py_log(f"pipx install failed: {r.stderr or r.stdout}")
     for flags in (["--break-system-packages"], []):
-        cmd = [sys.executable, "-m", "pip", "install", "--user", opt] + flags
+        cmd = [sys.executable, "-m", "pip", "install", "--user", "--no-build-isolation", opt] + flags
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if r.returncode == 0:
             return True
@@ -364,7 +364,7 @@ def create_venv_and_install(opt, name_lower, cli_name):
                 py_log(f"venv pip install -r failed: {r.stderr or r.stdout}")
 
         # attempt to install the package into the venv
-        r = subprocess.run([venv_python, "-m", "pip", "install", "--force-reinstall", opt], capture_output=True, text=True, timeout=600)
+        r = subprocess.run([venv_python, "-m", "pip", "install", "--force-reinstall", "--no-build-isolation", opt], capture_output=True, text=True, timeout=600)
         if r.returncode != 0:
             py_log(f"venv pip install from dir failed: {r.stderr or r.stdout}")
 
@@ -398,6 +398,9 @@ def create_venv_and_install(opt, name_lower, cli_name):
         else:
             py_log("No entry script found for venv wrapper creation")
             return False
+    except Exception as e:
+        py_log(f"create_venv_and_install failed: {e}")
+        return False
 
 
 # Tools invoked as python3 /opt/recontools/<repo>/<script>.py — not PATH CLIs
@@ -685,16 +688,16 @@ def install_recon_tool(name, repo, progress, tid):
         if (os.path.exists(setup_py) or os.path.exists(pyproject)) and not cli_available(cli_name):
             progress.update(tid, description=f"[bold cyan]➤ {name}[/] (pip install from source...)")
             if pip_install_package_dir(opt):
+                ensure_cli_on_path(cli_name)
+                py_log(f"Installed {name} from {opt}")
+            else:
+                # Try venv-based install as a fallback (works on PEP-668 managed systems)
+                py_log(f"pip install failed for {name}; attempting venv fallback")
+                if create_venv_and_install(opt, name_lower, cli_name):
                     ensure_cli_on_path(cli_name)
-                    py_log(f"Installed {name} from {opt}")
+                    py_log(f"Installed {name} into venv at {opt}")
                 else:
-                    # Try venv-based install as a fallback (works on PEP-668 managed systems)
-                    py_log(f"pip install failed for {name}; attempting venv fallback")
-                    if create_venv_and_install(opt, name_lower, cli_name):
-                        ensure_cli_on_path(cli_name)
-                        py_log(f"Installed {name} into venv at {opt}")
-                    else:
-                        log_failure(name, "pip install from clone failed and venv fallback failed")
+                    log_failure(name, "pip install from clone failed and venv fallback failed")
 
         if cli_available(cli_name):
             if name_lower == "massdns":

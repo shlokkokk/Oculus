@@ -203,7 +203,11 @@ def setup_ntfy(interactive: bool | None = None) -> bool:
 
 
 def main() -> int:
-    return 0 if setup_ntfy() else 1
+    try:
+        return 0 if setup_ntfy() else 1
+    except KeyboardInterrupt:
+        print("\n\n[ntfy] Setup cancelled by user.")
+        return 1
 
 
 if __name__ == "__main__":
