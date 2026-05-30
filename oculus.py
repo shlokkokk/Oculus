@@ -96,6 +96,7 @@ DEFAULT_CONFIG = {
         'extensions': 'php,html,js,json,txt,bak,old',
         'status_filter': '200,204,301,302,307,401,403',
         'recursion_depth': 2,
+        'max_hosts': 25,
     },
     'notify': {
         'enabled': False,
@@ -110,10 +111,23 @@ DEFAULT_CONFIG = {
     'nikto': {
         'tuning': '1234',
         'timeout': 600,
-        'max_hosts': 10,
+        'max_hosts': 25,
+    },
+    'whatwaf': {
+        'max_hosts': 100,
     },
     'crlfuzz': {
         'concurrency': 25,
+    },
+    'internetdb': {
+        'max_ips': 1000,
+    },
+    'tplmap': {
+        'max_urls': 300,
+    },
+    'nomore403': {
+        'max_urls': 300,
+        'fallback_hosts': 25,
     },
     'puredns': {
         'threads': 100,
@@ -1041,6 +1055,63 @@ class Oculus:
         """Remove http(s):// prefix and trailing path"""
         return url.replace("https://", "").replace("http://", "").split("/")[0]
 
+    def _config_limit(self, section, key, default):
+        """Read a positive integer limit from config, falling back safely."""
+        try:
+            value = int((self.config.get(section, {}) or {}).get(key, default))
+            return value if value > 0 else default
+        except Exception:
+            return default
+
+    def _run_qsreplace_to_file(self, input_file, output_file, payload, label):
+        """Run qsreplace and only return output_file when it produced usable content."""
+        qsreplace_bin = self.get_tool('qsreplace')
+        if not qsreplace_bin or not os.path.exists(input_file):
+            return input_file
+
+        cmd = f"cat {shlex.quote(input_file)} | {shlex.quote(qsreplace_bin)} {shlex.quote(payload)} | sort -u > {shlex.quote(output_file)}"
+        if self.run_command(cmd, timeout=60, label=label) and Oculus._path_has_output(output_file):
+            return output_file
+
+        print(f"{Colors.YELLOW}[!] {label} produced no usable output; keeping original input list{Colors.RESET}")
+        try:
+            if os.path.exists(output_file) and os.path.getsize(output_file) == 0:
+                os.remove(output_file)
+        except OSError:
+            pass
+        return input_file
+
+    def _merge_cariddi_secrets_into_js(self):
+        """Merge Cariddi secret-looking findings into JS secret artifacts."""
+        cariddi_txt = f"{self.output_dir}/cariddi/cariddi_results.txt"
+        if not os.path.exists(cariddi_txt):
+            return 0
+
+        js_dir = f"{self.output_dir}/js_endpoints"
+        Path(js_dir).mkdir(exist_ok=True)
+        targets = [f"{js_dir}/secrets.txt", f"{js_dir}/js_secrets.txt"]
+        keywords = ['secret', 'api_key', 'apikey', 'token', 'private_key', 'aws_key', 'stripe', 'password', 'credential']
+        additions = set()
+        for line in self.read_file_lines(cariddi_txt):
+            if any(kw in line.lower() for kw in keywords):
+                additions.add(f"Cariddi -> {line.strip()}")
+
+        if not additions:
+            return 0
+
+        merged_count = 0
+        for target in targets:
+            existing = set(self.read_file_lines(target))
+            merged = existing | additions
+            with open(target, 'w', encoding='utf-8') as f:
+                for item in sorted(merged):
+                    f.write(item + "\n")
+            merged_count = max(merged_count, len(merged) - len(existing))
+
+        self.results['js_secrets'] = self.count_file_lines(targets[0])
+        self.save_session()
+        return merged_count
+
     def suggest_next_steps(self, completed_task):
         """Intelligently suggest next steps based on completed task"""
         suggestions = {
@@ -1558,20 +1629,24 @@ class Oculus:
         """Detect WAFs with concurrent scanning"""
         if not self._require_setup():
             return
-        if not self._require_tool('wafw00f'):
+        has_wafw00f = self.tools_status.get('wafw00f', {}).get('installed')
+        whatwaf_bin = self.find_tool('whatwaf')
+        if not has_wafw00f and not whatwaf_bin:
+            print(f"{Colors.RED}[!] No WAF detection tools available (need wafw00f or WhatWaf).{Colors.RESET}")
             return
         hosts = self._get_hosts(prefer_alive=True)
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting WAF Detection ({len(hosts)} hosts)...{Colors.RESET}\n")
         results = []
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(self._check_single_waf, h): h for h in hosts}
-            for i, future in enumerate(as_completed(futures)):
-                r = future.result()
-                results.append(r)
-                if 'No WAF' not in r and 'Unknown' not in r and 'Error' not in r and 'Timeout' not in r:
-                    print(f"  {Colors.RED}[WAF] {r}{Colors.RESET}")
-                print(f"  Progress: {i+1}/{len(hosts)}", end='\r')
-        print()
+        if has_wafw00f:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {executor.submit(self._check_single_waf, h): h for h in hosts}
+                for i, future in enumerate(as_completed(futures)):
+                    r = future.result()
+                    results.append(r)
+                    if 'No WAF' not in r and 'Unknown' not in r and 'Error' not in r and 'Timeout' not in r:
+                        print(f"  {Colors.RED}[WAF] {r}{Colors.RESET}")
+                    print(f"  Progress: {i+1}/{len(hosts)}", end='\r')
+            print()
         output_file = f"{self.output_dir}/waf_summary.txt"
         with open(output_file, 'w', encoding='utf-8') as f:
             for r in results:
@@ -1582,15 +1657,34 @@ class Oculus:
         print(f"  {Colors.GREEN}• Total tested: {len(hosts)}{Colors.RESET}")
 
         # --- WhatWaf (deep WAF fingerprinting + bypass suggestions) ---
-        whatwaf_bin = self.find_tool('whatwaf')
         if whatwaf_bin:
-            print(f"\n{Colors.CYAN}[*] Running WhatWaf detection on top 20 alive hosts...{Colors.RESET}")
+            whatwaf_limit = self._config_limit('whatwaf', 'max_hosts', 100)
+            print(f"\n{Colors.CYAN}[*] Running WhatWaf detection on up to {whatwaf_limit} alive hosts...{Colors.RESET}")
             alive_file = f"{self.output_dir}/alive.txt"
             if os.path.exists(alive_file):
-                whatwaf_hosts = self.read_file_lines(alive_file)[:20]
-                for host in whatwaf_hosts:
+                whatwaf_dir = f"{self.output_dir}/whatwaf"
+                Path(whatwaf_dir).mkdir(parents=True, exist_ok=True)
+                whatwaf_summary = f"{whatwaf_dir}/whatwaf_results.txt"
+                open(whatwaf_summary, 'w', encoding='utf-8').close()
+                whatwaf_hosts = self.read_file_lines(alive_file)[:whatwaf_limit]
+                whatwaf_findings = 0
+                for idx, host in enumerate(whatwaf_hosts):
+                    safe_host = host.replace('://', '_').replace(':', '_').replace('/', '_')
+                    out_file = f"{whatwaf_dir}/whatwaf_{idx}_{safe_host}.txt"
                     cmd = f"python3 {whatwaf_bin} -u {shlex.quote(host)} --json --skip"
-                    self.run_command(cmd, timeout=120, label=f"whatwaf:{host[:40]}")
+                    self.run_command(cmd, output_file=out_file, timeout=120, label=f"whatwaf:{host[:40]}")
+                    lines = self.read_file_lines(out_file)
+                    if lines:
+                        with open(whatwaf_summary, 'a', encoding='utf-8') as sf:
+                            sf.write(f"===== {host} =====\n")
+                            for line in lines:
+                                sf.write(line + "\n")
+                            sf.write("\n")
+                        joined = "\n".join(lines).lower()
+                        if not any(skip in joined for skip in ['no waf', 'not behind', 'unable to detect']):
+                            whatwaf_findings += 1
+                self.results['whatwaf_findings'] = whatwaf_findings
+                print(f"{Colors.GREEN}[✔] WhatWaf: {whatwaf_findings} hosts with possible WAF/bypass signal{Colors.RESET}")
 
         self.results['waf_detected'] = waf_found
         self.results['waf_total'] = len(hosts)
@@ -1919,6 +2013,9 @@ class Oculus:
             return
         print(f"{Colors.YELLOW}[*] Found {js_count} JavaScript files{Colors.RESET}")
         if js_count == 0:
+            merged_cariddi = self._merge_cariddi_secrets_into_js()
+            if merged_cariddi:
+                print(f"{Colors.GREEN}[✔] Merged {merged_cariddi} Cariddi secret findings into JS secrets{Colors.RESET}")
             return
         if self.tools_status.get('linkfinder', {}).get('installed'):
             print(f"{Colors.YELLOW}[*] Running LinkFinder...{Colors.RESET}")
@@ -1987,16 +2084,6 @@ class Oculus:
             for future in as_completed(futures):
                 found_secrets.extend(future.result())
 
-        # Merge Cariddi secrets findings if available
-        cariddi_txt = f"{self.output_dir}/cariddi/cariddi_results.txt"
-        if os.path.exists(cariddi_txt):
-            try:
-                for line in self.read_file_lines(cariddi_txt):
-                    if any(kw in line.lower() for kw in ['secret', 'api_key', 'token', 'private_key', 'aws_key', 'stripe', 'password']):
-                        found_secrets.append(f"Cariddi -> {line.strip()}")
-            except Exception as e:
-                self.logger.error(f"Failed to read Cariddi findings: {e}")
-
         with open(secrets_file, 'w', encoding='utf-8') as f:
             for s in set(found_secrets):
                 f.write(s + "\n")
@@ -2010,7 +2097,11 @@ class Oculus:
         except Exception as e:
             self.logger.error(f"Failed to write js_secrets.txt: {e}")
 
-        print(f"{Colors.GREEN}[✔] Found {len(set(found_secrets))} potential secrets{Colors.RESET}")
+        merged_cariddi = self._merge_cariddi_secrets_into_js()
+        if merged_cariddi:
+            print(f"{Colors.GREEN}[✔] Merged {merged_cariddi} Cariddi secret findings into JS secrets{Colors.RESET}")
+
+        print(f"{Colors.GREEN}[✔] Found {self.count_file_lines(secrets_file)} potential secrets{Colors.RESET}")
         self.save_session()
 
     # MODULE 12: DIRECTORY FUZZING
@@ -2037,7 +2128,8 @@ class Oculus:
         fuzz_dir = f"{self.output_dir}/fuzzing"
         Path(fuzz_dir).mkdir(exist_ok=True)
         hosts = self._get_hosts(prefer_alive=True)
-        hosts_to_scan = hosts[:10]  # Limit to top 10 alive hosts to save time
+        max_hosts = self._config_limit('ffuf', 'max_hosts', 25)
+        hosts_to_scan = hosts[:max_hosts]
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Directory Fuzzing on {len(hosts_to_scan)} hosts...{Colors.RESET}\n")
 
         conf = self.config.get('ffuf', {})
@@ -2727,12 +2819,12 @@ class Oculus:
             filtered_sqli = gf_sqli
 
         # --- qsreplace parameter prepping for SQLi ---
-        qsreplace_bin = self.get_tool('qsreplace')
-        if qsreplace_bin and os.path.exists(filtered_sqli):
-            qsreplace_out = f"{out_dir}/sqli_qsreplaced.txt"
-            cmd = f"cat {filtered_sqli} | {qsreplace_bin} 'FUZZ' | sort -u > {qsreplace_out}"
-            self.run_command(cmd, timeout=60, label="qsreplace:sqli")
-            filtered_sqli = qsreplace_out
+        filtered_sqli = self._run_qsreplace_to_file(
+            filtered_sqli,
+            f"{out_dir}/sqli_qsreplaced.txt",
+            'FUZZ',
+            "qsreplace:sqli",
+        )
 
         # Use configured SQLMap settings (defaults defined in DEFAULT_CONFIG)
         sqlmap_cfg = self.config.get('sqlmap', {}) or {}
@@ -2788,13 +2880,12 @@ class Oculus:
             filtered_xss = gf_xss
 
         # --- qsreplace parameter prepping for XSS ---
-        qsreplace_bin = self.get_tool('qsreplace')
-        if qsreplace_bin and os.path.exists(filtered_xss):
-            qsreplace_out = f"{out_dir}/xss_qsreplaced.txt"
-            # Pipe to replace existing values with custom payload placement marker for Dalfox fuzzing
-            cmd = f"cat {filtered_xss} | {qsreplace_bin} 'FUZZ' | sort -u > {qsreplace_out}"
-            self.run_command(cmd, timeout=60, label="qsreplace:xss")
-            filtered_xss = qsreplace_out
+        filtered_xss = self._run_qsreplace_to_file(
+            filtered_xss,
+            f"{out_dir}/xss_qsreplaced.txt",
+            'FUZZ',
+            "qsreplace:xss",
+        )
 
         dalfox_bin = self.get_tool('dalfox')
         # Full-power Dalfox: 100 workers, DOM mining, blind XSS callback, 15s timeout per request
@@ -3187,12 +3278,12 @@ class Oculus:
         src = filtered_redirect if kept > 0 else gf_redirect
 
         # --- qsreplace parameter prepping for Open Redirect ---
-        qsreplace_bin = self.get_tool('qsreplace')
-        if qsreplace_bin and os.path.exists(src):
-            qsreplace_out = f"{out_dir}/redirect_qsreplaced.txt"
-            cmd = f"cat {src} | {qsreplace_bin} 'FUZZ' | sort -u > {qsreplace_out}"
-            self.run_command(cmd, timeout=60, label="qsreplace:redirect")
-            src = qsreplace_out
+        src = self._run_qsreplace_to_file(
+            src,
+            f"{out_dir}/redirect_qsreplaced.txt",
+            'FUZZ',
+            "qsreplace:redirect",
+        )
 
         urls = self.read_file_lines(src)
         payloads = ["https://evil.com", "//evil.com", "/\\evil.com"]
@@ -3377,6 +3468,7 @@ class Oculus:
         
         count = self.count_file_lines(out_txt)
         self.results['cariddi_findings'] = count
+        self.save_session()
         print(f"{Colors.GREEN}[✔] Cariddi: {count} findings{Colors.RESET}")
 
     def run_jaeles_scan(self):
@@ -3411,6 +3503,7 @@ class Oculus:
         
         results_count = sum(1 for f in Path(out_dir).rglob('*.txt') if f.stat().st_size > 0)
         self.results['jaeles_findings'] = results_count
+        self.save_session()
         print(f"{Colors.GREEN}[✔] Jaeles: {results_count} findings{Colors.RESET}")
 
     def run_tplmap_scan(self):
@@ -3437,13 +3530,17 @@ class Oculus:
                     if any(p in url.lower() for p in ['template', 'render', 'view', 'page', 'name=', 'input=']):
                         ssti_candidates.append(url)
         
-        ssti_candidates = list(set(ssti_candidates))[:100]
+        max_urls = self._config_limit('tplmap', 'max_urls', 300)
+        ssti_candidates = list(set(ssti_candidates))[:max_urls]
         if not ssti_candidates:
             print(f"{Colors.YELLOW}[!] No SSTI candidate URLs found.{Colors.RESET}")
+            self.results['ssti_findings'] = 0
+            self.save_session()
             return
         
         findings = 0
         out_file = f"{out_dir}/tplmap_results.txt"
+        open(out_file, 'w', encoding='utf-8').close()
         for url in ssti_candidates:
             # Safe detection only - no --os-cmd execution to avoid target bans
             temp_log = f"{out_dir}/tplmap_temp.log"
@@ -3465,6 +3562,7 @@ class Oculus:
                     pass
         
         self.results['ssti_findings'] = findings
+        self.save_session()
         print(f"{Colors.GREEN}[✔] Tplmap: tested {len(ssti_candidates)} URLs, found {findings} vulnerabilities{Colors.RESET}")
 
     def run_crlfuzz_scan(self):
@@ -3491,6 +3589,7 @@ class Oculus:
         
         count = self.count_file_lines(out_file)
         self.results['crlf_findings'] = count
+        self.save_session()
         print(f"{Colors.GREEN}[✔] CRLFuzz: {count} CRLF injection findings{Colors.RESET}")
 
     def run_internetdb_scan(self):
@@ -3520,6 +3619,8 @@ class Oculus:
         
         if not ips:
             print(f"{Colors.YELLOW}[!] No IPs found for InternetDB lookup{Colors.RESET}")
+            self.results['internetdb_hosts'] = 0
+            self.save_session()
             return
         
         print(f"{Colors.CYAN}[*] Querying InternetDB for {len(ips)} IPs...{Colors.RESET}")
@@ -3529,8 +3630,9 @@ class Oculus:
         def lookup_ip(ip):
             return (ip, self._internetdb_lookup(ip))
         
+        max_ips = self._config_limit('internetdb', 'max_ips', 1000)
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(lookup_ip, ip): ip for ip in list(ips)[:200]}
+            futures = {executor.submit(lookup_ip, ip): ip for ip in list(ips)[:max_ips]}
             for future in as_completed(futures):
                 ip, data = future.result()
                 if data and data.get('ports'):
@@ -3540,6 +3642,7 @@ class Oculus:
             json.dump(results_all, f, indent=2)
         
         self.results['internetdb_hosts'] = len(results_all)
+        self.save_session()
         print(f"{Colors.GREEN}[✔] InternetDB: {len(results_all)} hosts with data{Colors.RESET}")
 
     def run_nikto_scan(self):
@@ -3549,16 +3652,18 @@ class Oculus:
         out_dir = f"{self.output_dir}/nikto"
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         
-        max_hosts = self.config.get('nikto', {}).get('max_hosts', 10)
+        max_hosts = self._config_limit('nikto', 'max_hosts', 25)
         hosts = self._get_hosts()[:max_hosts]
         if not hosts:
+            self.results['nikto_scanned'] = 0
+            self.save_session()
             return
         
         tuning = self.config.get('nikto', {}).get('tuning', '1234')
         timeout = self.config.get('nikto', {}).get('timeout', 600)
         
         for host in hosts:
-            safe_host = self.safe_domain() if host == self.domain else host.replace('://', '_').replace('/', '_')
+            safe_host = re.sub(r'[^A-Za-z0-9_.-]+', '_', self._strip_protocol(host))
             # Use txt format as a safer fallback to avoid missing JSON plugin issues
             out_txt = f"{out_dir}/nikto_{safe_host}.txt"
             
@@ -3570,6 +3675,7 @@ class Oculus:
         
         total = sum(1 for f in Path(out_dir).glob('*.txt') if f.stat().st_size > 0)
         self.results['nikto_scanned'] = total
+        self.save_session()
         print(f"{Colors.GREEN}[✔] Nikto: scanned {total} hosts{Colors.RESET}")
 
     def run_tlsx_scan(self):
@@ -3585,6 +3691,8 @@ class Oculus:
         
         hosts = self._get_hosts()
         if not hosts:
+            self.results['tlsx_sans'] = 0
+            self.save_session()
             return
         
         hosts_file = f"{out_dir}/tlsx_input.txt"
@@ -3625,9 +3733,11 @@ class Oculus:
             with open(subs_file, 'w') as f:
                 f.write('\n'.join(sorted(merged)) + '\n')
             self.results['tlsx_sans'] = len(new_subs)
+            self.save_session()
             print(f"{Colors.GREEN}[✔] TLSX: {len(new_subs)} SANs found, {added} new subdomains added{Colors.RESET}")
         else:
             self.results['tlsx_sans'] = 0
+            self.save_session()
             print(f"{Colors.GREEN}[✔] TLSX: scan complete, no new SANs{Colors.RESET}")
 
     def run_nomore403_scan(self):
@@ -3654,20 +3764,25 @@ class Oculus:
                     pass
         
         if not forbidden_urls:
-            hosts = self._get_hosts()[:5]
+            fallback_hosts = self._config_limit('nomore403', 'fallback_hosts', 25)
+            hosts = self._get_hosts()[:fallback_hosts]
             admin_paths = ['/admin', '/wp-admin', '/administrator', '/dashboard',
                            '/api', '/config', '/internal', '/management']
             for host in hosts:
                 for path in admin_paths:
                     forbidden_urls.append(f"{host.rstrip('/')}{path}")
         
-        forbidden_urls = list(set(forbidden_urls))[:200]
+        max_urls = self._config_limit('nomore403', 'max_urls', 300)
+        forbidden_urls = list(set(forbidden_urls))[:max_urls]
         if not forbidden_urls:
             print(f"{Colors.YELLOW}[!] No 403 URLs to test{Colors.RESET}")
+            self.results['bypass_403'] = 0
+            self.save_session()
             return
         
         main_out = f"{out_dir}/bypass_results.txt"
-        for idx, url in enumerate(forbidden_urls[:50]):
+        open(main_out, 'w', encoding='utf-8').close()
+        for idx, url in enumerate(forbidden_urls):
             temp_out = f"{out_dir}/temp_nomore403_{idx}.txt"
             cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {temp_out}"
             self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}")
@@ -3687,6 +3802,7 @@ class Oculus:
         
         count = self.count_file_lines(main_out)
         self.results['bypass_403'] = count
+        self.save_session()
         print(f"{Colors.GREEN}[✔] nomore403: {count} potential bypasses found{Colors.RESET}")
 
     def run_full_spectrum_scan(self, force_fresh=False):
@@ -3704,6 +3820,7 @@ class Oculus:
             'subdomains': 'Subs', 'dns_brute': 'DNS Brute', 'dns_resolved': 'DNS',
             'alive_hosts': 'Alive', 'fast_ports': 'Fast Ports', 'full_ports': 'Full Ports',
             'urls': 'URLs', 'urls_final': 'URLs Final', 'waf_detected': 'WAF',
+            'whatwaf_findings': 'WhatWaf',
             'vulnerabilities': 'Vulns', 'parameters': 'Params',
             'js_endpoints': 'JS', 'gf_filters': 'GF',
             'xss_findings': 'XSS', 'cors_findings': 'CORS',
@@ -3867,7 +3984,16 @@ class Oculus:
                  marker_files=["massdns_out.txt"])
             step("DNS Resolution", self.run_dns_resolution, result_key="dns_resolved")
             step("Alive Hosts Check", self.run_alive_hosts_check, result_key="alive_hosts")
+            subs_before_tlsx = set(self.read_file_lines(f"{self.output_dir}/subdomains.txt"))
             step("TLS Certificate Scan", self.run_tlsx_scan, result_key="tlsx_sans")
+            subs_after_tlsx = set(self.read_file_lines(f"{self.output_dir}/subdomains.txt"))
+            tlsx_new_subs = subs_after_tlsx - subs_before_tlsx
+            if tlsx_new_subs and not aborted and not getattr(self, 'abort_requested', False):
+                print(f"\n{Colors.CYAN}[*] TLSX added {len(tlsx_new_subs)} new subdomains; refreshing DNS and alive hosts for this run...{Colors.RESET}")
+                self.results.pop('dns_resolved', None)
+                self.results.pop('alive_hosts', None)
+                step("DNS Resolution (TLSX refresh)", self.run_dns_resolution, result_key="dns_resolved")
+                step("Alive Hosts Check (TLSX refresh)", self.run_alive_hosts_check, result_key="alive_hosts")
 
             _run_concurrent([
                 cstep("ASN Discovery", self.run_asn_discovery, marker_files=["asn/asn_ranges.txt"]),
@@ -4016,8 +4142,13 @@ class Oculus:
                     self.logger.info(msg)
                     t.join()
                     self.logger.info(f"[✔] Background {tool_name} scan completed.")
+                if module_name == "Cariddi Scan":
+                    merged_cariddi = self._merge_cariddi_secrets_into_js()
+                    if merged_cariddi:
+                        print(f"{Colors.GREEN}[✔] Merged {merged_cariddi} late Cariddi secret findings into JS reports{Colors.RESET}")
                 if module_name not in self.completed_modules:
                     self.completed_modules.append(module_name)
+                self.save_session()
 
         # FINAL: REPORTING (always runs, even on abort)
         duration = int(time.time() - start_time)
@@ -4090,6 +4221,7 @@ class Oculus:
                     ('Service Details (Full)', 'full_ports', f'{self.output_dir}/ports_full.txt'),
                     ('Tech Scan Results', 'tech_scan', f'{self.output_dir}/tech_scan/whatweb_results.json'),
                     ('WAF Protected Hosts', 'waf_detected', ''),
+                    ('WhatWaf Findings', 'whatwaf_findings', f'{self.output_dir}/whatwaf/whatwaf_results.txt'),
                     ('InternetDB Hosts', 'internetdb_hosts', f'{self.output_dir}/internetdb/internetdb_results.json'),
                     ('Nikto Scanned Hosts', 'nikto_scanned', f'{self.output_dir}/nikto/'),
                     ('Screenshot Capture', 'screenshots', f'{self.output_dir}/screenshots/'),
@@ -4185,6 +4317,7 @@ class Oculus:
         github_secrets = self.read_file_lines(f"{self.output_dir}/github/github_secrets.txt")
         shodan_results = self.read_file_lines(f"{self.output_dir}/shodan/shodan_results.txt")
         open_redirects = self.read_file_lines(f"{self.output_dir}/redirects/open_redirects.txt")
+        whatwaf = self.read_file_lines(f"{self.output_dir}/whatwaf/whatwaf_results.txt")
         
         cariddi = self.read_file_lines(f"{self.output_dir}/cariddi/cariddi_results.txt")
         tplmap = self.read_file_lines(f"{self.output_dir}/tplmap/tplmap_results.txt")
@@ -4386,6 +4519,7 @@ function sortTable(n) {
             ("Shodan Host Intelligence", "radar", shodan_results, 200),
             ("OSINT Harvesting", "users", osint_report, 200),
             ("Open Redirects", "external-link", open_redirects, 200),
+            ("WhatWaf WAF Intelligence", "shield", whatwaf, 200),
             ("Directory Fuzzing", "folder", fuzz_endpoints, 200),
             ("Cariddi Crawl Findings", "link-2", cariddi, 200),
             ("Jaeles Vulnerabilities", "shield-alert", jaeles, 200),
@@ -4491,6 +4625,7 @@ function sortTable(n) {
             'shodan_results': self.read_file_lines(f"{self.output_dir}/shodan/shodan_results.txt"),
             'osint_report': f"osint/theharvester.html" if os.path.exists(f"{self.output_dir}/osint/theharvester.html") else None,
             'open_redirects': self.read_file_lines(f"{self.output_dir}/redirects/open_redirects.txt"),
+            'whatwaf_findings': self.read_file_lines(f"{self.output_dir}/whatwaf/whatwaf_results.txt"),
             'fuzz_findings': fuzz_endpoints,
             'cariddi_findings': self.read_file_lines(f"{self.output_dir}/cariddi/cariddi_results.txt"),
             'jaeles_vulns': jaeles,
@@ -4549,6 +4684,7 @@ function sortTable(n) {
         github_secrets = self.read_file_lines(f"{self.output_dir}/github/github_secrets.txt")
         shodan_results = self.read_file_lines(f"{self.output_dir}/shodan/shodan_results.txt")
         open_redirects = self.read_file_lines(f"{self.output_dir}/redirects/open_redirects.txt")
+        whatwaf = self.read_file_lines(f"{self.output_dir}/whatwaf/whatwaf_results.txt")
 
         cariddi = self.read_file_lines(f"{self.output_dir}/cariddi/cariddi_results.txt")
         tplmap = self.read_file_lines(f"{self.output_dir}/tplmap/tplmap_results.txt")
@@ -4817,6 +4953,15 @@ function sortTable(n) {
                     f.write(f"- {o}\n")
                 if len(open_redirects) > 100:
                     f.write(f"\n*... and {len(open_redirects) - 100} more open redirects*\n")
+                f.write("\n---\n\n")
+
+            # WhatWaf
+            if whatwaf:
+                f.write(f"## WhatWaf WAF Intelligence ({len(whatwaf)})\n\n")
+                for w in whatwaf[:100]:
+                    f.write(f"- {w}\n")
+                if len(whatwaf) > 100:
+                    f.write(f"\n*... and {len(whatwaf) - 100} more WhatWaf lines*\n")
                 f.write("\n---\n\n")
 
             # Directory Fuzzing

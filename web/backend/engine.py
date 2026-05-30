@@ -54,7 +54,7 @@ def kill_zombie_scanners():
 
 MODULE_SUBTOOLS = {
     "Subdomain Enumeration": ["Subfinder", "Amass", "Assetfinder"],
-    "DNS Bruteforce": ["MassDNS"],
+    "DNS Bruteforce": ["MassDNS", "PureDNS", "AlterX"],
     "DNS Resolution": ["DNS resolution"],
     "Alive Hosts Check": ["HTTPX", "HTTProbe"],
     "ASN Discovery": ["ASN Discovery"],
@@ -65,7 +65,7 @@ MODULE_SUBTOOLS = {
     "Fast Port Scan": ["Naabu"],
     "Full Port Scan": ["Nmap"],
     "Tech Scan": ["WhatWeb scan"],
-    "WAF Detection": ["WAF detection"],
+    "WAF Detection": ["WAF detection", "WhatWaf"],
     "Screenshot Capture": ["EyeWitness", "GoWitness"],
     "URL Collection": ["Waybackurls", "Gau"],
     "Advanced URL Enum": ["Hakrawler"],

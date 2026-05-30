@@ -61,6 +61,7 @@ ffuf:
   extensions: php,html,js,json,txt,bak,old
   status_filter: "200,204,301,302,307,401,403"
   recursion_depth: 2
+  max_hosts: 25        # Maximum alive hosts to fuzz
 
 # Jaeles configuration
 jaeles:
@@ -72,11 +73,28 @@ jaeles:
 nikto:
   tuning: "1234"       # Nikto tuning options: 1-9, a-x
   timeout: 600         # Scan timeout in seconds per host
-  max_hosts: 10        # Maximum hosts to scan
+  max_hosts: 25        # Maximum hosts to scan
+
+# WhatWaf configuration
+whatwaf:
+  max_hosts: 100       # Maximum alive hosts to scan with WhatWaf
+
+# InternetDB configuration
+internetdb:
+  max_ips: 1000        # Maximum IPs to query
 
 # CRLFuzz configuration
 crlfuzz:
   concurrency: 25
+
+# Tplmap configuration
+tplmap:
+  max_urls: 300        # Maximum SSTI candidates to test
+
+# nomore403 configuration
+nomore403:
+  max_urls: 300        # Maximum forbidden/admin URLs to test
+  fallback_hosts: 25   # Alive hosts used for fallback admin-path probes
 
 # PureDNS configuration
 puredns:
