@@ -154,13 +154,27 @@ APT_PACKAGES=(
     build-essential libpcap-dev
     nmap massdns wafw00f whatweb sqlmap nikto
     dnsutils chromium chromium-driver
-    xvfb libnss3 libgconf-2-4
+    xvfb libnss3
 )
 
 log_info "Installing ${#APT_PACKAGES[@]} packages..."
-sudo apt-get install -y "${APT_PACKAGES[@]}" -qq 2>/dev/null \
-    || log_warn "Some apt packages may have failed (continuing)"
-log_success "System packages ready"
+if sudo apt-get install -y "${APT_PACKAGES[@]}" -qq 2>/dev/null; then
+    log_success "System packages ready"
+else
+    log_warn "Bulk package installation failed. Installing packages individually..."
+    FAILED_PACKAGES=()
+    for pkg in "${APT_PACKAGES[@]}"; do
+        if sudo apt-get install -y "$pkg" -qq 2>/dev/null; then
+            log_info "  Package installed: $pkg"
+        else
+            FAILED_PACKAGES+=("$pkg")
+        fi
+    done
+    if [ ${#FAILED_PACKAGES[@]} -gt 0 ]; then
+        log_warn "Some packages could not be installed: ${FAILED_PACKAGES[*]}"
+    fi
+    log_success "System packages ready (individual fallback complete)"
+fi
 
 # PHASE 3: Go Toolchain
 log_step "Phase 3 · Go Toolchain"
