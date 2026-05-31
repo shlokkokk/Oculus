@@ -1241,8 +1241,8 @@ class Oculus:
         self.output_dir = f"output-{domain}"
 
         try:
-            Path(self.output_dir).mkdir(exist_ok=True)
-            Path(f"{self.output_dir}/logs").mkdir(exist_ok=True)
+            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+            Path(f"{self.output_dir}/logs").mkdir(parents=True, exist_ok=True)
             self._setup_logging_full()
             self.logger.info(f"Target domain set: {domain}")
             print(f"\n{Colors.GREEN}[✔] Created output directory: {self.output_dir}/{Colors.RESET}")
@@ -1342,7 +1342,7 @@ class Oculus:
             return 0
 
         js_dir = f"{self.output_dir}/js_endpoints"
-        Path(js_dir).mkdir(exist_ok=True)
+        Path(js_dir).mkdir(parents=True, exist_ok=True)
         targets = [f"{js_dir}/secrets.txt", f"{js_dir}/js_secrets.txt"]
         keywords = ['secret', 'api_key', 'apikey', 'token', 'private_key', 'aws_key', 'stripe', 'password', 'credential']
         additions = set()
@@ -2056,7 +2056,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Parameter Discovery...{Colors.RESET}\n")
         param_dir = f"{self.output_dir}/parameters"
-        Path(param_dir).mkdir(exist_ok=True)
+        Path(param_dir).mkdir(parents=True, exist_ok=True)
         sd = self.safe_domain()
 
         if has_ps:
@@ -2068,7 +2068,7 @@ class Oculus:
                 cmd = f"{ps_bin} -d {sd}"
             
             # Ensure results directory exists in case ParamSpider outputs to results/ relative to cwd
-            Path("results").mkdir(exist_ok=True)
+            Path("results").mkdir(parents=True, exist_ok=True)
             
             if self.run_command(cmd, timeout=500, label="paramspider"):
                 print(f"{Colors.GREEN}[✔] ParamSpider completed{Colors.RESET}")
@@ -2233,7 +2233,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting JS Endpoint Extraction...{Colors.RESET}\n")
         js_dir = f"{self.output_dir}/js_endpoints"
-        Path(js_dir).mkdir(exist_ok=True)
+        Path(js_dir).mkdir(parents=True, exist_ok=True)
         js_urls_file = f"{js_dir}/js_urls.txt"
         js_count = 0
         try:
@@ -2361,7 +2361,7 @@ class Oculus:
         if not self._require_tool('ffuf'):
             return self.MODULE_SKIPPED
         fuzz_dir = f"{self.output_dir}/fuzzing"
-        Path(fuzz_dir).mkdir(exist_ok=True)
+        Path(fuzz_dir).mkdir(parents=True, exist_ok=True)
         hosts = self._get_hosts(prefer_alive=True)
         max_hosts = self._config_limit('ffuf', 'max_hosts', 25)
         hosts_to_scan = hosts[:max_hosts]
@@ -2447,7 +2447,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting API Fuzzing...{Colors.RESET}\n")
         api_dir = f"{self.output_dir}/api_fuzzing"
-        Path(api_dir).mkdir(exist_ok=True)
+        Path(api_dir).mkdir(parents=True, exist_ok=True)
         kr_bin = self.get_tool('kr')
         output = f"{api_dir}/kr_results.txt"
         # Kiterunner: target file is positional, wordlist via -w or Assetnote alias via -A
@@ -2483,7 +2483,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Subdomain Takeovers...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/takeover"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         subzy_bin = self.get_tool('subzy')
         out_file = f"{out_dir}/takeovers.txt"
         cmd = f"{subzy_bin} run --targets {subs_file} --hide_fails"
@@ -2723,7 +2723,7 @@ class Oculus:
             print(f"{Colors.YELLOW}[*] alive.txt missing; using fallback targets from discovered hosts/domain{Colors.RESET}")
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Capturing Screenshots...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/screenshots"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
 
         engines = [
             ("gowitness", self._capture_with_gowitness),
@@ -2957,7 +2957,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Running GF Filters...{Colors.RESET}\n")
         gf_dir = f"{self.output_dir}/gf"
-        Path(gf_dir).mkdir(exist_ok=True)
+        Path(gf_dir).mkdir(parents=True, exist_ok=True)
         patterns = ['xss', 'sqli', 'ssrf', 'lfi', 'redirect', 'rce']
         gf_bin = self.get_tool('gf')
         res = {}
@@ -2990,7 +2990,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Tech Scan...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/tech_scan"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         out_file = f"{out_dir}/whatweb_results.json"
         cmd = f"{self.get_tool('whatweb')} -i {alive} --log-json={out_file}"
         if self.run_command(cmd, timeout=300, label="whatweb"):
@@ -3071,7 +3071,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting SQLMap Scan...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/sqlmap"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
 
         # Pre-filter to alive hosts — dead Wayback subdomains waste all scan time
         filtered_sqli = f"{out_dir}/sqli_alive.txt"
@@ -3137,7 +3137,7 @@ class Oculus:
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Automated XSS Scan (Dalfox)...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/xss_findings"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         out_file = f"{out_dir}/dalfox_results.txt"
 
         # Pre-filter to alive hosts — dead Wayback subdomains cause mass connection failures
@@ -3233,7 +3233,7 @@ class Oculus:
                 print(f"  Progress: {i+1}/{len(hosts)}", end='\r')
         print()
         out_dir = f"{self.output_dir}/cors_findings"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         with open(f"{out_dir}/cors_results.txt", 'w', encoding='utf-8') as f:
             for r in all_results:
                 f.write(r + '\n')
@@ -3255,7 +3255,7 @@ class Oculus:
         hosts = self._get_hosts(prefer_alive=True)
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting HTTP Smuggling Scan ({len(hosts)} targets)...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/smuggling"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         smuggler_bin = self.get_tool('smuggler', "/opt/recontools/smuggler/smuggler.py")
         all_results = []
         for i, host in enumerate(hosts):
@@ -3293,7 +3293,7 @@ class Oculus:
         
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting ASN & IP Range Discovery...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/asn"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         out_file = f"{out_dir}/asn_ranges.txt"
         
         asnmap_bin = self.get_tool('asnmap') if has_asnmap else None
@@ -3376,7 +3376,7 @@ class Oculus:
             return
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Cloud Asset Discovery...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/cloud"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         # Using simple permutations for S3 bucket checking
         baseword = self.domain.split('.')[0]
         perms = [
@@ -3514,7 +3514,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting OSINT Harvesting...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/osint"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         bin_path = self.get_tool('theharvester', '/opt/recontools/theHarvester/theHarvester.py')
         if not bin_path or not os.path.exists(bin_path):
             # Fallback to system command name
@@ -3545,7 +3545,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Passive Shodan Recon...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/shodan"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         # urllib.request/json imported at top level
         url = f'https://api.shodan.io/shodan/host/search?key={shodan_key}&query=hostname:{self.safe_domain()}'
         try:
@@ -3581,7 +3581,7 @@ class Oculus:
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Open Redirect Scan...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/redirects"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         out_file = f"{out_dir}/open_redirects.txt"
 
         # Pre-filter to alive hosts — dead subdomains produce only false negatives
@@ -3831,7 +3831,7 @@ class Oculus:
             self._skip_reasons[self._current_module or 'Cariddi Scan'] = 'cariddi not installed'
             return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/cariddi"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
@@ -3861,7 +3861,7 @@ class Oculus:
             self._skip_reasons[self._current_module or 'Jaeles Scan'] = 'jaeles not installed'
             return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/jaeles"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
@@ -3900,7 +3900,7 @@ class Oculus:
             self._skip_reasons[self._current_module or 'Tplmap Scan'] = 'tplmap not installed'
             return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/tplmap"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         
         ssti_candidates = []
         for gf_pattern in ['ssrf', 'rce', 'ssti']:
@@ -3964,7 +3964,7 @@ class Oculus:
             self._skip_reasons[self._current_module or 'CRLFuzz Scan'] = 'crlfuzz not installed'
             return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/crlfuzz"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
@@ -3988,7 +3988,7 @@ class Oculus:
         if not self._require_setup():
             return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/internetdb"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         
         dns_file = f"{self.output_dir}/dns_resolved.txt"
         ips = set()
@@ -4044,7 +4044,7 @@ class Oculus:
         if not self._require_tool('nikto'):
             return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/nikto"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         
         max_hosts = self._config_limit('nikto', 'max_hosts', 999999)
         hosts = self._get_hosts()[:max_hosts]
@@ -4085,7 +4085,7 @@ class Oculus:
             self._skip_reasons[self._current_module or 'TLSX Scan'] = 'tlsx not installed'
             return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/tlsx"
-        Path(out_dir).mkdir(exist_ok=True)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
         
         hosts = self._get_hosts()
         if not hosts:
@@ -5968,8 +5968,8 @@ def main():
         recon.initialize_tools()
         recon.domain = args.domain
         recon.output_dir = f"output-{args.domain}"
-        Path(recon.output_dir).mkdir(exist_ok=True)
-        Path(f"{recon.output_dir}/logs").mkdir(exist_ok=True)
+        Path(recon.output_dir).mkdir(parents=True, exist_ok=True)
+        Path(f"{recon.output_dir}/logs").mkdir(parents=True, exist_ok=True)
         recon._setup_logging_full()
         recon.setup_complete = True
         recon.load_session()
