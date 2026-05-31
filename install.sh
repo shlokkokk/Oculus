@@ -202,10 +202,10 @@ APT_PACKAGES=(
     build-essential libpcap-dev
     nmap massdns wafw00f whatweb sqlmap nikto
     dnsutils chromium chromium-driver
-    xvfb libnss3 seclists
+    xvfb libnss3
 )
 
-log_info "Installing ${#APT_PACKAGES[@]} packages (includes SecLists wordlists — this may take a few minutes)..."
+log_info "Installing ${#APT_PACKAGES[@]} packages..."
 if sudo apt-get install -y "${APT_PACKAGES[@]}" -qq 2>/dev/null; then
     log_success "System packages ready"
 else
@@ -223,6 +223,19 @@ else
     fi
     log_success "System packages ready (individual fallback complete)"
 fi
+
+# Verify/download default DNS wordlist if missing to avoid installing massive seclists package
+DNS_WORDLIST="/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
+if [ ! -f "$DNS_WORDLIST" ]; then
+    log_info "Default DNS wordlist missing. Downloading light 5,000-subdomain list (80KB)..."
+    sudo mkdir -p "$(dirname "$DNS_WORDLIST")"
+    if sudo curl -fsSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt" -o "$DNS_WORDLIST" 2>/dev/null; then
+        log_success "DNS wordlist downloaded successfully"
+    else
+        log_warn "Failed to download DNS wordlist automatically — DNS Bruteforce step may be skipped"
+    fi
+fi
+
 
 # PHASE 3: Go Toolchain
 log_step "Phase 3 · Go Toolchain"
