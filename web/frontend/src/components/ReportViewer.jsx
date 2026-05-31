@@ -28,19 +28,29 @@ function flattenArtifacts(items, bucket = []) {
 }
 
 function inferScreenshotDomain(shot, fallbackDomain) {
-  const raw = `${shot.path}/${shot.name}`.toLowerCase();
-  let decoded = raw;
+  let name = shot.name.toLowerCase();
   try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    decoded = raw;
+    name = decodeURIComponent(name);
+  } catch {}
+  
+  // Remove protocol prefixes like https--- or http_ or http---
+  name = name.replace(/^https?[:_-]+/, '');
+  
+  // Remove common image extensions
+  name = name.replace(/\.(png|jpe?g|gif|webp)$/i, '');
+  
+  // Remove trailing port numbers like -443, _80, -80, _443
+  name = name.replace(/[-_]\d+$/, '');
+  
+  // Clean up any remaining leading/trailing dots or www
+  name = name.replace(/^www\./, '');
+  
+  // Validate if it looks like a domain name
+  const domainMatch = name.match(/^([a-z0-9][a-z0-9.-]+\.[a-z]{2,})/i);
+  if (domainMatch) {
+    return domainMatch[1];
   }
-  const urlMatch = decoded.match(/https?:[/_:.-]+(?:www\.)?([a-z0-9][a-z0-9.-]+\.[a-z]{2,})(?:[/_:.-]|$)/i);
-  if (urlMatch) return urlMatch[1];
-
-  const hostMatch = decoded.match(/([a-z0-9][a-z0-9-]*(?:[._-][a-z0-9-]+)+[._-](?:com|net|org|io|co|dev|app|in|ai|me|edu|gov|info|biz))/i);
-  if (hostMatch) return hostMatch[1].replace(/[_-]/g, '.').replace(/^www\./, '');
-
+  
   return fallbackDomain || 'screenshots';
 }
 

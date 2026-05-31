@@ -127,18 +127,26 @@ function flattenScreenshots(items, bucket = []) {
 }
 
 function inferScreenshotDomain(shot, fallbackDomain) {
-  const raw = `${shot.path}/${shot.name}`.toLowerCase();
-  const urlMatch = raw.match(/https?[:_-]+[\\/._-]*([a-z0-9][a-z0-9.-]+\.[a-z]{2,})(?:[\\/._:-]|$)/i);
-  if (urlMatch) return urlMatch[1].replace(/^www\./, '');
-
-  const hostMatch = raw.match(/([a-z0-9][a-z0-9-]*(?:[._-][a-z0-9-]+)+[._-](?:com|net|org|io|co|dev|app|in|ai|me|edu|gov|info|biz))/i);
-  if (hostMatch) return hostMatch[1].replace(/[_-]/g, '.').replace(/^www\./, '');
-
-  const parts = shot.path.split('/');
-  const screenshotIndex = parts.findIndex(p => p.toLowerCase() === 'screenshots');
-  if (screenshotIndex >= 0 && parts[screenshotIndex + 2]) {
-    return parts[screenshotIndex + 2].replace(/[_-]/g, '.').replace(/^www\./, '');
+  let name = shot.name.toLowerCase();
+  
+  // Remove protocol prefixes like https--- or http_ or http---
+  name = name.replace(/^https?[:_-]+/, '');
+  
+  // Remove common image extensions
+  name = name.replace(/\.(png|jpe?g|gif|webp)$/i, '');
+  
+  // Remove trailing port numbers like -443, _80, -80, _443
+  name = name.replace(/[-_]\d+$/, '');
+  
+  // Clean up any remaining leading/trailing dots or www
+  name = name.replace(/^www\./, '');
+  
+  // Validate if it looks like a domain name
+  const domainMatch = name.match(/^([a-z0-9][a-z0-9.-]+\.[a-z]{2,})/i);
+  if (domainMatch) {
+    return domainMatch[1];
   }
+  
   return fallbackDomain || 'screenshots';
 }
 
@@ -573,6 +581,14 @@ export default function ResultsViewer({ domain }) {
                             size: first.size,
                             url: buildArtifactUrl(activeDomain, first.path)
                           });
+                          
+                          // Auto smooth scroll to the screenshot section on the right
+                          setTimeout(() => {
+                            const element = document.getElementById(`screenshot-sec-${group.name}`);
+                            if (element) {
+                              element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                          }, 50);
                         }}
                       >
                         <span>{group.name}</span>
@@ -600,7 +616,7 @@ export default function ResultsViewer({ domain }) {
               {screenshotGroups.length > 0 ? (
                 <div className="results-screenshot-scroll">
                   {screenshotGroups.map(group => (
-                    <section key={group.name} className="screenshot-domain-section">
+                    <section key={group.name} id={`screenshot-sec-${group.name}`} className="screenshot-domain-section">
                       <div className="screenshot-domain-head">
                         <span>{group.name}</span>
                         <strong>{group.shots.length}</strong>
