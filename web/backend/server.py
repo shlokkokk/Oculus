@@ -251,6 +251,7 @@ async def get_artifact_file(domain: str, file_path: str):
     text_extensions = {
         ".txt", ".json", ".jsonl", ".md", ".log", ".csv", ".xml",
         ".yaml", ".yml", ".html", ".htm", ".cfg", ".conf", ".ini",
+        ".nmap", ".gnmap",
     }
     if suffix in text_extensions:
         try:
