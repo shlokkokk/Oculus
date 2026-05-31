@@ -205,7 +205,7 @@ APT_PACKAGES=(
     xvfb libnss3 seclists
 )
 
-log_info "Installing ${#APT_PACKAGES[@]} packages..."
+log_info "Installing ${#APT_PACKAGES[@]} packages (includes SecLists wordlists — this may take a few minutes)..."
 if sudo apt-get install -y "${APT_PACKAGES[@]}" -qq 2>/dev/null; then
     log_success "System packages ready"
 else
