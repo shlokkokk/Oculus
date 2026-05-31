@@ -85,7 +85,7 @@ prompt_ntfy_setup() {
     fi
 
     # Check if ntfy is already configured
-    if python3 -c "
+    NTFY_INFO=$(python3 -c "
 import sys, yaml
 from pathlib import Path
 candidates = [
@@ -100,15 +100,35 @@ for p in candidates:
                 data = yaml.safe_load(fh) or {}
             if isinstance(data, dict) and 'ntfy' in data:
                 n = data['ntfy'] or {}
-                if n.get('url') or n.get('topic'):
+                url = n.get('url')
+                topic = n.get('topic')
+                server = n.get('server', 'https://ntfy.sh')
+                if url:
+                    print(f'URL: {url}')
+                    sys.exit(0)
+                elif topic:
+                    print(f'Server: {server}, Topic: {topic}')
                     sys.exit(0)
         except Exception:
             pass
 sys.exit(1)
-" 2>/dev/null; then
+" 2>/dev/null)
+
+    if [ -n "$NTFY_INFO" ]; then
         echo -e ""
         log_step "Phase 8.5 · ntfy Notifications"
-        log_info "ntfy is already configured in your Oculus settings — skipping setup"
+        log_info "ntfy is currently configured with: $NTFY_INFO"
+        read -rp "Keep this configuration? (Y/n): " REPLY
+        if [[ ! "$REPLY" =~ ^[Nn]$ ]]; then
+            log_info "Keeping current ntfy configuration."
+            return 0
+        fi
+        log_info "Launching ntfy setup wizard..."
+        if python3 "$SCRIPT_DIR/ntfy_setup.py"; then
+            log_success "ntfy setup complete"
+        else
+            log_warn "ntfy setup did not complete cleanly — you can re-run it later"
+        fi
         return 0
     fi
 
