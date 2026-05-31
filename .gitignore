@@ -93,15 +93,57 @@ venv.bak/
 # VS Code
 .vscode/
 
+# Editor and IDE settings
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Frontend / Node build directories
+**/node_modules/
+**/dist/
+**/dist-ssr/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
 # Internal documentation (not for public repo)
 INTERNAL.md
 docs/INTERNAL.md
 _internal_docs/
 
-# Project artifacts
+# Project artifacts and installer files
 output-*/
+output
+output.txt
+output.log
+out
+out.txt
+out.log
 session.json
 config.yaml
+config.yml
+config.yaml.bak
+config.yml.bak
+install.log
 logs/
 screenshots/
 findings.json
