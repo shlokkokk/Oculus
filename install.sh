@@ -202,7 +202,7 @@ APT_PACKAGES=(
     build-essential libpcap-dev
     nmap massdns wafw00f whatweb sqlmap nikto
     dnsutils chromium chromium-driver
-    xvfb libnss3
+    xvfb libnss3 seclists
 )
 
 log_info "Installing ${#APT_PACKAGES[@]} packages..."

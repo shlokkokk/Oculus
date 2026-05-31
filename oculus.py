@@ -239,10 +239,18 @@ class Oculus:
         self._ntfy_lock = threading.Lock()
         self._ntfy_sent = {}
         self._last_notified_results = {}
-        self._current_module = None
+        self._thread_local = threading.local()
         self.skipped_modules = []       # Modules that bailed (missing key/tool)
         self._skip_reasons = {}         # module_name -> reason string
         self._augment_path()
+
+    @property
+    def _current_module(self):
+        return getattr(self._thread_local, 'current_module', None)
+
+    @_current_module.setter
+    def _current_module(self, value):
+        self._thread_local.current_module = value
 
     def kill_all_active_processes(self):
         """Kill all child processes that are currently running"""

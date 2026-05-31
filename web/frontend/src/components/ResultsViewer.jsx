@@ -7,6 +7,41 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Helper to format/pretty-print JSON or JSON Lines (JSONL)
+function formatFileContent(name, text) {
+  if (!text) return '';
+  const isJson = name.endsWith('.json') || name.endsWith('.jsonl');
+  if (!isJson) return text;
+  
+  // Try parsing as a single JSON object
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch (e) {
+    // Try parsing as JSON lines (JSONL)
+    try {
+      const lines = text.split('\n');
+      const parsedLines = [];
+      let hasJsonLines = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          parsedLines.push(JSON.stringify(JSON.parse(trimmed), null, 2));
+          hasJsonLines = true;
+        } catch (err) {
+          parsedLines.push(trimmed);
+        }
+      }
+      if (hasJsonLines) {
+        return parsedLines.join('\n\n' + '━'.repeat(50) + '\n\n');
+      }
+    } catch (err) {
+      // Fallback to original text
+    }
+  }
+  return text;
+}
+
 // Inline component to render text with highlighted keywords
 function HighlightedText({ text, highlight }) {
   if (!highlight || !highlight.trim()) {
@@ -636,7 +671,7 @@ export default function ResultsViewer({ domain }) {
                 </div>
               ) : (
                 <div className="file-viewer" style={{ flex: 1 }}>
-                  <HighlightedText text={content.content} highlight={fileSearchQuery} />
+                  <HighlightedText text={formatFileContent(content.name, content.content)} highlight={fileSearchQuery} />
                 </div>
               )}
             </>
