@@ -144,6 +144,7 @@ class ScanEngine:
         self._log_lock = threading.Lock()
         self._start_time: float = 0
         self._modules_completed: list[str] = []
+        self._modules_skipped: list[str] = []
         self._subtools_completed: set[str] = set()
         self._modules_failed: list[str] = []
         self._current_module: Optional[str] = None
@@ -171,12 +172,15 @@ class ScanEngine:
         self._drain_queue()
         completed = list(self._modules_completed)
         failed = list(self._modules_failed)
+        skipped = list(self._modules_skipped)
         
         current_phase = None
         # Merge tracking from full spectrum scan
         if self._oculus and hasattr(self._oculus, "completed_modules"):
             # Use dict.fromkeys to keep order and deduplicate
             completed = list(dict.fromkeys(completed + self._oculus.completed_modules))
+        if self._oculus and hasattr(self._oculus, "skipped_modules"):
+            skipped = list(dict.fromkeys(skipped + self._oculus.skipped_modules))
         if self._oculus and hasattr(self._oculus, "failed_modules"):
             failed_names = [f[0] for f in self._oculus.failed_modules]
             failed = list(dict.fromkeys(failed + failed_names))
@@ -185,6 +189,7 @@ class ScanEngine:
 
         # Calculate granular, real-time micro-progress percentage
         completed_count = len(completed)
+        skipped_count = len(skipped)
         progress_percent = 0
         if self._total_modules > 0:
             fraction = 0.0
@@ -195,7 +200,7 @@ class ScanEngine:
                     completed_subtools = [st for st in subtools if st in self._subtools_completed]
                     fraction = len(completed_subtools) / len(subtools)
             
-            progress_percent = int(((completed_count + fraction) / self._total_modules) * 100)
+            progress_percent = int(((completed_count + skipped_count + fraction) / self._total_modules) * 100)
             progress_percent = min(progress_percent, 99)
             
         if self._state == "completed":
@@ -210,6 +215,7 @@ class ScanEngine:
             "elapsed_seconds": self.elapsed,
             "modules_completed": completed,
             "modules_failed": failed,
+            "modules_skipped": skipped,
             "total_modules": self._total_modules,
             "log_line_count": len(self._log_lines),
             "progress_percent": progress_percent,
@@ -512,6 +518,12 @@ class ScanEngine:
         jitter: bool = False,
         severity: str | None = None,
         resume: bool = True,
+        arjun_max_hosts: int | None = None,
+        ffuf_max_hosts: int | None = None,
+        nikto_max_hosts: int | None = None,
+        whatwaf_max_hosts: int | None = None,
+        tplmap_max_urls: int | None = None,
+        nomore403_max_urls: int | None = None,
     ) -> bool:
         """Start a scan in a background thread. Returns False if already running."""
         if self._state == "running":
@@ -525,6 +537,7 @@ class ScanEngine:
         with self._log_lock:
             self._log_lines = []
         self._modules_completed = []
+        self._modules_skipped = []
         self._subtools_completed = set()
         self._modules_failed = []
         self._current_module = None
@@ -534,7 +547,8 @@ class ScanEngine:
 
         self._thread = threading.Thread(
             target=self._run_scan,
-            args=(domain, mode, modules or [], threads, rate_limit, timeout, sqlmap_level, sqlmap_risk, sqlmap_threads, jitter, severity, resume),
+            args=(domain, mode, modules or [], threads, rate_limit, timeout, sqlmap_level, sqlmap_risk, sqlmap_threads, jitter, severity, resume,
+                  arjun_max_hosts, ffuf_max_hosts, nikto_max_hosts, whatwaf_max_hosts, tplmap_max_urls, nomore403_max_urls),
             daemon=True,
         )
         self._thread.start()
@@ -566,6 +580,12 @@ class ScanEngine:
         jitter: bool,
         severity: str | None,
         resume: bool,
+        arjun_max_hosts: int | None,
+        ffuf_max_hosts: int | None,
+        nikto_max_hosts: int | None,
+        whatwaf_max_hosts: int | None,
+        tplmap_max_urls: int | None,
+        nomore403_max_urls: int | None,
     ):
         """Background thread: configure Oculus and run the scan."""
         # Clean up any leftover duplicate scanner processes first
@@ -589,6 +609,20 @@ class ScanEngine:
         config["jitter"] = jitter
         if severity:
             config.setdefault("nuclei", {})["severity"] = severity
+        
+        # Apply custom tool limits (defaults to loaded config values if None)
+        if arjun_max_hosts is not None:
+            config.setdefault("arjun", {})["max_hosts"] = arjun_max_hosts
+        if ffuf_max_hosts is not None:
+            config.setdefault("ffuf", {})["max_hosts"] = ffuf_max_hosts
+        if nikto_max_hosts is not None:
+            config.setdefault("nikto", {})["max_hosts"] = nikto_max_hosts
+        if whatwaf_max_hosts is not None:
+            config.setdefault("whatwaf", {})["max_hosts"] = whatwaf_max_hosts
+        if tplmap_max_urls is not None:
+            config.setdefault("tplmap", {})["max_urls"] = tplmap_max_urls
+        if nomore403_max_urls is not None:
+            config.setdefault("nomore403", {})["max_urls"] = nomore403_max_urls
 
         # Redirect stdout to capture output
         original_stdout = sys.stdout
@@ -718,20 +752,52 @@ class ScanEngine:
                     oc._current_module = step_name
                     require_file_failed["value"] = False
                     try:
-                        step_func()
-                        oc.notify_scan_event(
-                            'module_complete',
-                            f"Oculus module done: {step_name}",
-                            f"{step_name} completed for {domain}",
-                            priority='default',
-                            tags=['white_check_mark'],
-                            dedupe_key=f"web_module_done:{mode}:{step_name}:{domain}",
-                        )
-                        if require_file_failed["value"]:
+                        ret_status = step_func()
+                        if ret_status == oc.MODULE_SKIPPED or require_file_failed["value"]:
+                            reason = oc._skip_reasons.get(step_name, "prerequisite file or tool missing")
+                            self._modules_skipped.append(step_name)
+                            self._log_queue.put(f"[SKIP] {step_name} — {reason}")
+                            oc.notify_scan_event(
+                                'module_skip',
+                                f"⏩ Oculus skipped: {step_name}",
+                                f"{step_name} skipped for {domain}: {reason}",
+                                priority='default',
+                                tags=['fast_forward'],
+                                dedupe_key=f"web_module_skip:{mode}:{step_name}:{domain}",
+                            )
+                        elif ret_status == oc.MODULE_FAILED:
                             self._modules_failed.append(step_name)
-                            self._log_queue.put(f"[ERROR] {step_name} failed: prerequisite file missing")
+                            self._log_queue.put(f"[ERROR] {step_name} failed: module reported failure")
+                            oc.notify_scan_event(
+                                'error',
+                                f"Oculus error: {step_name}",
+                                f"{step_name} failed for {domain}: module reported failure",
+                                priority='high',
+                                tags=['warning'],
+                                dedupe_key=f"web_module_error:{mode}:{step_name}:{domain}",
+                            )
                         else:
                             self._modules_completed.append(step_name)
+                            if ret_status == oc.MODULE_PARTIAL:
+                                self._log_queue.put(f"[~] {step_name} completed with partial results")
+                                oc.notify_scan_event(
+                                    'module_complete',
+                                    f"⚠️ Oculus partial: {step_name}",
+                                    f"{step_name} completed with partial results for {domain}",
+                                    priority='default',
+                                    tags=['warning'],
+                                    dedupe_key=f"web_module_done:{mode}:{step_name}:{domain}",
+                                )
+                            else:
+                                self._log_queue.put(f"[✔] {step_name} completed")
+                                oc.notify_scan_event(
+                                    'module_complete',
+                                    f"Oculus module done: {step_name}",
+                                    f"{step_name} completed for {domain}",
+                                    priority='default',
+                                    tags=['white_check_mark'],
+                                    dedupe_key=f"web_module_done:{mode}:{step_name}:{domain}",
+                                )
                     except KeyboardInterrupt:
                         self._state = "aborted"
                         return
@@ -775,6 +841,14 @@ class ScanEngine:
             self._log_queue.put(f"[FATAL] Scan engine error: {e}")
             self._state = "failed"
         finally:
+            if self._oculus:
+                if hasattr(self._oculus, "completed_modules"):
+                    self._modules_completed = list(dict.fromkeys(self._modules_completed + self._oculus.completed_modules))
+                if hasattr(self._oculus, "skipped_modules"):
+                    self._modules_skipped = list(dict.fromkeys(self._modules_skipped + self._oculus.skipped_modules))
+                if hasattr(self._oculus, "failed_modules"):
+                    failed_names = [f[0] for f in self._oculus.failed_modules]
+                    self._modules_failed = list(dict.fromkeys(self._modules_failed + failed_names))
             sys.stdout = original_stdout
             self._oculus = None
 

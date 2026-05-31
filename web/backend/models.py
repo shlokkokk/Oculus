@@ -35,6 +35,12 @@ class ScanRequest(BaseModel):
     jitter: bool = False
     severity: Optional[str] = None
     resume: bool = True
+    arjun_max_hosts: Optional[int] = Field(None, ge=1, le=999999)
+    ffuf_max_hosts: Optional[int] = Field(None, ge=1, le=999999)
+    nikto_max_hosts: Optional[int] = Field(None, ge=1, le=999999)
+    whatwaf_max_hosts: Optional[int] = Field(None, ge=1, le=999999)
+    tplmap_max_urls: Optional[int] = Field(None, ge=1, le=999999)
+    nomore403_max_urls: Optional[int] = Field(None, ge=1, le=999999)
 
 
 class ScanStatusResponse(BaseModel):
@@ -85,6 +91,12 @@ class ConfigResponse(BaseModel):
     naabu_rate: int = 2000
     ffuf_extensions: str = "php,html,js,json,txt,bak,old"
     ffuf_recursion_depth: int = 2
+    arjun_max_hosts: int = 999999
+    ffuf_max_hosts: int = 999999
+    nikto_max_hosts: int = 999999
+    whatwaf_max_hosts: int = 999999
+    tplmap_max_urls: int = 999999
+    nomore403_max_urls: int = 999999
 
 
 class FileEntry(BaseModel):

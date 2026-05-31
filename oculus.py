@@ -98,7 +98,10 @@ DEFAULT_CONFIG = {
         'extensions': 'php,html,js,json,txt,bak,old',
         'status_filter': '200,204,301,302,307,401,403',
         'recursion_depth': 2,
-        'max_hosts': 25,
+        'max_hosts': 999999,
+    },
+    'arjun': {
+        'max_hosts': 999999,
     },
     'notify': {
         'enabled': False,
@@ -128,28 +131,28 @@ DEFAULT_CONFIG = {
     'jaeles': {
         'concurrency': 20,
         'signatures': '',
-        'max_hosts': 100,
+        'max_hosts': 999999,
     },
     'nikto': {
         'tuning': '1234',
         'timeout': 600,
-        'max_hosts': 25,
+        'max_hosts': 999999,
     },
     'whatwaf': {
-        'max_hosts': 100,
+        'max_hosts': 999999,
     },
     'crlfuzz': {
         'concurrency': 25,
     },
     'internetdb': {
-        'max_ips': 1000,
+        'max_ips': 999999,
     },
     'tplmap': {
-        'max_urls': 300,
+        'max_urls': 999999,
     },
     'nomore403': {
-        'max_urls': 300,
-        'fallback_hosts': 25,
+        'max_urls': 999999,
+        'fallback_hosts': 999999,
     },
     'puredns': {
         'threads': 100,
@@ -214,6 +217,12 @@ class Colors:
 class Oculus:
     """Main reconnaissance framework class"""
 
+    # Module return status constants — used by _run_step to route correctly
+    MODULE_OK = 'ok'             # Ran successfully with results
+    MODULE_SKIPPED = 'skipped'   # Skipped (missing API key, missing tool, no input)
+    MODULE_PARTIAL = 'partial'   # Ran but with degraded/incomplete results
+    MODULE_FAILED = 'failed'     # Critical error during execution
+
     def __init__(self, config=None):
         self.domain = ""
         self.output_dir = ""
@@ -231,6 +240,8 @@ class Oculus:
         self._ntfy_sent = {}
         self._last_notified_results = {}
         self._current_module = None
+        self.skipped_modules = []       # Modules that bailed (missing key/tool)
+        self._skip_reasons = {}         # module_name -> reason string
         self._augment_path()
 
     def kill_all_active_processes(self):
@@ -905,33 +916,71 @@ class Oculus:
 
         self._last_notified_results = current
 
-    def _notify_module_done(self, module_name, result_key=None, marker_files=None):
-        detail = None
+    def _notify_module_done(self, module_name, result_key=None, marker_files=None, status=None):
+        """Send a detailed, status-aware completion notification.
+
+        status: 'ok' | 'partial' | 'skipped' | 'failed' | None (defaults to ok)
+        """
+        # --- Route skipped/failed to their own notifiers ---
+        if status == self.MODULE_SKIPPED:
+            reason = self._skip_reasons.get(module_name, 'not available')
+            self._notify_module_skipped(module_name, reason)
+            return
+        if status == self.MODULE_FAILED:
+            self._notify_module_error(module_name, 'module returned failure status')
+            return
+
+        # --- Build result detail from metrics ---
+        detail_parts = []
         if result_key and result_key in self.results:
             metric, summary = self._ntfy_metric(self.results[result_key])
-            if metric > 0:
-                detail = f"{result_key}={summary}"
-        if detail is None and marker_files:
-            for rel in marker_files:
+            detail_parts.append(f"{result_key}: {summary}")
+        if marker_files:
+            for rel in (marker_files or []):
                 if self.output_dir and Oculus._path_has_output(os.path.join(self.output_dir, rel)):
-                    detail = f"artifacts updated: {rel}"
+                    detail_parts.append(f"output: {rel}")
                     break
-        if detail is None:
-            detail = 'completed'
+        if not detail_parts:
+            detail_parts.append('completed (no new findings)')
+
+        detail = ' | '.join(detail_parts)
+        is_partial = (status == self.MODULE_PARTIAL)
+
+        if is_partial:
+            self._notify_ntfy(
+                'module_complete',
+                f"⚠️ Oculus partial: {module_name}",
+                f"[PARTIAL] {module_name} for {self.domain or 'target'}\n{detail}\nSome results may be incomplete.",
+                priority='default',
+                tags=['warning'],
+                dedupe_key=f"module_partial:{module_name}:{detail}",
+            )
+        else:
+            self._notify_ntfy(
+                'module_complete',
+                f"✅ Oculus done: {module_name}",
+                f"[DONE] {module_name} for {self.domain or 'target'}\n{detail}",
+                priority='default',
+                tags=['white_check_mark'],
+                dedupe_key=f"module_done:{module_name}:{detail}",
+            )
+
+    def _notify_module_skipped(self, module_name, reason='not available'):
+        """Send a skip notification — routed to 'skip' event (off by default)."""
         self._notify_ntfy(
-            'module_complete',
-            f"Oculus module done: {module_name}",
-            f"{module_name}: {detail}",
-            priority='default',
-            tags=['white_check_mark'],
-            dedupe_key=f"module_done:{module_name}:{detail}",
+            'skip',
+            f"⏩ Oculus skipped: {module_name}",
+            f"[SKIPPED] {module_name} for {self.domain or 'target'}\nReason: {reason}\nNo scan was performed for this module.",
+            priority='min',
+            tags=['fast_forward'],
+            dedupe_key=f"module_skipped:{module_name}:{reason}",
         )
 
     def _notify_module_start(self, module_name):
         self._notify_ntfy(
             'module_start',
-            f"Oculus module started: {module_name}",
-            f"{module_name} started for {self.domain or 'target'}",
+            f"▶️ Oculus started: {module_name}",
+            f"[STARTED] {module_name} for {self.domain or 'target'}",
             priority='low',
             tags=['play_arrow'],
             dedupe_key=f"module_start:{module_name}:{self.domain}",
@@ -940,8 +989,8 @@ class Oculus:
     def _notify_module_error(self, module_name, error_text):
         self._notify_ntfy(
             'error',
-            f"Oculus error: {module_name}",
-            f"{module_name} failed: {error_text}",
+            f"❌ Oculus error: {module_name}",
+            f"[FAILED] {module_name} for {self.domain or 'target'}\nError: {error_text}",
             priority='high',
             tags=['warning'],
             dedupe_key=f"module_error:{module_name}:{error_text}",
@@ -1208,6 +1257,8 @@ class Oculus:
         """Check if domain setup is complete, print error if not"""
         if not self.setup_complete:
             print(f"{Colors.RED}[!] Please set up domain first!{Colors.RESET}")
+            if self._current_module:
+                self._skip_reasons[self._current_module] = "Domain setup not completed"
             return False
         return True
 
@@ -1215,6 +1266,8 @@ class Oculus:
         """Check if a file exists and has content"""
         if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
             print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
+            if self._current_module:
+                self._skip_reasons[self._current_module] = f"Required file '{os.path.basename(filepath)}' not found: {msg}"
             return False
         return True
 
@@ -1223,6 +1276,8 @@ class Oculus:
         if not self.tools_status.get(tool_name, {}).get('installed'):
             cmd = self.tools_status.get(tool_name, {}).get('install_command', f'Install {tool_name}')
             print(f"{Colors.RED}[!] {tool_name} not installed! {cmd}{Colors.RESET}")
+            if self._current_module:
+                self._skip_reasons[self._current_module] = f"Tool '{tool_name}' not installed"
             return False
         return True
 
@@ -1343,7 +1398,7 @@ class Oculus:
     def run_subdomain_enumeration(self):
         """Run comprehensive subdomain enumeration with concurrent execution"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Subdomain Enumeration...{Colors.RESET}\n")
         sd = self.safe_domain()
         tasks = []
@@ -1362,7 +1417,8 @@ class Oculus:
 
         if not tasks:
             print(f"{Colors.RED}[!] No subdomain tools available!{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'Subdomain Enumeration'] = 'No subdomain tools installed (subfinder, amass, assetfinder)'
+            return self.MODULE_SKIPPED
 
         raw_files = []
         if self.config.get('parallel', True) and len(tasks) > 1:
@@ -1394,7 +1450,7 @@ class Oculus:
 
         if not raw_files:
             print(f"{Colors.RED}[!] All subdomain tools failed!{Colors.RESET}")
-            return
+            return self.MODULE_FAILED
 
         final_output = f"{self.output_dir}/subdomains.txt"
         raw_combined = f"{self.output_dir}/subdomains_raw.txt"
@@ -1420,21 +1476,23 @@ class Oculus:
                 print(f"  {Colors.DIM}... and {count-10} more{Colors.RESET}")
             self.save_session()
             self.suggest_next_steps('subdomains')
+            return self.MODULE_OK
         except Exception as e:
             print(f"{Colors.RED}[!] Error processing subdomains: {e}{Colors.RESET}")
             self.logger.error(f"Subdomain processing: {e}")
+            return self.MODULE_FAILED
 
     # CORE MODULE 2: DNS RESOLUTION
 
     def run_dns_resolution(self):
         """Run DNS resolution on found subdomains"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         subs_file = f"{self.output_dir}/subdomains.txt"
         if not self._require_file(subs_file, "No subdomains found! Run subdomain enumeration first."):
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('dnsx'):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting DNS Resolution...{Colors.RESET}\n")
         output_file = f"{self.output_dir}/dns_resolved.txt"
         dnsx_bin = self.get_tool('dnsx')
@@ -1445,25 +1503,28 @@ class Oculus:
             self.results['dns_resolved'] = count
             self.save_session()
             self.suggest_next_steps('dns_resolution')
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] DNS resolution failed{Colors.RESET}")
+            return self.MODULE_FAILED
 
     # CORE MODULE 3: ALIVE HOSTS CHECK (httpx JSON)
 
     def run_alive_hosts_check(self):
         """Check which hosts are alive using HTTPx and httprobe concurrently for redundancy"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         subs_file = f"{self.output_dir}/subdomains.txt"
         if not self._require_file(subs_file, "No subdomains found! Run subdomain enumeration first."):
-            return
+            return self.MODULE_SKIPPED
             
         has_httpx = self.tools_status.get('httpx', {}).get('installed')
         has_httprobe = self.tools_status.get('httprobe', {}).get('installed')
         
         if not has_httpx and not has_httprobe:
             print(f"{Colors.RED}[!] No alive checking tools available (need httpx or httprobe).{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'Alive Hosts Check'] = 'No alive checking tools installed (httpx, httprobe)'
+            return self.MODULE_SKIPPED
             
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Alive Hosts (Dual Engine)...{Colors.RESET}\n")
         
@@ -1534,13 +1595,14 @@ class Oculus:
         self.results['alive_hosts'] = count
         self.save_session()
         self.suggest_next_steps('alive_hosts')
+        return self.MODULE_OK
 
     # CORE MODULE 4: FAST PORT SCAN (Naabu + CDN detection + Nmap fallback)
 
     def run_fast_port_scan(self):
         """Run fast port scan with CDN detection and smart fallback"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         hosts_to_scan = [self._strip_protocol(h) for h in self._get_hosts(prefer_alive=True)]
         if not hosts_to_scan:
             hosts_to_scan = [self.domain]
@@ -1585,7 +1647,8 @@ class Oculus:
             print(f"{Colors.GREEN}[✔] No CDN detected{Colors.RESET}")
         if not use_naabu and not use_nmap:
             print(f"{Colors.RED}[!] No port scanning tools available!{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'Fast Port Scan'] = 'No port scanning tools installed (naabu, nmap)'
+            return self.MODULE_SKIPPED
 
         scanner = "Naabu" if use_naabu else "Nmap"
         output_file = f"{self.output_dir}/ports_fast.txt"
@@ -1628,8 +1691,10 @@ class Oculus:
                 self.logger.error(f"Port scan parse: {e}")
             self.save_session()
             self.suggest_next_steps('port_scan')
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] Fast port scan failed{Colors.RESET}")
+            return self.MODULE_FAILED
 
     # CORE MODULE 5: FULL PORT SCAN (Nmap -sV -sC with safe XML parsing)
 
@@ -1645,9 +1710,9 @@ class Oculus:
     def run_full_port_scan(self):
         """Comprehensive port scan with Nmap — fixed XML parsing"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('nmap'):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Full Port Scan with Nmap...{Colors.RESET}")
         print(f"{Colors.YELLOW}[!] This may take a while. Press Ctrl+C to skip.{Colors.RESET}\n")
         hosts = self._get_hosts(prefer_alive=True)
@@ -1708,8 +1773,10 @@ class Oculus:
             print(f"{Colors.GREEN}[✔] Found {count} services{Colors.RESET}")
             self.results['full_ports'] = count
             self.save_session()
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] Full port scan failed{Colors.RESET}")
+            return self.MODULE_FAILED
 
 
     # CORE MODULE 6: URL COLLECTION (CONCURRENT)
@@ -1726,7 +1793,7 @@ class Oculus:
     def run_url_collection(self):
         """Collect URLs from multiple sources concurrently"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting URL Collection...{Colors.RESET}\n")
         sd = self.safe_domain()
         tasks = []
@@ -1744,7 +1811,8 @@ class Oculus:
             tasks.append(('Waybackurls', f"{b} {sd}", out))
         if not tasks:
             print(f"{Colors.RED}[!] No URL collection tools available!{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'URL Collection'] = 'No URL collection tools installed (katana, gau, waybackurls)'
+            return self.MODULE_SKIPPED
 
         raw_files = []
         if self.config.get('parallel', True) and len(tasks) > 1:
@@ -1762,7 +1830,7 @@ class Oculus:
                     raw_files.append(r)
         if not raw_files:
             print(f"{Colors.RED}[!] No URL collection succeeded!{Colors.RESET}")
-            return
+            return self.MODULE_FAILED
 
         final_output = f"{self.output_dir}/urls.txt"
         try:
@@ -1793,9 +1861,11 @@ class Oculus:
             self.save_session()
             self.suggest_next_steps('urls')
             self.merge_all_urls()
+            return self.MODULE_OK
         except Exception as e:
             print(f"{Colors.RED}[!] Error processing URLs: {e}{Colors.RESET}")
             self.logger.error(f"URL processing: {e}")
+            return self.MODULE_FAILED
 
     # CORE MODULE 7: WAF DETECTION (CONCURRENT)
 
@@ -1827,12 +1897,13 @@ class Oculus:
     def run_waf_detection(self):
         """Detect WAFs with concurrent scanning"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         has_wafw00f = self.tools_status.get('wafw00f', {}).get('installed')
         whatwaf_bin = self.find_tool('whatwaf')
         if not has_wafw00f and not whatwaf_bin:
             print(f"{Colors.RED}[!] No WAF detection tools available (need wafw00f or WhatWaf).{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'WAF Detection'] = 'No WAF detection tools installed (wafw00f, whatwaf)'
+            return self.MODULE_SKIPPED
         hosts = self._get_hosts(prefer_alive=True)
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting WAF Detection ({len(hosts)} hosts)...{Colors.RESET}\n")
         results = []
@@ -1857,7 +1928,7 @@ class Oculus:
 
         # --- WhatWaf (deep WAF fingerprinting + bypass suggestions) ---
         if whatwaf_bin:
-            whatwaf_limit = self._config_limit('whatwaf', 'max_hosts', 100)
+            whatwaf_limit = self._config_limit('whatwaf', 'max_hosts', 999999)
             print(f"\n{Colors.CYAN}[*] Running WhatWaf detection on up to {whatwaf_limit} alive hosts...{Colors.RESET}")
             alive_file = f"{self.output_dir}/alive.txt"
             if os.path.exists(alive_file):
@@ -1889,18 +1960,19 @@ class Oculus:
         self.results['waf_total'] = len(hosts)
         self.save_session()
         self.suggest_next_steps('waf_detection')
+        return self.MODULE_OK
 
     # CORE MODULE 8: NUCLEI VULNERABILITY SCAN (FIXED — JSONL parsing)
 
     def run_vulnerability_scan(self):
         """Run Nuclei with JSONL output for reliable parsing"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file, "No alive hosts! Run alive hosts check first."):
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('nuclei'):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Vulnerability Scan...{Colors.RESET}\n")
         nuclei_bin = self.get_tool('nuclei')
         # Update templates
@@ -1965,56 +2037,57 @@ class Oculus:
             self.results['critical_vulns'] = len(vulns['critical'])
             self.results['high_vulns'] = len(vulns['high'])
             self.save_session()
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] Nuclei scan failed{Colors.RESET}")
+            return self.MODULE_FAILED
 
     # MODULE 10: PARAMETER DISCOVERY
 
     def run_parameter_discovery(self):
         """Discover parameters using ParamSpider + Arjun"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
+        has_ps = self.tools_status.get('paramspider', {}).get('installed')
+        has_arjun = self.tools_status.get('arjun', {}).get('installed')
+        if not has_ps and not has_arjun:
+            print(f"{Colors.RED}[!] No parameter discovery tools available (need ParamSpider or Arjun).{Colors.RESET}")
+            self._skip_reasons[self._current_module or 'Parameter Discovery'] = 'No parameter discovery tools installed (paramspider, arjun)'
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Parameter Discovery...{Colors.RESET}\n")
         param_dir = f"{self.output_dir}/parameters"
         Path(param_dir).mkdir(exist_ok=True)
         sd = self.safe_domain()
 
-        if self.tools_status.get('paramspider', {}).get('installed'):
+        if has_ps:
             print(f"{Colors.YELLOW}[*] Running ParamSpider...{Colors.RESET}")
             ps_bin = self.get_tool('paramspider', 'paramspider')
-            # Detect if it's a .py script or pip-installed binary
             if isinstance(ps_bin, str) and ps_bin.endswith('.py'):
                 cmd = f"python3 {ps_bin} -d {sd}"
             else:
                 cmd = f"{ps_bin} -d {sd}"
             
-            # ParamSpider v2+ auto-generates output file under results/domain.txt
-            ps_default = f"results/{self.domain}.txt"
-            # Ensure results directory exists in current working directory
+            # Ensure results directory exists in case ParamSpider outputs to results/ relative to cwd
             Path("results").mkdir(exist_ok=True)
             
             if self.run_command(cmd, timeout=500, label="paramspider"):
                 print(f"{Colors.GREEN}[✔] ParamSpider completed{Colors.RESET}")
                 
-                # Get the absolute directory where oculus.py resides
+                # Find and move the file from its default output location
                 script_dir = os.path.dirname(os.path.abspath(__file__))
-                
-                # Completely generic, dynamic path fallbacks
                 potential_paths = [
                     os.path.join(os.getcwd(), "results", f"{self.domain}.txt"),
                     os.path.join(script_dir, "results", f"{self.domain}.txt"),
                     os.path.join(script_dir, "web", "backend", "results", f"{self.domain}.txt")
                 ]
-                
                 found_ps_file = None
                 for path in potential_paths:
                     if os.path.exists(path):
                         found_ps_file = path
                         break
-                
                 if found_ps_file:
                     shutil.move(found_ps_file, f"{param_dir}/paramspider.txt")
-                    # Clean up the empty results folder if it was created
+                    # Clean up empty directory
                     res_dir = os.path.dirname(found_ps_file)
                     try:
                         if not os.listdir(res_dir):
@@ -2026,114 +2099,79 @@ class Oculus:
             else:
                 print(f"{Colors.RED}[!] ParamSpider failed{Colors.RESET}")
 
-        if self.tools_status.get('arjun', {}).get('installed'):
+        if has_arjun:
             urls_file = f"{self.output_dir}/urls.txt"
             if os.path.exists(urls_file):
                 print(f"{Colors.YELLOW}[*] Optimizing targets for Arjun active brute-force...{Colors.RESET}")
                 
-                # Load confirmed active hosts from alive.txt to discard dead/non-existent domains
                 alive_domains = set()
                 alive_file = f"{self.output_dir}/alive.txt"
                 if os.path.exists(alive_file):
                     try:
                         for line in self.read_file_lines(alive_file):
-                            # Extract hostname without protocol/port
-                            host = re.sub(r'^https?://', '', line.strip()).split(':')[0].split('/')[0]
-                            if host:
-                                alive_domains.add(host.lower())
-                    except Exception as e:
-                        self.logger.error(f"Failed to load alive hosts: {e}")
-
-                # Deduplicate massive Wayback lists down to unique target signatures (Base URL + Sorted Parameter Keys)
-                # This preserves query parameters for mandatory baseline analysis while collapsing redundant URLs
-                unique_endpoints = {}
-                try:
-                    for line in self.read_file_lines(urls_file):
-                        line = line.strip()
-                        if not line.startswith(('http://', 'https://')):
-                            continue
-                        
-                        # Skip standard binary files
-                        if line.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.ico', '.css', '.woff', '.woff2', '.ttf', '.svg')):
-                            continue
-                        
-                        # Parse the URL to check host state
-                        parsed = urllib.parse.urlparse(line)
-                        host = parsed.netloc.split(':')[0].lower()
-                        
-                        # SILENTLY DISCARD dead subdomains / Wayback typos
-                        def is_alive(h):
-                            if h in alive_domains:
-                                return True
-                            for ah in alive_domains:
-                                if h.endswith("." + ah) or ah.endswith("." + h):
-                                    return True
-                            return False
-                            
-                        if alive_domains and not is_alive(host):
-                            continue
-                        
-                        base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                        
-                        # Parse and sort the query parameter keys
-                        query_params = urllib.parse.parse_qsl(parsed.query)
-                        param_keys = sorted([kv[0] for kv in query_params])
-                        
-                        # Generate a unique signature key: (base_url, tuple_of_sorted_keys)
-                        sig = (base_url, tuple(param_keys))
-                        
-                        if sig not in unique_endpoints:
-                            # Keep the first full URL containing the query string for active context
-                            unique_endpoints[sig] = line
-                except Exception as e:
-                    self.logger.error(f"Arjun target prep error: {e}")
+                            domain_only = self._strip_protocol(line.strip())
+                            if domain_only:
+                                alive_domains.add(domain_only)
+                    except Exception:
+                        pass
                 
-                # Convert back to sorted list of representative URLs
-                optimized_targets = sorted(list(unique_endpoints.values()))
+                arjun_targets = set()
+                limit = self._config_limit('arjun', 'max_hosts', 999999)
                 
-                if optimized_targets:
-                    arjun_input = f"{param_dir}/arjun_targets.txt"
-                    with open(arjun_input, 'w', encoding='utf-8') as f:
-                        for target in optimized_targets:
-                            f.write(target + "\n")
+                for line in self.read_file_lines(urls_file):
+                    url = line.strip()
+                    if not url.startswith(('http://', 'https://')):
+                        continue
+                    try:
+                        parsed = urllib.parse.urlparse(url)
+                        host_only = self._strip_protocol(parsed.netloc)
+                        if self.domain not in host_only:
+                            continue
+                        if alive_domains and host_only not in alive_domains:
+                            continue
+                    except Exception:
+                        continue
                     
-                    print(f"{Colors.GREEN}[✔] Deduplicated targets from {self.count_file_lines(urls_file)} down to {len(optimized_targets)} unique endpoints!{Colors.RESET}")
-                    print(f"{Colors.YELLOW}[*] Running Arjun...{Colors.RESET}")
-                    arjun_bin = self.get_tool('arjun', 'arjun')
-                    output_arjun = f"{param_dir}/arjun.json"
+                    if '?' in url:
+                        base = url.split('?')[0]
+                        arjun_targets.add(base)
+                
+                if not arjun_targets and os.path.exists(alive_file):
+                    arjun_targets = set(self.read_file_lines(alive_file)[:limit])
+                
+                targets_list = list(arjun_targets)[:limit]
+                if targets_list:
+                    print(f"{Colors.CYAN}[*] Arjun: Scanning {len(targets_list)} targets...{Colors.RESET}")
+                    arjun_bin = self.get_tool('arjun')
+                    tmp_targets_file = f"{param_dir}/arjun_targets.txt"
+                    with open(tmp_targets_file, 'w', encoding='utf-8') as tf:
+                        for t in targets_list:
+                            tf.write(t + "\n")
                     
-                    # Detect if it's a .py script or pip-installed binary
-                    if isinstance(arjun_bin, str) and arjun_bin.endswith('.py'):
-                        arjun_prefix = f"python3 {arjun_bin}"
-                    else:
-                        arjun_prefix = arjun_bin
-                        
-                    # Calculate a dynamic, generous timeout based on target size (minimum 20 minutes, up to 10 hours)
-                    # Give Arjun generous time: minimum 3600s (1hr), scaled by target count
-                    dynamic_timeout = max(3600, len(optimized_targets) * 30)
-                    
-                    # Feed the complete deduplicated target list (-i) to Arjun
-                    cmd = f"{arjun_prefix} -i {arjun_input} -t 20 -oJ {output_arjun}"
-                    if self.run_command(cmd, timeout=dynamic_timeout, label="arjun"):
-                        print(f"{Colors.GREEN}[✔] Arjun completed{Colors.RESET}")
+                    cmd = f"{arjun_bin} -i {tmp_targets_file} -oJ {param_dir}/arjun.json --stable"
+                    self.run_command(cmd, timeout=900, label="arjun")
+                    try:
+                        os.remove(tmp_targets_file)
+                    except Exception:
+                        pass
                 else:
-                    print(f"{Colors.YELLOW}[*] No valid targets found for Arjun.{Colors.RESET}")
+                    print(f"{Colors.YELLOW}[*] No suitable targets found for Arjun.{Colors.RESET}")
+            else:
+                print(f"{Colors.YELLOW}[*] urls.txt missing — skipping Arjun active parameters scan.{Colors.RESET}")
 
-        # Merge results
-        final_output = f"{param_dir}/parameters_final.txt"
+        final_output = f"{param_dir}/params_combined.txt"
         found = set()
         ps_file = f"{param_dir}/paramspider.txt"
         if os.path.exists(ps_file):
             for line in self.read_file_lines(ps_file):
-                if "=" in line:
+                line = line.strip()
+                if line and '=' in line:
                     found.add(line)
         arjun_file = f"{param_dir}/arjun.json"
         if os.path.exists(arjun_file):
             try:
                 with open(arjun_file, 'r', encoding='utf-8') as af:
                     data = json.load(af)
-                
-                # Highly resilient parser helper to extract parameter names from any structure
                 def extract_params(struct):
                     extracted = []
                     if isinstance(struct, list):
@@ -2148,14 +2186,11 @@ class Oculus:
                         for k, v in struct.items():
                             extracted.append(str(k))
                     return extracted
-
-                # Process the root container based on its type
                 if isinstance(data, list):
                     for entry in data:
                         if isinstance(entry, dict):
                             url = entry.get("url")
                             if not url:
-                                # Try to discover any URL string
                                 for k, v in entry.items():
                                     if isinstance(v, str) and v.startswith("http"):
                                         url = v
@@ -2185,17 +2220,17 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] Parameters discovered: {len(found)}{Colors.RESET}")
         self.results['parameters'] = len(found)
         self.save_session()
-
+        return self.MODULE_OK
 
     # MODULE 11: JS ENDPOINT EXTRACTION
 
     def run_js_endpoint_extraction(self):
         """Extract endpoints and secrets from JS files"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         urls_file = f"{self.output_dir}/urls.txt"
         if not self._require_file(urls_file, "No URLs found! Run URL collection first."):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting JS Endpoint Extraction...{Colors.RESET}\n")
         js_dir = f"{self.output_dir}/js_endpoints"
         Path(js_dir).mkdir(exist_ok=True)
@@ -2209,13 +2244,13 @@ class Oculus:
                         js_count += 1
         except Exception as e:
             self.logger.error(f"JS filter: {e}")
-            return
+            return self.MODULE_FAILED
         print(f"{Colors.YELLOW}[*] Found {js_count} JavaScript files{Colors.RESET}")
         if js_count == 0:
             merged_cariddi = self._merge_cariddi_secrets_into_js()
             if merged_cariddi:
                 print(f"{Colors.GREEN}[✔] Merged {merged_cariddi} Cariddi secret findings into JS secrets{Colors.RESET}")
-            return
+            return self.MODULE_OK
         if self.tools_status.get('linkfinder', {}).get('installed'):
             print(f"{Colors.YELLOW}[*] Running LinkFinder...{Colors.RESET}")
             lf_bin = self.get_tool('linkfinder', "/opt/recontools/LinkFinder/linkfinder.py")
@@ -2302,6 +2337,7 @@ class Oculus:
 
         print(f"{Colors.GREEN}[✔] Found {self.count_file_lines(secrets_file)} potential secrets{Colors.RESET}")
         self.save_session()
+        return self.MODULE_OK
 
     # MODULE 12: DIRECTORY FUZZING
 
@@ -2321,9 +2357,9 @@ class Oculus:
     def run_directory_fuzzing(self):
         """Directory fuzzing using FFUF concurrently"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('ffuf'):
-            return
+            return self.MODULE_SKIPPED
         fuzz_dir = f"{self.output_dir}/fuzzing"
         Path(fuzz_dir).mkdir(exist_ok=True)
         hosts = self._get_hosts(prefer_alive=True)
@@ -2345,7 +2381,8 @@ class Oculus:
             wordlist = self.config.get('wordlists', {}).get('dirs_fallback') or ''
         if not wordlist or not os.path.exists(wordlist):
             print(f"{Colors.RED}[!] Wordlist not found! Tried primary and fallback paths.{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'Directory Fuzzing'] = 'Wordlist not found for directory fuzzing'
+            return self.MODULE_SKIPPED
 
         fuzzed_json_files = []
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -2395,18 +2432,19 @@ class Oculus:
         self.results['fuzz_findings'] = fuzz_count
 
         self.save_session()
+        return self.MODULE_OK
 
     # MODULE 13: API FUZZING
 
     def run_api_fuzzing(self):
         """API specific fuzzing using kr (Kiterunner)"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('kr'):
-            return
+            return self.MODULE_SKIPPED
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting API Fuzzing...{Colors.RESET}\n")
         api_dir = f"{self.output_dir}/api_fuzzing"
         Path(api_dir).mkdir(exist_ok=True)
@@ -2424,29 +2462,33 @@ class Oculus:
         if self.run_command(cmd, output_file=output, timeout=1200, label="kr"):
             print(f"{Colors.GREEN}[✔] API fuzzing completed{Colors.RESET}")
             self.results['api_fuzz'] = self.count_file_lines(output)
+            self.save_session()
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] kr scan failed or routes wordlist missing{Colors.RESET}")
             self.results['api_fuzz'] = 0
-        self.save_session()
+            self.save_session()
+            return self.MODULE_FAILED
 
     # MODULE 14: SUBDOMAIN TAKEOVER CHECK
 
     def run_subdomain_takeover_check(self):
         """Check for subdomain takeover using subzy"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         subs_file = f"{self.output_dir}/subdomains.txt"
         if not self._require_file(subs_file):
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('subzy'):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Subdomain Takeovers...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/takeover"
         Path(out_dir).mkdir(exist_ok=True)
         subzy_bin = self.get_tool('subzy')
         out_file = f"{out_dir}/takeovers.txt"
         cmd = f"{subzy_bin} run --targets {subs_file} --hide_fails"
-        if self.run_command(cmd, output_file=out_file, timeout=300, label="subzy"):
+        subzy_success = self.run_command(cmd, output_file=out_file, timeout=300, label="subzy")
+        if subzy_success:
             lines = self.count_file_lines(out_file)
             print(f"{Colors.GREEN}[✔] Subzy check completed — {lines} potential issues{Colors.RESET}")
         else:
@@ -2483,17 +2525,18 @@ class Oculus:
         if takeovers:
             print(f"{Colors.YELLOW}[!] Found {len(takeovers)} external CNAMEs pointing outside domain!{Colors.RESET}")
         self.save_session()
+        return self.MODULE_OK if subzy_success else self.MODULE_PARTIAL
 
     # MODULE 15: ADVANCED URL ENUMERATION (hakrawler)
 
     def run_advanced_url_enum(self):
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('hakrawler'):
-            return
+            return self.MODULE_SKIPPED
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Advanced URL Enum (Hakrawler)...{Colors.RESET}\n")
         out_file = f"{self.output_dir}/hakrawler.txt"
         hakrawler_bin = self.get_tool('hakrawler')
@@ -2501,8 +2544,10 @@ class Oculus:
         if self.run_command(cmd, output_file=out_file, timeout=600, stream=False, label="hakrawler"):
             print(f"{Colors.GREEN}[✔] Hakrawler completed: {self.count_file_lines(out_file)} URLs{Colors.RESET}")
             self.merge_all_urls()
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] Hakrawler failed{Colors.RESET}")
+            return self.MODULE_FAILED
 
     def merge_all_urls(self):
         """Merge all URL sources into urls_final.txt"""
@@ -2651,7 +2696,7 @@ class Oculus:
 
     def run_screenshot_capture(self):
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         alive_file = f"{self.output_dir}/alive.txt"
         has_alive = os.path.exists(alive_file) and os.path.getsize(alive_file) > 0
         if not has_alive:
@@ -2669,7 +2714,8 @@ class Oculus:
                     targets.add(f"http://{h}")
             if not targets:
                 print(f"{Colors.RED}[!] No hosts available for screenshot capture{Colors.RESET}")
-                return
+                self._skip_reasons[self._current_module or 'Screenshots'] = 'No hosts available for screenshot capture'
+                return self.MODULE_SKIPPED
             with open(fallback_file, 'w', encoding='utf-8') as f:
                 for t in sorted(targets):
                     f.write(t + "\n")
@@ -2677,7 +2723,7 @@ class Oculus:
             print(f"{Colors.YELLOW}[*] alive.txt missing; using fallback targets from discovered hosts/domain{Colors.RESET}")
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Capturing Screenshots...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/screenshots"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
 
         engines = [
             ("gowitness", self._capture_with_gowitness),
@@ -2707,19 +2753,25 @@ class Oculus:
         all_imgs = self._screenshot_images(out_dir)
         self.results['screenshots'] = len(all_imgs)
         self.results['screenshot_engines'] = engine_counts
+        self.save_session()
         if all_imgs:
             print(f"{Colors.GREEN}[✔] Captured {len(all_imgs)} total screenshots in {out_dir}{Colors.RESET}")
+            return self.MODULE_OK
         elif not attempted_any:
             print(f"{Colors.RED}[!] No screenshot engines were available{Colors.RESET}")
+            self._skip_reasons[self._current_module or 'Screenshots'] = 'No screenshot tools installed (gowitness, eyewitness)'
+            return self.MODULE_SKIPPED
         else:
             print(f"{Colors.YELLOW}[!] Screenshot engines ran, but no images were found{Colors.RESET}")
-        self.save_session()
+            return self.MODULE_PARTIAL
 
     # MODULE 17: DNS BRUTEFORCE
 
     def run_dns_bruteforce(self):
-        if not self._require_setup() or not self._require_tool('massdns'):
-            return
+        if not self._require_setup():
+            return self.MODULE_SKIPPED
+        if not self._require_tool('massdns'):
+            return self.MODULE_SKIPPED
         resolvers = self.config.get('wordlists', {}).get('resolvers')
         if not resolvers or not os.path.exists(resolvers):
             resolvers = self.config.get('wordlists', {}).get('resolvers_fallback', '/usr/share/massdns/resolvers.txt')
@@ -2798,10 +2850,10 @@ class Oculus:
             except Exception as e:
                 print(f"{Colors.RED}[!] Failed to generate fallback resolvers: {e}{Colors.RESET}")
         if not self._require_file(resolvers, "Resolvers list not found!"):
-            return
+            return self.MODULE_SKIPPED
         wordlist = self.config.get('wordlists', {}).get('dns')
         if not self._require_file(wordlist, "DNS wordlist not found!"):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting DNS Bruteforce...{Colors.RESET}\n")
 
         # --- alterx smart wordlist generation ---
@@ -2825,7 +2877,7 @@ class Oculus:
             print(f"{Colors.YELLOW}[*] Generated FQDN list from wordlist{Colors.RESET}")
         except Exception as e:
             print(f"{Colors.RED}[!] Failed to generate FQDNs: {e}{Colors.RESET}")
-            return
+            return self.MODULE_FAILED
         out = f"{self.output_dir}/massdns_out.txt"
         cmd = f"{self.get_tool('massdns')} -r {resolvers} -t A -o S -w {out} {fqdn_file}"
         massdns_success = self.run_command(cmd, timeout=1200, label="massdns")
@@ -2889,17 +2941,20 @@ class Oculus:
                 print(f"{Colors.RED}[!] PureDNS bruteforce failed{Colors.RESET}")
 
         self.save_session()
+        return self.MODULE_OK
 
     # MODULE 18: GF FILTERS
 
     def run_gf_filters(self):
-        if not self._require_setup() or not self._require_tool('gf'):
-            return
+        if not self._require_setup():
+            return self.MODULE_SKIPPED
+        if not self._require_tool('gf'):
+            return self.MODULE_SKIPPED
         urls = f"{self.output_dir}/urls_final.txt"
         if not os.path.exists(urls):
             urls = f"{self.output_dir}/urls.txt"
         if not self._require_file(urls, "No URLs found!"):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Running GF Filters...{Colors.RESET}\n")
         gf_dir = f"{self.output_dir}/gf"
         Path(gf_dir).mkdir(exist_ok=True)
@@ -2921,15 +2976,18 @@ class Oculus:
         self.results['gf_filters'] = res
         print(f"{Colors.GREEN}[✔] GF filters completed{Colors.RESET}")
         self.save_session()
+        return self.MODULE_OK
 
     # MODULE 19: TECH SCAN (WhatWeb)
 
     def run_tech_scan(self):
-        if not self._require_setup() or not self._require_tool('whatweb'):
-            return
+        if not self._require_setup():
+            return self.MODULE_SKIPPED
+        if not self._require_tool('whatweb'):
+            return self.MODULE_SKIPPED
         alive = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Tech Scan...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/tech_scan"
         Path(out_dir).mkdir(exist_ok=True)
@@ -2946,9 +3004,13 @@ class Oculus:
                 except Exception:
                     pass
             self.results['tech_scan'] = tech_count
+            self.save_session()
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] WhatWeb scan failed{Colors.RESET}")
             self.results['tech_scan'] = 0
+            self.save_session()
+            return self.MODULE_FAILED
 
     # MODULE 20: SQLI SCAN (SQLMap)
 
@@ -3000,16 +3062,19 @@ class Oculus:
         return len(filtered), len(all_urls)
 
     def run_sqlmap_scan(self):
-        if not self._require_setup() or not self._require_tool('sqlmap'):
-            return
+        if not self._require_setup():
+            return self.MODULE_SKIPPED
+        if not self._require_tool('sqlmap'):
+            return self.MODULE_SKIPPED
         gf_sqli = f"{self.output_dir}/gf/sqli.txt"
         if not self._require_file(gf_sqli, "No SQLi parameterized URLs found by GF!"):
-            return
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting SQLMap Scan...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/sqlmap"
         Path(out_dir).mkdir(exist_ok=True)
 
         # Pre-filter to alive hosts — dead Wayback subdomains waste all scan time
+        filtered_sqli = f"{out_dir}/sqli_alive.txt"
         filtered_sqli = f"{out_dir}/sqli_alive.txt"
         kept, total = self._filter_to_alive_hosts(gf_sqli, filtered_sqli)
         print(f"{Colors.GREEN}[✔] Pre-filter: {kept}/{total} SQLi URLs are on alive hosts{Colors.RESET}")
@@ -3041,7 +3106,8 @@ class Oculus:
             f"--tamper=space2comment,between,charunicodeencode "
             f"--output-dir={out_dir}"
         )
-        if self.run_command(cmd, timeout=7200, label="sqlmap"):
+        sqlmap_success = self.run_command(cmd, timeout=7200, label="sqlmap")
+        if sqlmap_success:
             print(f"{Colors.GREEN}[✔] SQLMap scan completed{Colors.RESET}")
         else:
             print(f"{Colors.RED}[!] SQLMap scan failed{Colors.RESET}")
@@ -3051,19 +3117,23 @@ class Oculus:
                 if Oculus._path_has_output(str(log)):
                     sqlmap_vulns += 1
         self.results['sqlmap'] = sqlmap_vulns
+        self.save_session()
+        return self.MODULE_OK if sqlmap_success else self.MODULE_FAILED
 
 
     # MODULE 21: XSS SCAN (Dalfox)
 
     def run_xss_scan(self):
         """Automated XSS scanning using Dalfox — pre-filtered to alive hosts"""
-        if not self._require_setup() or not self._require_tool('dalfox'):
-            return
+        if not self._require_setup():
+            return self.MODULE_SKIPPED
+        if not self._require_tool('dalfox'):
+            return self.MODULE_SKIPPED
         gf_xss = f"{self.output_dir}/gf/xss.txt"
         if not os.path.exists(gf_xss):
             self.run_gf_filters()
         if not self._require_file(gf_xss, "No XSS parameterized URLs found! Run GF filters first."):
-            return
+            return self.MODULE_SKIPPED
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Automated XSS Scan (Dalfox)...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/xss_findings"
@@ -3102,8 +3172,11 @@ class Oculus:
             print(f"{Colors.GREEN}[✔] Dalfox XSS scan completed — {count} potential findings{Colors.RESET}")
             self.results['xss_findings'] = count
             self.save_session()
+            return self.MODULE_OK
         else:
             print(f"{Colors.RED}[!] Dalfox scan failed{Colors.RESET}")
+            self.save_session()
+            return self.MODULE_FAILED
 
     # MODULE 22: CORS SCANNER
 
@@ -3144,7 +3217,7 @@ class Oculus:
     def run_cors_scan(self):
         """Multi-vector CORS misconfiguration scanner"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         hosts = self._get_hosts(prefer_alive=True)
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting CORS Scan ({len(hosts)} targets, 3 origin vectors)...{Colors.RESET}\n")
         all_results = []
@@ -3169,13 +3242,16 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] CORS Scan completed — {vuln_count} VULN, {warn_count} WARN, {len(all_results)} total findings{Colors.RESET}")
         self.results['cors_findings'] = vuln_count
         self.save_session()
+        return self.MODULE_OK
 
     # MODULE 23: HTTP SMUGGLING
 
     def run_http_smuggling(self):
         """Smuggler integration for HTTP request smuggling"""
-        if not self._require_setup() or not self._require_tool('smuggler'):
-            return
+        if not self._require_setup():
+            return self.MODULE_SKIPPED
+        if not self._require_tool('smuggler'):
+            return self.MODULE_SKIPPED
         hosts = self._get_hosts(prefer_alive=True)
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting HTTP Smuggling Scan ({len(hosts)} targets)...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/smuggling"
@@ -3203,13 +3279,14 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] Smuggler scan completed — {len(all_results)} results across {len(hosts)} hosts{Colors.RESET}")
         self.results['smuggler'] = len(all_results)
         self.save_session()
+        return self.MODULE_OK
 
     # MODULE 24: ASN DISCOVERY
 
     def run_asn_discovery(self):
         """Discover ASN and IP ranges using asnmap, with a high-fidelity Python WHOIS fallback"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         
         # Check and attempt to verify/install asnmap, but don't hard abort if it's missing
         has_asnmap = self._require_tool('asnmap')
@@ -3280,9 +3357,13 @@ class Oculus:
             self.results['asn_ranges'] = count
             if count > 0:
                 print(f"{Colors.YELLOW}[!] Use these ranges in Nmap for full attack surface scanning{Colors.RESET}")
+            self.save_session()
+            return self.MODULE_OK
         else:
             self.results['asn_ranges'] = 0
             print(f"{Colors.RED}[!] ASN Discovery failed{Colors.RESET}")
+            self.save_session()
+            return self.MODULE_FAILED
 
     # ORCHESTRATION: FULL AND DEEP RECON
 
@@ -3303,16 +3384,15 @@ class Oculus:
             f"{baseword}-prod", f"{baseword}-assets", f"{baseword}-cdn",
             f"{baseword}-backup", f"{baseword}-logs", f"{baseword}-data",
         ]
-        s3_found, gcp_found, azure_found = [], [], []
         # urllib.request imported at top level
         def check_s3(name):
             url = f"https://{name}.s3.amazonaws.com"
             try:
                 with urllib.request.urlopen(url, timeout=5) as r:
-                    return ("s3", f"[OPEN] {url}")
+                    return ("s3", "open", f"[OPEN] {url}")
             except urllib.error.HTTPError as e:
                 if e.code == 403:
-                    return ("s3", f"[EXISTS/PRIVATE] {url}")
+                    return ("s3", "private", f"[EXISTS/PRIVATE] {url}")
             except Exception:
                 pass
             return None
@@ -3320,10 +3400,10 @@ class Oculus:
             url = f"https://storage.googleapis.com/{name}"
             try:
                 with urllib.request.urlopen(url, timeout=5) as r:
-                    return ("gcp", f"[OPEN] {url}")
+                    return ("gcp", "open", f"[OPEN] {url}")
             except urllib.error.HTTPError as e:
                 if e.code == 403:
-                    return ("gcp", f"[EXISTS/PRIVATE] {url}")
+                    return ("gcp", "private", f"[EXISTS/PRIVATE] {url}")
             except Exception:
                 pass
             return None
@@ -3331,40 +3411,64 @@ class Oculus:
             url = f"https://{name}.blob.core.windows.net"
             try:
                 with urllib.request.urlopen(url, timeout=5) as r:
-                    return ("azure", f"[OPEN] {url}")
+                    return ("azure", "open", f"[OPEN] {url}")
             except urllib.error.HTTPError as e:
                 if e.code in (400, 403, 404):
-                    return ("azure", f"[EXISTS] {url}")
+                    return ("azure", "private", f"[EXISTS] {url}")
             except Exception:
                 pass
             return None
         all_checks = [(check_s3, p) for p in perms] + [(check_gcp, p) for p in perms] + [(check_azure, p) for p in perms]
-        found_buckets = []
+        open_buckets = []
+        private_buckets = []
         with ThreadPoolExecutor(max_workers=15) as ex:
             futs = {ex.submit(fn, p): (fn.__name__, p) for fn, p in all_checks}
             for fut in as_completed(futs):
                 res = fut.result()
                 if res:
-                    found_buckets.append(res[1])
-                    print(f"  {Colors.YELLOW}{res[1]}{Colors.RESET}")
-                    
+                    provider, access, label = res
+                    if access == "open":
+                        open_buckets.append(label)
+                        print(f"  {Colors.RED}🔓 {label}{Colors.RESET}")
+                    else:
+                        private_buckets.append(label)
+                        print(f"  {Colors.DIM}🔒 {label}{Colors.RESET}")
+
+        # Write open buckets (actual findings) to canonical output file
         with open(f"{out_dir}/s3_buckets.txt", 'w', encoding='utf-8') as f:
-            for b in found_buckets:
+            for b in open_buckets:
                 f.write(b + '\n')
-        print(f"{Colors.GREEN}[✔] Cloud Discovery completed — found {len(found_buckets)} buckets{Colors.RESET}")
-        self.results['cloud_assets'] = len(found_buckets)
+        # Write private/exists-only to separate informational file
+        if private_buckets:
+            with open(f"{out_dir}/cloud_exists_private.txt", 'w', encoding='utf-8') as f:
+                for b in private_buckets:
+                    f.write(b + '\n')
+
+        self.results['cloud_assets'] = len(open_buckets)
+        self.results['cloud_assets_private'] = len(private_buckets)
         self.save_session()
+
+        if open_buckets:
+            print(f"{Colors.GREEN}[✔] Cloud Discovery — {len(open_buckets)} OPEN buckets, {len(private_buckets)} private/exists{Colors.RESET}")
+            return self.MODULE_OK
+        elif private_buckets:
+            print(f"{Colors.YELLOW}[~] Cloud Discovery — 0 open, {len(private_buckets)} private/exists (informational only){Colors.RESET}")
+            return self.MODULE_PARTIAL
+        else:
+            print(f"{Colors.GREEN}[✔] Cloud Discovery — no cloud assets found{Colors.RESET}")
+            return self.MODULE_OK
 
     # MODULE 26: GITHUB DORKING
 
     def run_github_dorking(self):
         """Search GitHub for leaked secrets related to domain"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         gh_token = self.config.get('api_keys', {}).get('github', '')
         if not gh_token:
-            print(f"{Colors.RED}[!] GitHub API token not found in config.yaml!{Colors.RESET}")
-            return
+            print(f"{Colors.YELLOW}[!] GitHub API token not found in config.yaml — skipping GitHub Dorking{Colors.RESET}")
+            self._skip_reasons[self._current_module or 'GitHub Dorking'] = 'GitHub API token not configured in config.yaml'
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting GitHub Secret Scanning...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/github"
 
@@ -3387,20 +3491,27 @@ class Oculus:
                         print(f"  {Colors.YELLOW}• {repo}/{file}{Colors.RESET}")
                 print(f"{Colors.GREEN}[✔] Found {len(items)} potentially interesting files on GitHub{Colors.RESET}")
                 self.results['github_secrets'] = len(items)
+                self.save_session()
+                return self.MODULE_OK
         except urllib.error.HTTPError as e:
             if e.code == 403:
                 print(f"{Colors.RED}[!] GitHub API Rate limit exceeded or invalid token.{Colors.RESET}")
             else:
                 print(f"{Colors.RED}[!] GitHub API Error: {e}{Colors.RESET}")
+            return self.MODULE_FAILED
         except Exception as e:
             print(f"{Colors.RED}[!] GitHub Dorking failed: {e}{Colors.RESET}")
+            return self.MODULE_FAILED
 
     # MODULE 27: OSINT HARVESTING (theHarvester)
 
     def run_osint_harvesting(self):
         """Gather emails and OSINT using theHarvester"""
-        if not self._require_setup() or not self._require_tool('theharvester'):
+        if not self._require_setup():
             return
+        if not self._require_tool('theharvester'):
+            self._skip_reasons[self._current_module or 'OSINT Harvesting'] = 'theHarvester not installed'
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting OSINT Harvesting...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/osint"
         Path(out_dir).mkdir(exist_ok=True)
@@ -3419,6 +3530,7 @@ class Oculus:
         else:
             print(f"{Colors.RED}[!] OSINT Harvesting failed{Colors.RESET}")
             self.results['osint_findings'] = 0
+        self.save_session()
 
     # MODULE 28: SHODAN INTEGRATION
 
@@ -3428,8 +3540,9 @@ class Oculus:
             return
         shodan_key = self.config.get('api_keys', {}).get('shodan', '')
         if not shodan_key:
-            print(f"{Colors.RED}[!] Shodan API key not found in config.yaml!{Colors.RESET}")
-            return
+            print(f"{Colors.YELLOW}[!] Shodan API key not found in config.yaml — skipping Shodan Recon{Colors.RESET}")
+            self._skip_reasons[self._current_module or 'Shodan Recon'] = 'Shodan API key not configured in config.yaml'
+            return self.MODULE_SKIPPED
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Passive Shodan Recon...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/shodan"
         Path(out_dir).mkdir(exist_ok=True)
@@ -3449,6 +3562,7 @@ class Oculus:
                         print(f"  {Colors.YELLOW}• {entry}{Colors.RESET}")
                 print(f"{Colors.GREEN}[✔] Found {len(matches)} open ports via Shodan{Colors.RESET}")
                 self.results['shodan_results'] = len(matches)
+                self.save_session()
         except Exception as e:
             print(f"{Colors.RED}[!] Shodan API Error: {e}{Colors.RESET}")
 
@@ -3458,12 +3572,12 @@ class Oculus:
     def run_open_redirect_scan(self):
         """Scan for open redirects using GF filtered URLs — pre-filtered to alive hosts"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         gf_redirect = f"{self.output_dir}/gf/redirect.txt"
         if not os.path.exists(gf_redirect):
             self.run_gf_filters()
         if not self._require_file(gf_redirect, "No redirect parameterized URLs found! Run GF filters first."):
-            return
+            return self.MODULE_SKIPPED
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting Open Redirect Scan...{Colors.RESET}\n")
         out_dir = f"{self.output_dir}/redirects"
@@ -3526,6 +3640,7 @@ class Oculus:
         print(f"{Colors.GREEN}[✔] Open Redirect Scan completed — {len(found)} vulnerabilities found{Colors.RESET}")
         self.results['open_redirects'] = len(found)
         self.save_session()
+        return self.MODULE_OK
 
     def _detect_existing_data(self, key_map):
         """Check self.results for existing scan data. Returns dict of label->value for keys found."""
@@ -3709,17 +3824,18 @@ class Oculus:
     def run_cariddi_scan(self):
         """Module 30: Cariddi — crawl URLs for secrets, endpoints, juicy extensions."""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         cariddi_bin = self.get_tool('cariddi')
         if not cariddi_bin:
             print(f"{Colors.RED}[!] cariddi not installed{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'Cariddi Scan'] = 'cariddi not installed'
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/cariddi"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
         
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
-            return
+            return self.MODULE_SKIPPED
         
         out_txt = f"{out_dir}/cariddi_results.txt"
         out_html = f"{out_dir}/cariddi_report.html"
@@ -3733,21 +3849,23 @@ class Oculus:
         self.results['cariddi_findings'] = count
         self.save_session()
         print(f"{Colors.GREEN}[✔] Cariddi: {count} findings{Colors.RESET}")
+        return self.MODULE_OK
 
     def run_jaeles_scan(self):
         """Module 31: Jaeles — signature-based vulnerability scanner."""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         jaeles_bin = self.get_tool('jaeles')
         if not jaeles_bin:
             print(f"{Colors.RED}[!] jaeles not installed{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'Jaeles Scan'] = 'jaeles not installed'
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/jaeles"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
         
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
-            return
+            return self.MODULE_SKIPPED
         
         # Reload/sync signatures first
         self.run_command(f"{jaeles_bin} config reload --signDir ~/.jaeles", timeout=120, label="jaeles:reload")
@@ -3758,27 +3876,31 @@ class Oculus:
         
         hosts = self.read_file_lines(alive_file)
         max_hosts = self.config.get('jaeles', {}).get('max_hosts', 100)
+        jaeles_success = True
         for host in hosts[:max_hosts]:
             cmd = (f"{jaeles_bin} scan -u {shlex.quote(host)} "
                    f"{sig_flag} -c {conc} "
                    f"-o {out_dir} --no-output-url -v")
-            self.run_command(cmd, timeout=600, label=f"jaeles:{host[:40]}")
+            if not self.run_command(cmd, timeout=600, label=f"jaeles:{host[:40]}"):
+                jaeles_success = False
         
         results_count = sum(1 for f in Path(out_dir).rglob('*.txt') if f.stat().st_size > 0)
         self.results['jaeles_findings'] = results_count
         self.save_session()
         print(f"{Colors.GREEN}[✔] Jaeles: {results_count} findings{Colors.RESET}")
+        return self.MODULE_OK if jaeles_success else self.MODULE_FAILED
 
     def run_tplmap_scan(self):
         """Module 32: Tplmap — Server-Side Template Injection scanner (safe detection)."""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         tplmap_path = self.find_tool('tplmap')
         if not tplmap_path:
             print(f"{Colors.RED}[!] tplmap not installed{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'Tplmap Scan'] = 'tplmap not installed'
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/tplmap"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
         
         ssti_candidates = []
         for gf_pattern in ['ssrf', 'rce', 'ssti']:
@@ -3793,74 +3915,80 @@ class Oculus:
                     if any(p in url.lower() for p in ['template', 'render', 'view', 'page', 'name=', 'input=']):
                         ssti_candidates.append(url)
         
-        max_urls = self._config_limit('tplmap', 'max_urls', 300)
+        max_urls = self._config_limit('tplmap', 'max_urls', 999999)
         ssti_candidates = list(set(ssti_candidates))[:max_urls]
         if not ssti_candidates:
             print(f"{Colors.YELLOW}[!] No SSTI candidate URLs found.{Colors.RESET}")
             self.results['ssti_findings'] = 0
             self.save_session()
-            return
+            return self.MODULE_OK
         
         findings = 0
         out_file = f"{out_dir}/tplmap_results.txt"
         open(out_file, 'w', encoding='utf-8').close()
+        tplmap_success = True
         for url in ssti_candidates:
             # Safe detection only - no --os-cmd execution to avoid target bans
             temp_log = f"{out_dir}/tplmap_temp.log"
             cmd = f"python3 {tplmap_path} -u {shlex.quote(url)} --level 5"
-            self.run_command(cmd, output_file=temp_log, timeout=120, label=f"tplmap:{url[:40]}")
-            if os.path.exists(temp_log):
-                try:
-                    with open(temp_log, 'r', encoding='utf-8', errors='ignore') as lf:
-                        content = lf.read()
-                    if any(marker in content for marker in ["vulnerable", "[+]", "Engine:", "Injection:"]):
-                        with open(out_file, 'a', encoding='utf-8') as f:
-                            f.write(f"[DETECTED] {url}\n")
-                        findings += 1
-                except Exception as e:
-                    self.logger.error(f"Error parsing tplmap log: {e}")
-                try:
-                    os.remove(temp_log)
-                except OSError:
-                    pass
+            if self.run_command(cmd, output_file=temp_log, timeout=120, label=f"tplmap:{url[:40]}"):
+                if os.path.exists(temp_log):
+                    try:
+                        with open(temp_log, 'r', encoding='utf-8', errors='ignore') as lf:
+                            content = lf.read()
+                        if any(marker in content for marker in ["vulnerable", "[+]", "Engine:", "Injection"]):
+                            with open(out_file, 'a', encoding='utf-8') as f:
+                                f.write(f"[DETECTED] {url}\n")
+                            findings += 1
+                    except Exception as e:
+                        self.logger.error(f"Error parsing tplmap log: {e}")
+                    try:
+                        os.remove(temp_log)
+                    except OSError:
+                        pass
+            else:
+                tplmap_success = False
         
         self.results['ssti_findings'] = findings
         self.save_session()
         print(f"{Colors.GREEN}[✔] Tplmap: tested {len(ssti_candidates)} URLs, found {findings} vulnerabilities{Colors.RESET}")
+        return self.MODULE_OK if tplmap_success else self.MODULE_PARTIAL
 
     def run_crlfuzz_scan(self):
         """Module 33: CRLFuzz — CRLF injection vulnerability scanner."""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         crlfuzz_bin = self.get_tool('crlfuzz')
         if not crlfuzz_bin:
             print(f"{Colors.RED}[!] crlfuzz not installed{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'CRLFuzz Scan'] = 'crlfuzz not installed'
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/crlfuzz"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
         
         alive_file = f"{self.output_dir}/alive.txt"
         if not self._require_file(alive_file):
-            return
+            return self.MODULE_SKIPPED
         
         conc = self.config.get('crlfuzz', {}).get('concurrency', 25)
         out_file = f"{out_dir}/crlfuzz_results.txt"
         
         cmd = (f"{crlfuzz_bin} -l {alive_file} "
                f"-c {conc} -s -o {out_file}")
-        self.run_command(cmd, timeout=1200, label="crlfuzz")
+        crlfuzz_success = self.run_command(cmd, timeout=1200, label="crlfuzz")
         
         count = self.count_file_lines(out_file)
         self.results['crlf_findings'] = count
         self.save_session()
         print(f"{Colors.GREEN}[✔] CRLFuzz: {count} CRLF injection findings{Colors.RESET}")
+        return self.MODULE_OK if crlfuzz_success else self.MODULE_FAILED
 
     def run_internetdb_scan(self):
         """Module 34: InternetDB — zero-auth Shodan passive port/vuln lookup."""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/internetdb"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
         
         dns_file = f"{self.output_dir}/dns_resolved.txt"
         ips = set()
@@ -3884,7 +4012,7 @@ class Oculus:
             print(f"{Colors.YELLOW}[!] No IPs found for InternetDB lookup{Colors.RESET}")
             self.results['internetdb_hosts'] = 0
             self.save_session()
-            return
+            return self.MODULE_SKIPPED
         
         print(f"{Colors.CYAN}[*] Querying InternetDB for {len(ips)} IPs...{Colors.RESET}")
         results_all = []
@@ -3893,7 +4021,7 @@ class Oculus:
         def lookup_ip(ip):
             return (ip, self._internetdb_lookup(ip))
         
-        max_ips = self._config_limit('internetdb', 'max_ips', 1000)
+        max_ips = self._config_limit('internetdb', 'max_ips', 999999)
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = {executor.submit(lookup_ip, ip): ip for ip in list(ips)[:max_ips]}
             for future in as_completed(futures):
@@ -3907,24 +4035,28 @@ class Oculus:
         self.results['internetdb_hosts'] = len(results_all)
         self.save_session()
         print(f"{Colors.GREEN}[✔] InternetDB: {len(results_all)} hosts with data{Colors.RESET}")
+        return self.MODULE_OK
 
     def run_nikto_scan(self):
         """Module 35: Nikto — comprehensive web server vulnerability scanner."""
-        if not self._require_setup() or not self._require_tool('nikto'):
-            return
+        if not self._require_setup():
+            return self.MODULE_SKIPPED
+        if not self._require_tool('nikto'):
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/nikto"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
         
-        max_hosts = self._config_limit('nikto', 'max_hosts', 25)
+        max_hosts = self._config_limit('nikto', 'max_hosts', 999999)
         hosts = self._get_hosts()[:max_hosts]
         if not hosts:
             self.results['nikto_scanned'] = 0
             self.save_session()
-            return
+            return self.MODULE_SKIPPED
         
         tuning = self.config.get('nikto', {}).get('tuning', '1234')
         timeout = self.config.get('nikto', {}).get('timeout', 600)
         
+        nikto_success = True
         for host in hosts:
             safe_host = re.sub(r'[^A-Za-z0-9_.-]+', '_', self._strip_protocol(host))
             # Use txt format as a safer fallback to avoid missing JSON plugin issues
@@ -3934,29 +4066,32 @@ class Oculus:
                    f"-Tuning {tuning} "
                    f"-Format txt -o {out_txt} "
                    f"-Display 1234VP -timeout 15 -nolookup")
-            self.run_command(cmd, timeout=timeout, label=f"nikto:{host[:40]}")
+            if not self.run_command(cmd, timeout=timeout, label=f"nikto:{host[:40]}"):
+                nikto_success = False
         
         total = sum(1 for f in Path(out_dir).glob('*.txt') if f.stat().st_size > 0)
         self.results['nikto_scanned'] = total
         self.save_session()
-        print(f"{Colors.GREEN}[✔] Nikto: scanned {total} hosts{Colors.RESET}")
+        print(f"{Colors.GREEN}[✔] Nikto scan completed — {total} hosts scanned{Colors.RESET}")
+        return self.MODULE_OK if nikto_success else self.MODULE_FAILED
 
     def run_tlsx_scan(self):
         """Module 36: TLSX — TLS certificate scanning + SAN subdomain discovery."""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         tlsx_bin = self.get_tool('tlsx')
         if not tlsx_bin:
             print(f"{Colors.RED}[!] tlsx not installed{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'TLSX Scan'] = 'tlsx not installed'
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/tlsx"
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Path(out_dir).mkdir(exist_ok=True)
         
         hosts = self._get_hosts()
         if not hosts:
             self.results['tlsx_sans'] = 0
             self.save_session()
-            return
+            return self.MODULE_SKIPPED
         
         hosts_file = f"{out_dir}/tlsx_input.txt"
         with open(hosts_file, 'w') as f:
@@ -3969,7 +4104,7 @@ class Oculus:
         # Expanded port list to include 9443 and other important ports
         cmd = (f"{tlsx_bin} -l {hosts_file} -p 80,443,8000,8080,8081,8443,4443,9443,8888 "
                f"-san -cn -json -resp-only -silent -o {out_json}")
-        self.run_command(cmd, timeout=600, label="tlsx")
+        tlsx_success = self.run_command(cmd, timeout=600, label="tlsx")
         
         new_subs = set()
         if os.path.exists(out_json):
@@ -3998,19 +4133,22 @@ class Oculus:
             self.results['tlsx_sans'] = len(new_subs)
             self.save_session()
             print(f"{Colors.GREEN}[✔] TLSX: {len(new_subs)} SANs found, {added} new subdomains added{Colors.RESET}")
+            return self.MODULE_OK
         else:
             self.results['tlsx_sans'] = 0
             self.save_session()
             print(f"{Colors.GREEN}[✔] TLSX: scan complete, no new SANs{Colors.RESET}")
+            return self.MODULE_OK if tlsx_success else self.MODULE_FAILED
 
     def run_nomore403_scan(self):
         """Module 37: nomore403 — 403/401 Forbidden bypass scanner."""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         nomore403_bin = self.get_tool('nomore403')
         if not nomore403_bin:
             print(f"{Colors.RED}[!] nomore403 not installed{Colors.RESET}")
-            return
+            self._skip_reasons[self._current_module or 'nomore403 Scan'] = 'nomore403 not installed'
+            return self.MODULE_SKIPPED
         out_dir = f"{self.output_dir}/nomore403"
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         
@@ -4027,7 +4165,7 @@ class Oculus:
                     pass
         
         if not forbidden_urls:
-            fallback_hosts = self._config_limit('nomore403', 'fallback_hosts', 25)
+            fallback_hosts = self._config_limit('nomore403', 'fallback_hosts', 999999)
             hosts = self._get_hosts()[:fallback_hosts]
             admin_paths = ['/admin', '/wp-admin', '/administrator', '/dashboard',
                            '/api', '/config', '/internal', '/management']
@@ -4035,38 +4173,49 @@ class Oculus:
                 for path in admin_paths:
                     forbidden_urls.append(f"{host.rstrip('/')}{path}")
         
-        max_urls = self._config_limit('nomore403', 'max_urls', 300)
+        max_urls = self._config_limit('nomore403', 'max_urls', 999999)
         forbidden_urls = list(set(forbidden_urls))[:max_urls]
         if not forbidden_urls:
             print(f"{Colors.YELLOW}[!] No 403 URLs to test{Colors.RESET}")
             self.results['bypass_403'] = 0
             self.save_session()
-            return
+            return self.MODULE_SKIPPED
         
         main_out = f"{out_dir}/bypass_results.txt"
         open(main_out, 'w', encoding='utf-8').close()
+        nomore_success = True
         for idx, url in enumerate(forbidden_urls):
             temp_out = f"{out_dir}/temp_nomore403_{idx}.txt"
             cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {temp_out}"
-            self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}")
-            if os.path.exists(temp_out):
-                try:
-                    lines = self.read_file_lines(temp_out)
-                    if lines:
-                        with open(main_out, 'a', encoding='utf-8') as f:
-                            for line in lines:
-                                f.write(line + '\n')
-                except Exception as e:
-                    self.logger.error(f"Error merging nomore403 temp output: {e}")
-                try:
-                    os.remove(temp_out)
-                except OSError:
-                    pass
+            if self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}"):
+                if os.path.exists(temp_out):
+                    try:
+                        lines = self.read_file_lines(temp_out)
+                        if lines:
+                            with open(main_out, 'a', encoding='utf-8') as f:
+                                f.write(f"--- RESULTS FOR: {url} ---\n")
+                                for l in lines:
+                                    f.write(l + '\n')
+                                f.write("\n")
+                    except Exception as e:
+                        self.logger.error(f"Error merging nomore403 temp output: {e}")
+                    try:
+                        os.remove(temp_out)
+                    except OSError:
+                        pass
+            else:
+                nomore_success = False
         
-        count = self.count_file_lines(main_out)
+        count = 0
+        if os.path.exists(main_out):
+            for line in self.read_file_lines(main_out):
+                if "by-pass" in line.lower() or "bypass" in line.lower() or "200 ok" in line.lower():
+                    count += 1
+        
         self.results['bypass_403'] = count
         self.save_session()
         print(f"{Colors.GREEN}[✔] nomore403: {count} potential bypasses found{Colors.RESET}")
+        return self.MODULE_OK if nomore_success else self.MODULE_FAILED
 
     def run_full_spectrum_scan(self, force_fresh=False):
         """Run every single Oculus module in perfect dependency order with concurrency where safe.
@@ -4183,8 +4332,8 @@ class Oculus:
                     self.completed_modules.append(name)
                 self._notify_ntfy(
                     'skip',
-                    f"Oculus module skipped: {name}",
-                    f"{name} already completed ({hint})",
+                    f"⏩ Oculus resumed: {name}",
+                    f"[RESUMED] {name} for {self.domain or 'target'}\nAlready completed in prior session ({hint}). Skipping re-run.",
                     priority='min',
                     tags=['fast_forward'],
                     dedupe_key=f"skip:{name}:{hint}",
@@ -4197,10 +4346,35 @@ class Oculus:
                 print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*60}")
                 print(f"  STEP: {name}")
                 print(f"{'='*60}{Colors.RESET}")
-                func()
-                self._notify_module_done(name, result_key=result_key, marker_files=marker_files)
-                with _lock:
-                    self.completed_modules.append(name)
+                result_status = func()
+
+                # --- Route based on module return status ---
+                if result_status == self.MODULE_SKIPPED:
+                    reason = self._skip_reasons.get(name, 'precondition not met')
+                    print(f"{Colors.YELLOW}[SKIP] {name} — {reason}{Colors.RESET}")
+                    with _lock:
+                        self.skipped_modules.append(name)
+                    self._notify_module_done(name, result_key=result_key,
+                                             marker_files=marker_files, status=self.MODULE_SKIPPED)
+                elif result_status == self.MODULE_PARTIAL:
+                    print(f"{Colors.YELLOW}[~] {name} — partial results{Colors.RESET}")
+                    with _lock:
+                        self.completed_modules.append(name)
+                    self._notify_module_done(name, result_key=result_key,
+                                             marker_files=marker_files, status=self.MODULE_PARTIAL)
+                elif result_status == self.MODULE_FAILED:
+                    print(f"{Colors.RED}[✘] {name} — module reported failure{Colors.RESET}")
+                    with _lock:
+                        self.failed_modules.append((name, 'module returned failure'))
+                    self._notify_module_done(name, result_key=result_key,
+                                             marker_files=marker_files, status=self.MODULE_FAILED)
+                else:
+                    # MODULE_OK or None (backward-compatible)
+                    self._notify_module_done(name, result_key=result_key,
+                                             marker_files=marker_files, status=self.MODULE_OK)
+                    with _lock:
+                        self.completed_modules.append(name)
+
             except KeyboardInterrupt:
                 with _lock:
                     aborted = True

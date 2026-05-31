@@ -146,6 +146,12 @@ async def get_config():
         naabu_rate=config.get("naabu", {}).get("rate", 2000),
         ffuf_extensions=config.get("ffuf", {}).get("extensions", "php,html,js,json,txt,bak,old"),
         ffuf_recursion_depth=config.get("ffuf", {}).get("recursion_depth", 2),
+        arjun_max_hosts=config.get("arjun", {}).get("max_hosts", 999999),
+        ffuf_max_hosts=config.get("ffuf", {}).get("max_hosts", 999999),
+        nikto_max_hosts=config.get("nikto", {}).get("max_hosts", 999999),
+        whatwaf_max_hosts=config.get("whatwaf", {}).get("max_hosts", 999999),
+        tplmap_max_urls=config.get("tplmap", {}).get("max_urls", 999999),
+        nomore403_max_urls=config.get("nomore403", {}).get("max_urls", 999999),
     )
 
 
@@ -166,6 +172,12 @@ async def start_scan(req: ScanRequest):
         jitter=req.jitter,
         severity=req.severity,
         resume=req.resume,
+        arjun_max_hosts=req.arjun_max_hosts,
+        ffuf_max_hosts=req.ffuf_max_hosts,
+        nikto_max_hosts=req.nikto_max_hosts,
+        whatwaf_max_hosts=req.whatwaf_max_hosts,
+        tplmap_max_urls=req.tplmap_max_urls,
+        nomore403_max_urls=req.nomore403_max_urls,
     )
     if not ok:
         raise HTTPException(status_code=409, detail="A scan is already running")

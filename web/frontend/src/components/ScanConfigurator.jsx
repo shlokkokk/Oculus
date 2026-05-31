@@ -35,6 +35,15 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
   const [sqlmapRisk,     setSqlmapRisk]     = useState(3);
   const [sqlmapThreads,  setSqlmapThreads]  = useState(10);
 
+  /* ── Tool Limits ── */
+  const [arjunMaxHosts,  setArjunMaxHosts]  = useState(999999);
+  const [ffufMaxHosts,   setFfufMaxHosts]   = useState(999999);
+  const [niktoMaxHosts,  setNiktoMaxHosts]  = useState(999999);
+  const [whatwafMaxHosts, setWhatwafMaxHosts] = useState(999999);
+  const [tplmapMaxUrls,  setTplmapMaxUrls]  = useState(999999);
+  const [nomore403MaxUrls, setNomore403MaxUrls] = useState(999999);
+  const [limitsOpen,     setLimitsOpen]     = useState(false);
+
   /* ── UI ── */
   const [activePreset, setActivePreset] = useState(null); // Tracing selected optimization preset!
   const [showConfirm, setShowConfirm] = useState(false);
@@ -60,6 +69,12 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       setSqlmapLevel(cfg.sqlmap_level   ?? 5);
       setSqlmapRisk(cfg.sqlmap_risk     ?? 3);
       setSqlmapThreads(Math.min(cfg.sqlmap_threads ?? cfg.threads ?? 10, 10));
+      setArjunMaxHosts(cfg.arjun_max_hosts ?? 999999);
+      setFfufMaxHosts(cfg.ffuf_max_hosts ?? 999999);
+      setNiktoMaxHosts(cfg.nikto_max_hosts ?? 999999);
+      setWhatwafMaxHosts(cfg.whatwaf_max_hosts ?? 999999);
+      setTplmapMaxUrls(cfg.tplmap_max_urls ?? 999999);
+      setNomore403MaxUrls(cfg.nomore403_max_urls ?? 999999);
       setConfigLoaded(true);
     }).catch(() => setConfigLoaded(true));
   }, []);
@@ -114,6 +129,12 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       jitter,
       severity,
       resume: false,
+      arjun_max_hosts: arjunMaxHosts === '' ? null : Number(arjunMaxHosts),
+      ffuf_max_hosts: ffufMaxHosts === '' ? null : Number(ffufMaxHosts),
+      nikto_max_hosts: niktoMaxHosts === '' ? null : Number(niktoMaxHosts),
+      whatwaf_max_hosts: whatwafMaxHosts === '' ? null : Number(whatwafMaxHosts),
+      tplmap_max_urls: tplmapMaxUrls === '' ? null : Number(tplmapMaxUrls),
+      nomore403_max_urls: nomore403MaxUrls === '' ? null : Number(nomore403MaxUrls),
     }).catch(err => setError(err.message));
   };
 
@@ -129,6 +150,12 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
     setThreads(p.threads); setRateLimit(p.rateLimit); setTimeout_(p.timeout_);
     setJitter(p.jitter); setSqlmapLevel(p.sqlmapLevel); setSqlmapRisk(p.sqlmapRisk);
     setSqlmapThreads(p.sqlmapThreads); setSeverity(p.severity);
+    setArjunMaxHosts(999999);
+    setFfufMaxHosts(999999);
+    setNiktoMaxHosts(999999);
+    setWhatwafMaxHosts(999999);
+    setTplmapMaxUrls(999999);
+    setNomore403MaxUrls(999999);
     setActivePreset(preset);
   };
 
@@ -140,6 +167,12 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       setSeverity(cfg.nuclei_severity || 'low,medium,high,critical');
       setSqlmapLevel(cfg.sqlmap_level || 5); setSqlmapRisk(cfg.sqlmap_risk || 3);
       setSqlmapThreads(cfg.sqlmap_threads || 10);
+      setArjunMaxHosts(cfg.arjun_max_hosts || 999999);
+      setFfufMaxHosts(cfg.ffuf_max_hosts || 999999);
+      setNiktoMaxHosts(cfg.nikto_max_hosts || 999999);
+      setWhatwafMaxHosts(cfg.whatwaf_max_hosts || 999999);
+      setTplmapMaxUrls(cfg.tplmap_max_urls || 999999);
+      setNomore403MaxUrls(cfg.nomore403_max_urls || 999999);
       setActivePreset(null);
     });
   };
@@ -406,6 +439,92 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
                 <label>Threads <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(max 10)</span></label>
                 <input className="input" type="number" min="1" max="10" value={sqlmapThreads}
                   onChange={inputNum(setSqlmapThreads, 1, 10)} disabled={scanState === 'running'} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: 'var(--border)', margin: '18px 0' }} />
+
+        {/* Row 4: Target Scope & Limits — collapsible */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setLimitsOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: 0, marginBottom: limitsOpen ? 12 : 0,
+            }}
+          >
+            <div style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+              color: 'var(--text-dim)', textTransform: 'uppercase',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              {limitsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              Target Scope & Limits
+            </div>
+            {!limitsOpen && (
+              <span style={{
+                fontSize: 10, color: 'var(--text-dim)', marginLeft: 4,
+                background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 4,
+              }}>
+                Arjun {arjunMaxHosts || 'unlimited'} · FFUF {ffufMaxHosts || 'unlimited'} · Nikto {niktoMaxHosts || 'unlimited'} · WhatWaf {whatwafMaxHosts || 'unlimited'} · Tplmap {tplmapMaxUrls || 'unlimited'} · Nomore403 {nomore403MaxUrls || 'unlimited'}
+              </span>
+            )}
+          </button>
+
+          {limitsOpen && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 4 }}>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span>Arjun Max Hosts</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}>Max hosts for param discovery (999999 = unlimited)</span>
+                </label>
+                <input className="input" type="number" min="1" max="999999" value={arjunMaxHosts}
+                  onChange={inputNum(setArjunMaxHosts, 1, 999999)} disabled={scanState === 'running'} placeholder="999999" />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span>FFUF Max Hosts</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}>Max hosts for directory fuzzing (999999 = unlimited)</span>
+                </label>
+                <input className="input" type="number" min="1" max="999999" value={ffufMaxHosts}
+                  onChange={inputNum(setFfufMaxHosts, 1, 999999)} disabled={scanState === 'running'} placeholder="999999" />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span>Nikto Max Hosts</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}>Max hosts for Nikto checks (999999 = unlimited)</span>
+                </label>
+                <input className="input" type="number" min="1" max="999999" value={niktoMaxHosts}
+                  onChange={inputNum(setNiktoMaxHosts, 1, 999999)} disabled={scanState === 'running'} placeholder="999999" />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span>WhatWaf Max Hosts</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}>Max hosts for WAF detection (999999 = unlimited)</span>
+                </label>
+                <input className="input" type="number" min="1" max="999999" value={whatwafMaxHosts}
+                  onChange={inputNum(setWhatwafMaxHosts, 1, 999999)} disabled={scanState === 'running'} placeholder="999999" />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span>Tplmap Max URLs</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}>Max URLs for SSTI vulnerability testing (999999 = unlimited)</span>
+                </label>
+                <input className="input" type="number" min="1" max="999999" value={tplmapMaxUrls}
+                  onChange={inputNum(setTplmapMaxUrls, 1, 999999)} disabled={scanState === 'running'} placeholder="999999" />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span>Nomore403 Max URLs</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}>Max URLs for 403 bypass checks (999999 = unlimited)</span>
+                </label>
+                <input className="input" type="number" min="1" max="999999" value={nomore403MaxUrls}
+                  onChange={inputNum(setNomore403MaxUrls, 1, 999999)} disabled={scanState === 'running'} placeholder="999999" />
               </div>
             </div>
           )}

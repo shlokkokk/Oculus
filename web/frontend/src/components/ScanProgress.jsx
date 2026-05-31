@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { StopCircle, CheckCircle2, XCircle, Loader, ShieldCheck, ShieldAlert, RotateCcw, Play, X } from 'lucide-react';
+import { StopCircle, CheckCircle2, XCircle, Loader, ShieldCheck, ShieldAlert, RotateCcw, Play, X, FastForward } from 'lucide-react';
 import Terminal from './Terminal';
 import { api } from '../api/client';
 
@@ -246,6 +246,7 @@ export default function ScanProgress({
   elapsed, 
   modulesCompleted, 
   modulesFailed, 
+  modulesSkipped = [],
   totalModules, 
   progressPercent,
   logs, 
@@ -259,7 +260,7 @@ export default function ScanProgress({
   const [showResumeModal, setShowResumeModal] = useState(false);
   
   const isCompleted = scanState === 'completed';
-  const progress = isCompleted ? 100 : (progressPercent !== undefined ? progressPercent : (totalModules > 0 ? Math.round((modulesCompleted.length / totalModules) * 100) : 0));
+  const progress = isCompleted ? 100 : (progressPercent !== undefined ? progressPercent : (totalModules > 0 ? Math.round(((modulesCompleted.length + modulesSkipped.length) / totalModules) * 100) : 0));
   const isRunning = scanState === 'running';
 
   const fmtTime = (s) => {
@@ -340,17 +341,22 @@ export default function ScanProgress({
           </div>
           <div className="progress-info">
             <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span>{isCompleted ? totalModules : modulesCompleted.length} / {totalModules} {scanMode === 'full_spectrum' ? 'steps' : 'modules'}</span>
+              <span>{isCompleted ? totalModules : (modulesCompleted.length + modulesSkipped.length)} / {totalModules} {scanMode === 'full_spectrum' ? 'steps' : 'modules'}</span>
               {currentPhase && <span style={{ color: 'var(--accent-blue)', fontWeight: 500, fontSize: 12 }}>— {currentPhase}</span>}
             </span>
             {modulesFailed.length > 0 && <span style={{ color: 'var(--accent-red)' }}>{modulesFailed.length} failed</span>}
             <span>{progress}%</span>
           </div>
-          {modulesCompleted.length > 0 && (
+          {(modulesCompleted.length > 0 || modulesSkipped.length > 0 || modulesFailed.length > 0) && (
             <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, maxLines: 2, overflowY: 'auto' }}>
               {modulesCompleted.map(m => (
                 <span key={m} style={{ fontSize: 11, padding: '3px 8px', background: 'rgba(16,185,129,0.08)', color: 'var(--accent-green)', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <ShieldCheck size={10} />{m}
+                </span>
+              ))}
+              {modulesSkipped.map(m => (
+                <span key={m} style={{ fontSize: 11, padding: '3px 8px', background: 'rgba(245,158,11,0.08)', color: 'var(--accent-amber)', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <FastForward size={10} />{m} (skipped)
                 </span>
               ))}
               {modulesFailed.map(m => (

@@ -75,6 +75,7 @@ export default function App() {
             elapsed={scan.elapsed}
             modulesCompleted={scan.modulesCompleted}
             modulesFailed={scan.modulesFailed}
+            modulesSkipped={scan.modulesSkipped}
             totalModules={scan.totalModules}
             progressPercent={scan.progressPercent}
             logs={ws.logs}
