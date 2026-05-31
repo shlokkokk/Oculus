@@ -3511,6 +3511,74 @@ class Oculus:
             print(f"{Colors.RED}[!] GitHub Dorking failed: {e}{Colors.RESET}")
             return self.MODULE_FAILED
 
+    def _sync_harvester_keys(self):
+        """Sync Oculus config API keys to theHarvester's user configuration directory"""
+        try:
+            import yaml
+            keys_dir = Path.home() / ".config" / "theHarvester"
+            keys_dir.mkdir(parents=True, exist_ok=True)
+            keys_path = keys_dir / "api-keys.yaml"
+            
+            # Load existing keys if present, else empty
+            data = {}
+            if keys_path.exists():
+                try:
+                    with open(keys_path, "r", encoding="utf-8") as fh:
+                        data = yaml.safe_load(fh) or {}
+                except Exception:
+                    pass
+            
+            if not isinstance(data, dict) or "apikeys" not in data:
+                data = {"apikeys": {}}
+                
+            apikeys = data["apikeys"] or {}
+            
+            # Map Oculus config keys to theHarvester keys
+            api_keys = self.config.get("api_keys", {}) or {}
+            
+            # Define mappings: Oculus key name -> (Harvester key name, subkey name)
+            mappings = {
+                "shodan": ("shodan", "key"),
+                "virustotal": ("virustotal", "key"),
+                "github": ("github", "key"),
+                "securitytrails": ("securityTrails", "key"),
+                "chaos": ("chaos", "key"),
+                "intelx": ("intelx", "key"),
+            }
+            
+            updated = False
+            for oc_key, (harv_sec, harv_key) in mappings.items():
+                val = api_keys.get(oc_key, "")
+                if val:
+                    if harv_sec not in apikeys:
+                        apikeys[harv_sec] = {}
+                    if apikeys[harv_sec].get(harv_key) != val:
+                        apikeys[harv_sec][harv_key] = val
+                        updated = True
+                        
+            # Handle Censys mapping specifically (id + secret)
+            censys_id = api_keys.get("censys_id", "")
+            censys_sec = api_keys.get("censys_secret", "")
+            if censys_id or censys_sec:
+                if "censys" not in apikeys:
+                    apikeys["censys"] = {}
+                if censys_id and apikeys["censys"].get("id") != censys_id:
+                    apikeys["censys"]["id"] = censys_id
+                    updated = True
+                if censys_sec and apikeys["censys"].get("secret") != censys_sec:
+                    apikeys["censys"]["secret"] = censys_sec
+                    updated = True
+            
+            if updated:
+                data["apikeys"] = apikeys
+                with open(keys_path, "w", encoding="utf-8") as fh:
+                    yaml.safe_dump(data, fh, sort_keys=False)
+                if self.logger:
+                    self.logger.info(f"Synchronized API keys to {keys_path}")
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to sync API keys to theHarvester config: {e}")
+
     # MODULE 27: OSINT HARVESTING (theHarvester)
 
     def run_osint_harvesting(self):
@@ -3530,8 +3598,38 @@ class Oculus:
             
         out_file = f"{out_dir}/theharvester.html"
         
+        # Sync configured API keys into theHarvester's configuration
+        self._sync_harvester_keys()
+        
+        # Base keyless sources
+        sources = [
+            "anubis", "baidu", "certspotter", "commoncrawl", "crtsh", 
+            "dnsdumpster", "duckduckgo", "dymo", "gitlab", "hackertarget", 
+            "hudsonrock", "mojeek", "otx", "rapiddns", "robtex", 
+            "shodanInternetDB", "subdomaincenter", "subdomainfinderc99", 
+            "thc", "threatcrowd", "waybackarchive", "yahoo"
+        ]
+        
+        # Dynamically append key-dependent sources if keys are configured in Oculus
+        api_keys = self.config.get("api_keys", {}) or {}
+        if api_keys.get("shodan"):
+            sources.append("shodan")
+        if api_keys.get("virustotal"):
+            sources.append("virustotal")
+        if api_keys.get("github"):
+            sources.extend(["github-code", "github"])
+        if api_keys.get("securitytrails"):
+            sources.append("securityTrails")
+        if api_keys.get("chaos"):
+            sources.append("chaos")
+        if api_keys.get("intelx"):
+            sources.append("intelx")
+        if api_keys.get("censys_id") or api_keys.get("censys_secret"):
+            sources.append("censys")
+            
+        sources_str = ",".join(sources)
         prefix = "python3 " if isinstance(bin_path, str) and bin_path.endswith('.py') else ""
-        cmd = f"{prefix}{bin_path} -d {self.safe_domain()} -b all -f {out_file}"
+        cmd = f"{prefix}{bin_path} -d {self.safe_domain()} -b {sources_str} -f {out_file}"
         if self.run_command(cmd, timeout=600, label="harvester"):
             print(f"{Colors.GREEN}[✔] OSINT Harvesting completed{Colors.RESET}")
             self.results['osint_findings'] = 1 if os.path.exists(out_file) else 0
