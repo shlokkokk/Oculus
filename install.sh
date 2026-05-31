@@ -84,6 +84,34 @@ prompt_ntfy_setup() {
         return 0
     fi
 
+    # Check if ntfy is already configured
+    if python3 -c "
+import sys, yaml
+from pathlib import Path
+candidates = [
+    Path.home() / '.config' / 'oculus' / 'config.yaml',
+    Path.home() / '.config' / 'oculus' / 'config.yml',
+    Path('config.yaml')
+]
+for p in candidates:
+    if p.exists():
+        try:
+            with open(p, 'r', encoding='utf-8') as fh:
+                data = yaml.safe_load(fh) or {}
+            if isinstance(data, dict) and 'ntfy' in data:
+                n = data['ntfy'] or {}
+                if n.get('url') or n.get('topic'):
+                    sys.exit(0)
+        except Exception:
+            pass
+sys.exit(1)
+" 2>/dev/null; then
+        echo -e ""
+        log_step "Phase 8.5 · ntfy Notifications"
+        log_info "ntfy is already configured in your Oculus settings — skipping setup"
+        return 0
+    fi
+
     echo -e ""
     log_step "Phase 8.5 · ntfy Notifications"
     echo -e "${CYAN}ntfy can send push notifications for scan start, module completion, findings, and errors.${RESET}"
