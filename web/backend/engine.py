@@ -599,7 +599,9 @@ class ScanEngine:
             config["rate_limit"] = rate_limit
         if timeout:
             config["timeout"] = timeout
-        sqlmap_config = config.setdefault("sqlmap", {})
+        if config.get("sqlmap") is None:
+            config["sqlmap"] = {}
+        sqlmap_config = config["sqlmap"]
         if sqlmap_level is not None:
             sqlmap_config["level"] = sqlmap_level
         if sqlmap_risk is not None:
@@ -608,21 +610,35 @@ class ScanEngine:
             sqlmap_config["threads"] = sqlmap_threads
         config["jitter"] = jitter
         if severity:
-            config.setdefault("nuclei", {})["severity"] = severity
+            if config.get("nuclei") is None:
+                config["nuclei"] = {}
+            config["nuclei"]["severity"] = severity
         
         # Apply custom tool limits (defaults to loaded config values if None)
         if arjun_max_hosts is not None:
-            config.setdefault("arjun", {})["max_hosts"] = arjun_max_hosts
+            if config.get("arjun") is None:
+                config["arjun"] = {}
+            config["arjun"]["max_hosts"] = arjun_max_hosts
         if ffuf_max_hosts is not None:
-            config.setdefault("ffuf", {})["max_hosts"] = ffuf_max_hosts
+            if config.get("ffuf") is None:
+                config["ffuf"] = {}
+            config["ffuf"]["max_hosts"] = ffuf_max_hosts
         if nikto_max_hosts is not None:
-            config.setdefault("nikto", {})["max_hosts"] = nikto_max_hosts
+            if config.get("nikto") is None:
+                config["nikto"] = {}
+            config["nikto"]["max_hosts"] = nikto_max_hosts
         if whatwaf_max_hosts is not None:
-            config.setdefault("whatwaf", {})["max_hosts"] = whatwaf_max_hosts
+            if config.get("whatwaf") is None:
+                config["whatwaf"] = {}
+            config["whatwaf"]["max_hosts"] = whatwaf_max_hosts
         if tplmap_max_urls is not None:
-            config.setdefault("tplmap", {})["max_urls"] = tplmap_max_urls
+            if config.get("tplmap") is None:
+                config["tplmap"] = {}
+            config["tplmap"]["max_urls"] = tplmap_max_urls
         if nomore403_max_urls is not None:
-            config.setdefault("nomore403", {})["max_urls"] = nomore403_max_urls
+            if config.get("nomore403") is None:
+                config["nomore403"] = {}
+            config["nomore403"]["max_urls"] = nomore403_max_urls
 
         # Redirect stdout to capture output
         original_stdout = sys.stdout
