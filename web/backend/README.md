@@ -57,6 +57,8 @@ When the server is running, navigate to:
 
 Here, you can manually trigger scans, test the endpoints, and view the strict type definitions for all requests and responses.
 
+**Scan start body (SQLi-related):** `sqlmap_level`, `sqlmap_risk`, `sqlmap_threads`, `ghauri_enabled`, `ghauri_level`, `ghauri_risk`, `ghauri_threads`, `ghauri_max_targets` — merged into `config['sqlmap']` / `config['ghauri']` before `Oculus` runs. Deep mode and custom `sqli` call `run_sqli_scan()` (SQLMap + Ghauri). Sequential Ghauri (lower RAM) is CLI/config only: `ghauri.parallel: false` in YAML.
+
 ---
 
 ## ⚠️ Security Context

@@ -71,6 +71,7 @@ DEFAULT_CONFIG = {
     },
     'ghauri': {
         'enabled': True,
+        'parallel': True,   # False = run Ghauri after SQLMap (lower peak RAM)
         'level': 3,
         'risk': 2,
         'threads': 5,
@@ -1975,6 +1976,7 @@ class Oculus:
             ('wafw00f', 'sudo apt install wafw00f'),
             ('whatweb', 'sudo apt install whatweb'),
             ('sqlmap', 'sudo apt install sqlmap'),
+            ('ghauri', 'Run ./install.sh --update (pip install from /opt/recontools/Ghauri)'),
             ('chromium', 'sudo apt install chromium'),
             ('nuclei', 'go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest'),
             ('hakrawler', 'go install github.com/hakluke/hakrawler@latest'),
@@ -2009,7 +2011,7 @@ class Oculus:
         special_tools = [
             'paramspider', 'arjun', 'xsstrike', 'smuggler',
             'linkfinder', 'theharvester', 'subzy', 'kr', 'eyewitness',
-            'tplmap', 'whatwaf', 'ghauri',
+            'tplmap', 'whatwaf',
         ]
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Checking Python/Opt-based Tools...{Colors.RESET}\n")
@@ -4369,7 +4371,10 @@ class Oculus:
 
         print(f"\n{Colors.CYAN}{Colors.BOLD}[*] Starting SQLi Scan (SQLMap + Ghauri)...{Colors.RESET}\n")
         if use_ghauri and has_sqlmap:
-            print(f"{Colors.CYAN}[*] Ghauri runs in parallel while SQLMap scans the same target list.{Colors.RESET}\n")
+            if bool(ghauri_cfg.get('parallel', True)):
+                print(f"{Colors.CYAN}[*] Both engines enabled — Ghauri runs in parallel with SQLMap.{Colors.RESET}\n")
+            else:
+                print(f"{Colors.CYAN}[*] Both engines enabled — Ghauri runs after SQLMap (ghauri.parallel: false).{Colors.RESET}\n")
         elif use_ghauri and not has_sqlmap:
             print(f"{Colors.YELLOW}[!] SQLMap not installed — running Ghauri only.{Colors.RESET}\n")
         elif has_sqlmap and not use_ghauri:
@@ -4385,8 +4390,9 @@ class Oculus:
 
         statuses = []
         ghauri_thread = None
+        ghauri_parallel = bool(ghauri_cfg.get('parallel', True))
 
-        if use_ghauri:
+        if use_ghauri and ghauri_parallel and has_sqlmap:
             def _ghauri_worker():
                 self._current_module = mod
                 try:
@@ -4395,7 +4401,6 @@ class Oculus:
                     self.logger.error(f"Ghauri worker failed: {exc}")
                     self._ghauri_sqli_status = self.MODULE_FAILED
 
-            print(f"{Colors.CYAN}[*] Launching Ghauri in background...{Colors.RESET}")
             ghauri_thread = threading.Thread(target=_ghauri_worker, daemon=True)
             ghauri_thread.start()
 
@@ -4405,7 +4410,7 @@ class Oculus:
         if ghauri_thread is not None:
             ghauri_thread.join()
             statuses.append(getattr(self, '_ghauri_sqli_status', self.MODULE_SKIPPED))
-        elif use_ghauri and not has_sqlmap:
+        elif use_ghauri and (not has_sqlmap or not ghauri_parallel):
             statuses.append(self._run_ghauri_on_targets(targets_path, mod))
 
         return self._merge_module_statuses(*statuses)

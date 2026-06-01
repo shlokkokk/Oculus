@@ -20,7 +20,7 @@ The **Oculus Web Interface** is a sleek, high-performance browser dashboard buil
 > Low-latency WebSocket piping routes raw shell feeds directly from the underlying daemon execution processes straight into a reactive virtual terminal viewport in the browser.
 
 #### 🎛️ **Interactive Configuration**
-> Form-based UI to build scan profiles, select modules (Nmap, Nuclei, Subfinder, etc.), and set flags without memorizing CLI syntax.
+> Form-based UI to build scan profiles, select modules (Nmap, Nuclei, Subfinder, etc.), and set flags without memorizing CLI syntax. **SQLi Scan** exposes **SQLMap** and **Ghauri** (enable, level, risk, threads, max targets) — same keys as `config.yaml` / CLI.
 
 #### 🕹️ **Micro-Animated Cyber Toggles**
 > Full-width glassmorphic control containers (such as Jitter) featuring hardware-inspired responsive styling, CSS physics transitions (`0.3s`), translucent accents, active cyan glowing borders, and drop-shadow illumination.

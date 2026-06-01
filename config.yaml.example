@@ -16,9 +16,10 @@ sqlmap:
   risk: 3        # SQLMap "risk" (1-3) — riskier payloads at higher values
   threads: 10    # SQLMap internal worker threads (maximum allowed by SQLMap is 10)
 
-# Ghauri — second SQLi engine (runs parallel with SQLMap during SQLi Scan module)
+# Ghauri — second SQLi engine (SQLi Scan module: SQLMap + Ghauri on merged targets)
 ghauri:
   enabled: true
+  parallel: true     # true = Ghauri while SQLMap runs (~400MB–1.5GB peak combined); false = one after the other
   level: 3
   risk: 2
   threads: 5

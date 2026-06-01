@@ -178,7 +178,7 @@ Use **menu #** (1–36) in the TUI for individual scanners, or **`--module <name
 | **16** | `dnsbrute` | massdns | Build `word.target` from DNS wordlist + resolvers; merge hits back into **`subdomains.txt`** |
 | **17** | `gf` | gf | Classify **`urls_final.txt`** into buckets (xss, sqli, ssrf, lfi, redirect, rce) → **`gf/*.txt`** |
 | **18** | `tech` | whatweb | Fingerprint stacks from **`alive.txt`** → **`tech_scan/`** JSON |
-| **19** | `sqli` | sqlmap | Batch **sqlmap** over **`gf/sqli.txt`** (run **17** first if empty) → **`sqlmap/`** |
+| **19** | `sqli` | SQLMap, Ghauri | **SQLi Scan:** merged targets (GF + params + URLs) → **SQLMap** + **Ghauri** → **`sqlmap/`**, **`ghauri/`** |
 | **20** | `xss` | Dalfox | Feed **`gf/xss.txt`** to Dalfox; auto-runs **gf** if missing → **`xss_findings/`** |
 | **21** | `cors` | Python | Send crafted **`Origin`** headers per host (concurrent); flag reflected / wildcard CORS → **`cors_findings/`** |
 | **22** | `smuggling` | smuggler | Run smuggler per alive URL; merge anomalies → **`smuggling/`** |
@@ -197,7 +197,7 @@ Use **menu #** (1–36) in the TUI for individual scanners, or **`--module <name
 | **35** | `tlsx` | TLSX | TLS certificate scanning with CN/SAN parsing to discover extra subdomains → **`tlsx/`** |
 | **36** | `nomore403` | nomore403 | Automated 403/401 Forbidden bypass techniques scanner → **`nomore403/`** |
 | **A** | `--full-recon` | *(steps 1→8)* | **Full auto recon:** runs the core pipeline then **summary + HTML + JSON** (not MD unless **R**) |
-| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **23 → 9→10→11→12→13→14→15→17→18→20→21→22→19** (ASN first, **sqlmap** last). **Skips** menus **1–8**, **16**, **24–36**. Needs prior **`alive.txt`** / URLs from **A** or manual **1–8**+**6**. |
+| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **23 → 9→10→11→12→13→14→15→17→18→20→21→22→19** (ASN first, **SQLi Scan** last). **Skips** menus **1–8**, **16**, **24–36**. Needs prior **`alive.txt`** / URLs from **A** or manual **1–8**+**6**. |
 | **F** | `--full-spectrum` | *(all 36 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
 | **R** | — | *(generators)* | Rebuild **`report.html`**, **`findings.json`**, **`report.md`** from disk artifacts |
 
@@ -243,7 +243,7 @@ PHASE 4: VULNERABILITY ANALYSIS
   [Concurrent]  Directory Fuzzing + API Fuzzing
 
 PHASE 5: TARGETED EXPLOITATION
-  [Concurrent]  SQLi Scan + XSS Scan + Open Redirect Scan + CRLF Injection + SSTI Scan + 403 Bypass
+  [Concurrent]  SQLi Scan (SQLMap + Ghauri) + XSS Scan + Open Redirect Scan + CRLF Injection + SSTI Scan + 403 Bypass
   [Concurrent]  CORS Scanner + HTTP Smuggling
 ```
 
@@ -310,6 +310,14 @@ For each top-level key in your file:
 | `ffuf.extensions` | `php,html,...` | **`-e`** extension list for directory fuzz |
 | `ffuf.status_filter` | `200,204,...` | **`-mc`** match codes |
 | `ffuf.recursion_depth` | `2` | **`-recursion-depth`** |
+| `sqlmap.level` | `5` | SQLMap **`-level`** (1–5) |
+| `sqlmap.risk` | `3` | SQLMap **`-risk`** (1–3) |
+| `sqlmap.threads` | `50` (capped at 10 in module) | SQLMap **`--threads`** |
+| `ghauri.enabled` | `true` | If false or binary missing → SQLMap-only |
+| `ghauri.parallel` | `true` | `true` = Ghauri while SQLMap runs; `false` = sequential (lower peak RAM) |
+| `ghauri.level` / `ghauri.risk` | `3` / `2` | Ghauri test depth |
+| `ghauri.threads` | `5` | Ghauri worker threads (max 10) |
+| `ghauri.max_targets` | `150` | Cap URLs passed to Ghauri bulk mode |
 
 ### CLI flags that override config
 
@@ -589,7 +597,7 @@ All scan data goes under **`output-<domain>/`** (created when you set the domain
 | `summary.txt` | Text executive summary |
 | `report.html` / `findings.json` / `report.md` | Generated from menu **R** (and partial set after **full recon**) |
 
-Subfolders (created as needed): `parameters/`, `js_endpoints/`, `fuzzing/`, `api_fuzzing/`, `takeover/`, `screenshots/gowitness/`, `screenshots/eyewitness/`, `gf/`, `tech_scan/`, `sqlmap/`, `xss_findings/`, `cors_findings/`, `smuggling/`, `asn/`, `cloud/`, `github/`, `osint/`, `shodan/`, `redirects/`, etc.
+Subfolders (created as needed): `parameters/`, `js_endpoints/`, `fuzzing/`, `api_fuzzing/`, `takeover/`, `screenshots/gowitness/`, `screenshots/eyewitness/`, `gf/`, `tech_scan/`, `sqlmap/`, `ghauri/`, `xss_findings/`, `cors_findings/`, `smuggling/`, `asn/`, `cloud/`, `github/`, `osint/`, `shodan/`, `redirects/`, etc.
 
 **Session resume:** If `session.json` exists and you re-enter the same domain (**C**), Oculus restores prior `results`.
 - **Full Spectrum (`U`)** offers a smart **Resume** mode: it skips already-completed steps (printing `[SKIP]`) to safely pick up where a long scan dropped off.
@@ -621,7 +629,9 @@ Mount a `config.yaml` into `~/.config/oculus/` inside the container instead if y
 4. Install **SecLists** (or point `wordlists` to your paths)  
 5. Menu **I** until critical tools show ✔  
 
-**GF → chained attacks:** run **`gf`** (or **`xss`/`sqli`/`redirect`** which auto-run GF) before **Dalfox**, **sqlmap**, or **open redirect** modules.
+**GF → chained attacks:** run **`gf`** (or **`xss`/`sqli`/`redirect`**) before Dalfox or open redirect. **SQLi Scan** still runs if GF’s `sqli.txt` is empty — it merges **ParamSpider/Arjun** and parameterized URLs from **`urls_final.txt`** into `sqlmap/sqli_candidates_merged.txt`.
+
+**SQLi resource use:** With defaults, **SQLMap + Ghauri in parallel** often peaks around **~400 MB–1.5 GB RAM** (target count and level/risk matter). On a small VM, set `ghauri.parallel: false` (run one engine after the other) or `ghauri.enabled: false` for SQLMap-only. Web UI exposes the same toggles under **SQLi Scan (SQLMap + Ghauri)**.
 
 </details>
 
@@ -664,7 +674,7 @@ Then: **session diff**, **`summary.txt`**, **`report.html`**, **`findings.json`*
 
 **Deep recon mode** (`--deep` / menu **D**) — **not** “all modules,” **not** menus **1–9**:
 
-Runs **exactly** this fixed sequence (same as `run_deep_recon_mode` in code): **24** ASN → **10** params → **11** JS → **12** ffuf → **13** kr → **14** takeover → **15** hakrawler → **16** screenshots (gowitness + EyeWitness when installed) → **18** gf → **19** whatweb → **21** dalfox → **22** CORS → **23** smuggling → **20** sqlmap.
+Runs **exactly** this fixed sequence (same as `run_deep_recon_mode` in code): **24** ASN → **10** params → **11** JS → **12** ffuf → **13** kr → **14** takeover → **15** hakrawler → **16** screenshots (gowitness + EyeWitness when installed) → **18** gf → **19** whatweb → **21** dalfox → **22** CORS → **23** smuggling → **20** SQLi Scan (SQLMap + Ghauri).
 
 **Does not run:** core **1–8** (subdomain, DNS, alive, ports, URLs, WAF, nuclei), **9**, **17** dnsbrute, **25** cloud, **26** github, **27** osint, **28** shodan, **29** redirect, and advanced scaffolding **30–37** (cariddi, jaeles, tplmap, crlfuzz, internetdb, nikto, tlsx, nomore403).
 
@@ -712,7 +722,7 @@ Runs all 36 modules across 5 phases with intelligent concurrency. See **[Automat
 | `dnsbrute` | 17 | **massdns** + wordlist → merges into `subdomains.txt` |
 | `gf` | 18 | **gf** `xss` `sqli` `ssrf` `lfi` `redirect` `rce` → `gf/*.txt` |
 | `tech` | 19 | **WhatWeb** JSON → `tech_scan/` |
-| `sqli` | 20 | **sqlmap** on `gf/sqli.txt` |
+| `sqli` | 19 | **SQLMap + Ghauri** on merged SQLi candidates (GF + params + URLs) |
 | `xss` | 21 | **Dalfox** on `gf/xss.txt` (auto-**gf**) |
 | `cors` | 22 | Multi-**Origin** CORS worker pool |
 | `smuggling` | 23 | **smuggler** per host |
@@ -841,7 +851,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 | **17** | DNS bruteforce (`massdns`) |
 | **18** | GF pattern filters |
 | **19** | Tech fingerprint (`whatweb`) |
-| **20** | SQLi (`sqlmap` on GF output) |
+| **20** | SQLi Scan (SQLMap + Ghauri; merged targets, not GF-only) |
 | **21** | XSS (`dalfox`) |
 | **22** | CORS misconfiguration scan |
 | **23** | HTTP smuggling (`smuggler`) |
@@ -878,7 +888,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 
 **Python** ([`requirements.txt`](requirements.txt)): `requests`, `dnspython`, `tldextract`, `rich` (recommended), `pyyaml` (recommended).
 
-**Go / apt / `/opt/recontools`** — [`install.sh`](install.sh) installs **subfinder**, **amass**, **assetfinder**, **dnsx**, **httpx**, **naabu**, **nuclei**, **katana**, **gau**, **waybackurls**, **ffuf**, **dalfox**, **asnmap**, **hakrawler**, **gowitness**, **gf**, **subzy**, **kr**, **nmap**, **massdns**, **wafw00f**, **whatweb**, **sqlmap**, **chromium**, plus **ParamSpider**, **Arjun**, **XSStrike** (cloned; menu XSS uses **Dalfox**), **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness**, and new additions: **puredns**, **cariddi**, **jaeles**, **tplmap**, **crlfuzz**, **tlsx**, **alterx**, **nomore403**, and **whatwaf**.
+**Go / apt / `/opt/recontools`** — [`install.sh`](install.sh) installs **subfinder**, **amass**, **assetfinder**, **dnsx**, **httpx**, **naabu**, **nuclei**, **katana**, **gau**, **waybackurls**, **ffuf**, **dalfox**, **asnmap**, **hakrawler**, **gowitness**, **gf**, **subzy**, **kr**, **nmap**, **massdns**, **wafw00f**, **whatweb**, **sqlmap**, **ghauri** (pip from `/opt/recontools/Ghauri`), **chromium**, plus **ParamSpider**, **Arjun**, **XSStrike** (cloned; menu XSS uses **Dalfox**), **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness**, and **puredns**, **cariddi**, **jaeles**, **tplmap**, **crlfuzz**, **tlsx**, **alterx**, **nomore403**, and **whatwaf**.
 
 ```
 Oculus/

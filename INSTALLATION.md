@@ -38,7 +38,7 @@ Use **`./install.sh --update`** later to refresh Go tools and `/opt/recontools` 
 2. **`apt-get install`**: `python3-pip`, `git`, `wget`, `curl`, `unzip`, `nmap`, `massdns`, `wafw00f`, `whatweb`, `sqlmap`, `jq`, `dnsutils`, `chromium`.
 3. **`pip3 install -r requirements.txt --break-system-packages`** (needed on newer Debian/Ubuntu PEP 668 environments).
 4. **`go install`** (see script for exact modules): subfinder, assetfinder, dnsx, httpx, httprobe, naabu, katana, gau, waybackurls, nuclei, hakrawler, ffuf, dalfox, asnmap, gowitness, gf, amass, kr, subzy.
-5. Creates **`/opt/recontools`** and clones: **ParamSpider**, **Arjun**, **XSStrike**, **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness** (with `pip install -r requirements.txt` per repo where present; EyeWitness uses `Python/requirements.txt`).
+5. Creates **`/opt/recontools`** and clones: **ParamSpider**, **Arjun**, **XSStrike**, **smuggler**, **LinkFinder**, **theHarvester**, **EyeWitness**, **Ghauri** (with `pip install -r requirements.txt` or `pip install -e .` per repo where present; EyeWitness uses `Python/requirements.txt`). Links **`ghauri`** onto PATH when the CLI is installed.
 6. Sets up **`~/.gf`** pattern JSONs (best-effort copy from `gf` examples + **Gf-Patterns**).
 7. If **`~/.config/oculus/config.yaml`** does not exist yet, copies **`config.yaml.example`** from the same directory as **`install.sh`** (the repo root).
 
@@ -87,10 +87,13 @@ python3 oculus.py
 Sanity-check common externals:
 
 ```bash
-which subfinder httpx naabu nuclei ffuf dalfox dnsx massdns chromium
+which subfinder httpx naabu nuclei ffuf dalfox dnsx massdns chromium sqlmap ghauri
 ls /opt/recontools/ParamSpider/paramspider.py
 ls /opt/recontools/EyeWitness/Python/EyeWitness.py
+ls /opt/recontools/Ghauri 2>/dev/null || ls /opt/recontools/ghauri 2>/dev/null
 ```
+
+**Ghauri (SQLi Scan):** Second SQLi engine alongside SQLMap. Menu **I** lists **Ghauri** in the main tool block (between SQLMap and Chromium). If missing: `./install.sh --update` or `pip install -e /opt/recontools/Ghauri`. Disable in `~/.config/oculus/config.yaml` with `ghauri.enabled: false`, or set `ghauri.parallel: false` to run after SQLMap (lower peak memory).
 
 ---
 

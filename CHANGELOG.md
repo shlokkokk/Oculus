@@ -47,6 +47,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Dynamic Nmap full-port timeout** via `nmap.full_port_timeout_*` config keys.
 - **Web UI:** target scope limits (Arjun, FFUF, Nikto, WhatWaf, Tplmap, nomore403), skipped-module indicators, `scan_module_count` on `/api/health`.
 - **`install.sh`** — downloads `routes-large.kite` for Kiterunner when missing.
+- **Dual-engine SQLi Scan** — module **19** / `sqli` runs **SQLMap** and **Ghauri** on a **merged** candidate list (GF `sqli` pattern + ParamSpider/Arjun + parameterized URLs from `urls_final.txt` / `urls.txt`), not `gf/sqli.txt` alone.
+- **Ghauri** — installed via `install.sh` (`/opt/recontools/Ghauri`, `pip install -e`, `link_cli_to_system ghauri`); config block `ghauri.*` in `config.yaml.example`.
+- **Web UI** — SQLi section: SQLMap + Ghauri toggles (`ghauri_enabled`, level, risk, threads, `max_targets`); API `/api/config` and `/api/scan/start` pass through.
 
 #### Resilience fallbacks
 
@@ -55,6 +58,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **theHarvester** keyless-source bundle + fallback source list on failure.
 - **nomore403** — auto-clone payloads; `_nomore403_command()` runs from repo with `-f payloads`.
 - **Directory fuzz** — auto-feed 403/401 responses into nomore403 (per-URL merge into `bypass_results.txt`).
+- **SQLi candidates** — empty GF `sqli.txt` no longer skips the whole module when params or URL harvest have query strings.
 
 ---
 
@@ -69,6 +73,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Jaeles** uses `config init` + per-host output dirs; removed deprecated `--no-output-url` flag (Jaeles v0.17+).
 - **Nikto** uses `-h host` + `-ssl` for HTTPS URLs; removed `-nolookup` that caused “given name” errors on URL targets.
 - **Cariddi** runs under `/tmp` (tool rejects dots in `output-<domain>/` paths) then copies artifacts back.
+- **SQLi module** — `run_sqli_scan()` is canonical; `run_sqlmap_scan()` remains a backward-compatible alias. Ghauri defaults to **parallel** with SQLMap; set `ghauri.parallel: false` for sequential (lower RAM).
 - **Cloud / Shodan** modules return proper `MODULE_*` constants instead of bare `return` / implicit `None`.
 
 ---
@@ -92,8 +97,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Documentation
 
-- **README.md** — ntfy section, module status table, menu **A/D/F**, modules **1–36**, troubleshooting (kr, nomore403, web overlap).
-- **`_internal_docs/INTERNAL.md`** — registry model, 36-module catalog, audit checklist, phase pipeline.
+- **README.md** — ntfy section, module status table, menu **A/D/F**, modules **1–36**, SQLi/Ghauri/GF merge, RAM guidance, troubleshooting (kr, nomore403, web overlap).
+- **INSTALLATION.md** — Ghauri install/verify notes.
+- **web/README.md**, **web/backend/README.md**, **web/frontend/README.md** — SQLi dual-engine and config API fields.
+- **`_internal_docs/INTERNAL.md`** — SQLi pipeline (§15), module 19 catalog, Ghauri tool check, web parity.
 
 ---
 
@@ -106,6 +113,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 | Nuclei timeouts on dead hosts | Tool behavior on slow/unresponsive hosts |
 | ParamSpider archive errors | External web.archive.org rate limits |
 | Full Spectrum runtime | ~2–6 h depending on target size; use **F** + resume |
+| SQLi RAM (both engines, parallel) | Often ~400 MB–1.5 GB peak; use `ghauri.parallel: false` or `ghauri.enabled: false` on small VMs |
 
 ---
 
