@@ -21,7 +21,7 @@ jitter: false         # Add random delays between tool calls for stealth
 
 # Wordlist paths
 wordlists:
-  dns: /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+  dns: /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt
   dirs: /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt
   dirs_fallback: /usr/share/wordlists/dirb/common.txt
   resolvers: /opt/recontools/massdns/resolvers.txt
@@ -77,11 +77,11 @@ ntfy:
   tags: rocket
   send_scan_start: true
   send_scan_complete: true
-  send_module_start: false
+  send_module_start: true
   send_module_complete: true
   send_findings: true
   send_errors: true
-  send_skips: false
+  send_skips: true
   timeout: 8
   dedupe_window: 20
 

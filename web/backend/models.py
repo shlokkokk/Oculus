@@ -48,11 +48,15 @@ class ScanStatusResponse(BaseModel):
     domain: Optional[str] = None
     mode: Optional[str] = None
     current_module: Optional[str] = None
+    current_phase: Optional[str] = None
     elapsed_seconds: int = 0
     modules_completed: list[str] = Field(default_factory=list)
+    modules_partial: list[str] = Field(default_factory=list)
+    modules_skipped: list[str] = Field(default_factory=list)
     modules_failed: list[str] = Field(default_factory=list)
     total_modules: int = 0
     log_line_count: int = 0
+    progress_percent: int = 0
 
 
 class ToolInfo(BaseModel):

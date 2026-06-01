@@ -436,7 +436,7 @@ jitter: false         # Add random delays between tool calls for stealth
 
 # Wordlist paths
 wordlists:
-  dns: /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+  dns: /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt
   dirs: /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt
   dirs_fallback: /usr/share/wordlists/dirb/common.txt
   resolvers: /opt/recontools/massdns/resolvers.txt

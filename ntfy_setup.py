@@ -137,11 +137,11 @@ def _merge_ntfy(existing: dict[str, Any]) -> dict[str, Any]:
         ntfy["tags"] = _ask("Default ntfy tags, comma-separated", str(ntfy.get("tags", "rocket")))
         ntfy["send_scan_start"] = _ask_bool("Notify when a scan starts", bool(ntfy.get("send_scan_start", True)))
         ntfy["send_scan_complete"] = _ask_bool("Notify when a scan completes", bool(ntfy.get("send_scan_complete", True)))
-        ntfy["send_module_start"] = _ask_bool("Notify when a module starts", bool(ntfy.get("send_module_start", False)))
+        ntfy["send_module_start"] = _ask_bool("Notify when a module starts", bool(ntfy.get("send_module_start", True)))
         ntfy["send_module_complete"] = _ask_bool("Notify when a module completes", bool(ntfy.get("send_module_complete", True)))
-        ntfy["send_findings"] = _ask_bool("Notify when findings are saved", bool(ntfy.get("send_findings", True)))
+        ntfy["send_findings"] = _ask_bool("Notify when findings update on save", bool(ntfy.get("send_findings", True)))
         ntfy["send_errors"] = _ask_bool("Notify on errors", bool(ntfy.get("send_errors", True)))
-        ntfy["send_skips"] = _ask_bool("Notify on skipped steps", bool(ntfy.get("send_skips", False)))
+        ntfy["send_skips"] = _ask_bool("Notify on skipped steps", bool(ntfy.get("send_skips", True)))
         ntfy["timeout"] = _ask_int("HTTP timeout seconds", int(ntfy.get("timeout", 8)), minimum=1)
         ntfy["dedupe_window"] = _ask_int("Dedupe window seconds", int(ntfy.get("dedupe_window", 20)), minimum=0)
     else:
@@ -154,11 +154,11 @@ def _merge_ntfy(existing: dict[str, Any]) -> dict[str, Any]:
         ntfy["tags"] = "rocket"
         ntfy["send_scan_start"] = True
         ntfy["send_scan_complete"] = True
-        ntfy["send_module_start"] = False
+        ntfy["send_module_start"] = True
         ntfy["send_module_complete"] = True
         ntfy["send_findings"] = True
         ntfy["send_errors"] = True
-        ntfy["send_skips"] = False
+        ntfy["send_skips"] = True
         ntfy["timeout"] = 8
         ntfy["dedupe_window"] = 20
     return ntfy

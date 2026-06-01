@@ -225,11 +225,11 @@ else
 fi
 
 # Verify/download default DNS wordlist if missing to avoid installing massive seclists package
-DNS_WORDLIST="/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
+DNS_WORDLIST="/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt"
 if [ ! -f "$DNS_WORDLIST" ]; then
-    log_info "Default DNS wordlist missing. Downloading light 5,000-subdomain list (80KB)..."
+    log_info "Default DNS wordlist missing. Downloading industry-standard 110,000-subdomain list (1.8MB)..."
     sudo mkdir -p "$(dirname "$DNS_WORDLIST")"
-    if sudo curl -fsSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt" -o "$DNS_WORDLIST" 2>/dev/null; then
+    if sudo curl -fsSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-110000.txt" -o "$DNS_WORDLIST" 2>/dev/null; then
         log_success "DNS wordlist downloaded successfully"
     else
         log_warn "Failed to download DNS wordlist automatically — DNS Bruteforce step may be skipped"

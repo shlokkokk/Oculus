@@ -71,6 +71,7 @@ MODULE_SUBTOOLS = {
     "Advanced URL Enum": ["Hakrawler"],
     "Parameter Discovery": ["ParamSpider", "Arjun"],
     "JS Endpoint Extraction": ["LinkFinder"],
+    "Subdomain Takeover": ["Subzy check"],
     "Subdomain Takeover Check": ["Subzy check"],
     "Vulnerability Scan (Nuclei)": ["Vulnerability scan"],
     "Vulnerability Scan": ["Vulnerability scan"],
@@ -95,6 +96,82 @@ MODULE_SUBTOOLS = {
     "403 Bypass (nomore403)": ["nomore403"],
     "Nikto Scanner": ["nikto"],
     "Nikto": ["nikto"],
+}
+
+WEB_MODULE_DISPLAY = {
+    'subdomain': 'Subdomain Enumeration',
+    'dnsbrute': 'DNS Bruteforce',
+    'dns': 'DNS Resolution',
+    'alive': 'Alive Hosts Check',
+    'tlsx': 'TLS Certificate Scan',
+    'asn': 'ASN Discovery',
+    'cloud': 'Cloud Asset Discovery',
+    'osint': 'OSINT Harvesting',
+    'shodan': 'Shodan Recon',
+    'github': 'GitHub Dorking',
+    'ports': 'Fast Port Scan',
+    'fullports': 'Full Port Scan',
+    'tech': 'Tech Scan',
+    'waf': 'WAF Detection',
+    'screenshots': 'Screenshot Capture',
+    'internetdb': 'InternetDB Lookup',
+    'nikto': 'Nikto Scanner',
+    'urls': 'URL Collection',
+    'hakrawler': 'Advanced URL Enum',
+    'cariddi': 'Cariddi Scan',
+    'params': 'Parameter Discovery',
+    'js': 'JS Endpoint Extraction',
+    'takeover': 'Subdomain Takeover Check',
+    'vuln': 'Vulnerability Scan (Nuclei)',
+    'jaeles': 'Jaeles Scan',
+    'gf': 'GF Filters',
+    'fuzz': 'Directory Fuzzing',
+    'api': 'API Fuzzing',
+    'sqli': 'SQLi Scan',
+    'xss': 'XSS Scan (Dalfox)',
+    'redirect': 'Open Redirect Scan',
+    'crlfuzz': 'CRLF Injection (CRLFuzz)',
+    'tplmap': 'SSTI Scan (Tplmap)',
+    'nomore403': '403 Bypass (nomore403)',
+    'cors': 'CORS Scanner',
+    'smuggling': 'HTTP Smuggling',
+}
+
+WEB_STEP_RESULT_KEYS = {
+    'Subdomain Enumeration': 'subdomains',
+    'DNS Bruteforce': 'dns_brute',
+    'DNS Resolution': 'dns_resolved',
+    'Alive Hosts Check': 'alive_hosts',
+    'Fast Port Scan': 'fast_ports',
+    'Full Port Scan': 'full_ports',
+    'URL Collection': 'urls',
+    'WAF Detection': 'waf_detected',
+    'Vulnerability Scan': 'vulnerabilities',
+    'Vulnerability Scan (Nuclei)': 'vulnerabilities',
+    'Parameter Discovery': 'parameters',
+    'JS Endpoint Extraction': 'js_endpoints',
+    'Directory Fuzzing': 'fuzz_findings',
+    'API Fuzzing': 'api_fuzz',
+    'Subdomain Takeover Check': 'takeover',
+    'Subdomain Takeover': 'takeover',
+    'Advanced URL Enum': 'urls_final',
+    'Screenshot Capture': 'screenshots',
+    'GF Filters': 'gf_filters',
+    'Tech Scan': 'tech_scan',
+    'XSS Scan (Dalfox)': 'xss_findings',
+    'CORS Scanner': 'cors_findings',
+    'HTTP Smuggling': 'smuggler',
+    'SQLi Scan': 'sqlmap',
+    'ASN Discovery': 'asn_ranges',
+    'TLS Certificate Scan': 'tlsx_sans',
+    'Open Redirect Scan': 'open_redirects',
+    'CRLF Injection (CRLFuzz)': 'crlf_findings',
+    'SSTI Scan (Tplmap)': 'ssti_findings',
+    '403 Bypass (nomore403)': 'bypass_403',
+    'Cariddi Scan': 'cariddi_findings',
+    'Jaeles Scan': 'jaeles_findings',
+    'Nikto Scanner': 'nikto_scanned',
+    'InternetDB Lookup': 'internetdb_hosts',
 }
 
 
@@ -144,9 +221,11 @@ class ScanEngine:
         self._log_lock = threading.Lock()
         self._start_time: float = 0
         self._modules_completed: list[str] = []
+        self._modules_partial: list[str] = []
         self._modules_skipped: list[str] = []
         self._subtools_completed: set[str] = set()
         self._modules_failed: list[str] = []
+        self._end_time: Optional[float] = None
         self._current_module: Optional[str] = None
         self._total_modules: int = 0
         self._abort_flag = threading.Event()
@@ -164,8 +243,12 @@ class ScanEngine:
 
     @property
     def elapsed(self) -> int:
-        if self._start_time and self._state == "running":
+        if not self._start_time:
+            return 0
+        if self._state == "running":
             return int(time.time() - self._start_time)
+        if self._end_time:
+            return int(self._end_time - self._start_time)
         return 0
 
     def get_status(self) -> dict:
@@ -206,14 +289,21 @@ class ScanEngine:
         if self._state == "completed":
             progress_percent = 100
             
+        live_module = self._current_module
+        if self._oculus and self._state == "running":
+            oc_mod = getattr(self._oculus, '_current_module', None)
+            if oc_mod:
+                live_module = oc_mod
+
         return {
             "state": self._state,
             "domain": self._domain,
             "mode": self._mode,
-            "current_module": self._current_module,
+            "current_module": live_module,
             "current_phase": current_phase,
             "elapsed_seconds": self.elapsed,
             "modules_completed": completed,
+            "modules_partial": list(self._modules_partial),
             "modules_failed": failed,
             "modules_skipped": skipped,
             "total_modules": self._total_modules,
@@ -528,15 +618,19 @@ class ScanEngine:
         """Start a scan in a background thread. Returns False if already running."""
         if self._state == "running":
             return False
+        if self._thread and self._thread.is_alive():
+            return False
 
         # Reset state
         self._state = "running"
+        self._end_time = None
         self._domain = domain
         self._mode = mode
         self._log_queue = queue.Queue(maxsize=50000)
         with self._log_lock:
             self._log_lines = []
         self._modules_completed = []
+        self._modules_partial = []
         self._modules_skipped = []
         self._subtools_completed = set()
         self._modules_failed = []
@@ -564,7 +658,20 @@ class ScanEngine:
             self._oculus.kill_all_active_processes()
         kill_zombie_scanners()
         self._state = "aborted"
+        self._end_time = time.time()
         return True
+
+    def _web_notify_step(self, oc: Oculus, step_name: str, ret_status, domain: str):
+        """Use oculus consolidated module notifications (tools + total in one message)."""
+        result_key = WEB_STEP_RESULT_KEYS.get(step_name)
+        if ret_status == oc.MODULE_SKIPPED:
+            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_SKIPPED)
+        elif ret_status == oc.MODULE_FAILED:
+            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_FAILED)
+        elif ret_status == oc.MODULE_PARTIAL:
+            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_PARTIAL)
+        else:
+            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_OK)
 
     def _run_scan(
         self,
@@ -710,7 +817,7 @@ class ScanEngine:
                     ("JS Endpoint Extraction", oc.run_js_endpoint_extraction),
                     ("Directory Fuzzing", oc.run_directory_fuzzing),
                     ("API Fuzzing", oc.run_api_fuzzing),
-                    ("Subdomain Takeover", oc.run_subdomain_takeover_check),
+                    ("Subdomain Takeover Check", oc.run_subdomain_takeover_check),
                     ("Advanced URL Enum", oc.run_advanced_url_enum),
                     ("Screenshot Capture", oc.run_screenshot_capture),
                     ("GF Filters", oc.run_gf_filters),
@@ -722,7 +829,6 @@ class ScanEngine:
                 ]
             elif mode == "full_spectrum":
                 self._total_modules = 36
-                # Use the built-in full spectrum method
                 self._current_module = "Full Spectrum Scan"
                 oc.run_full_spectrum_scan(force_fresh=not resume)
                 # State was already set to "aborted" by stop_scan() if the user
@@ -733,6 +839,7 @@ class ScanEngine:
                 elif self._state != "aborted":
                     # Scan exited for a non-abort reason (exception inside)
                     self._state = "failed"
+                self._end_time = time.time()
                 self._current_module = None
                 return
             elif mode == "custom" and modules:
@@ -750,7 +857,7 @@ class ScanEngine:
                 for mod_name in sorted_mods:
                     method_name = MODULE_MAP.get(mod_name)
                     if method_name and hasattr(oc, method_name):
-                        nice_name = mod_name.replace("_", " ").title()
+                        nice_name = WEB_MODULE_DISPLAY.get(mod_name, mod_name.replace("_", " ").title())
                         steps.append((nice_name, getattr(oc, method_name)))
                 self._total_modules = len(steps)
             else:
@@ -768,66 +875,36 @@ class ScanEngine:
                     oc._current_module = step_name
                     require_file_failed["value"] = False
                     try:
+                        oc._notify_module_start(step_name)
                         ret_status = step_func()
-                        if ret_status == oc.MODULE_SKIPPED or require_file_failed["value"]:
+                        if require_file_failed["value"] and ret_status != oc.MODULE_SKIPPED:
+                            ret_status = oc.MODULE_SKIPPED
+                        if ret_status == oc.MODULE_SKIPPED:
                             reason = oc._skip_reasons.get(step_name, "prerequisite file or tool missing")
                             self._modules_skipped.append(step_name)
                             self._log_queue.put(f"[SKIP] {step_name} — {reason}")
-                            oc.notify_scan_event(
-                                'module_skip',
-                                f"⏩ Oculus skipped: {step_name}",
-                                f"{step_name} skipped for {domain}: {reason}",
-                                priority='default',
-                                tags=['fast_forward'],
-                                dedupe_key=f"web_module_skip:{mode}:{step_name}:{domain}",
-                            )
+                            self._web_notify_step(oc, step_name, oc.MODULE_SKIPPED, domain)
                         elif ret_status == oc.MODULE_FAILED:
                             self._modules_failed.append(step_name)
                             self._log_queue.put(f"[ERROR] {step_name} failed: module reported failure")
-                            oc.notify_scan_event(
-                                'error',
-                                f"Oculus error: {step_name}",
-                                f"{step_name} failed for {domain}: module reported failure",
-                                priority='high',
-                                tags=['warning'],
-                                dedupe_key=f"web_module_error:{mode}:{step_name}:{domain}",
-                            )
+                            self._web_notify_step(oc, step_name, oc.MODULE_FAILED, domain)
+                        elif ret_status == oc.MODULE_PARTIAL:
+                            self._modules_partial.append(step_name)
+                            self._modules_completed.append(step_name)
+                            self._log_queue.put(f"[~] {step_name} completed with partial results")
+                            self._web_notify_step(oc, step_name, oc.MODULE_PARTIAL, domain)
                         else:
                             self._modules_completed.append(step_name)
-                            if ret_status == oc.MODULE_PARTIAL:
-                                self._log_queue.put(f"[~] {step_name} completed with partial results")
-                                oc.notify_scan_event(
-                                    'module_complete',
-                                    f"⚠️ Oculus partial: {step_name}",
-                                    f"{step_name} completed with partial results for {domain}",
-                                    priority='default',
-                                    tags=['warning'],
-                                    dedupe_key=f"web_module_done:{mode}:{step_name}:{domain}",
-                                )
-                            else:
-                                self._log_queue.put(f"[✔] {step_name} completed")
-                                oc.notify_scan_event(
-                                    'module_complete',
-                                    f"Oculus module done: {step_name}",
-                                    f"{step_name} completed for {domain}",
-                                    priority='default',
-                                    tags=['white_check_mark'],
-                                    dedupe_key=f"web_module_done:{mode}:{step_name}:{domain}",
-                                )
+                            self._log_queue.put(f"[✔] {step_name} completed")
+                            self._web_notify_step(oc, step_name, ret_status or oc.MODULE_OK, domain)
                     except KeyboardInterrupt:
                         self._state = "aborted"
+                        self._end_time = time.time()
                         return
                     except Exception as e:
                         self._modules_failed.append(step_name)
                         self._log_queue.put(f"[ERROR] {step_name} failed: {e}")
-                        oc.notify_scan_event(
-                            'error',
-                            f"Oculus error: {step_name}",
-                            f"{step_name} failed for {domain}: {e}",
-                            priority='high',
-                            tags=['warning'],
-                            dedupe_key=f"web_module_error:{mode}:{step_name}:{domain}",
-                        )
+                        oc._notify_module_error(step_name, str(e))
                     finally:
                         oc._current_module = previous_module
 
@@ -842,20 +919,26 @@ class ScanEngine:
                     pass
 
             self._current_module = None
-            self._state = "failed" if self._modules_failed else "completed"
-            if mode != "full_spectrum" and self._state == "completed":
-                oc.notify_scan_event(
-                    'scan_complete',
-                    f"Oculus scan complete: {domain}",
-                    f"{mode.replace('_', ' ').title()} completed for {domain}",
-                    priority='default',
-                    tags=['check'],
-                    dedupe_key=f"web_scan_complete:{mode}:{domain}",
-                )
+            if self._abort_flag.is_set() and self._state == "running":
+                self._state = "aborted"
+            elif self._modules_failed:
+                self._state = "failed"
+            else:
+                self._state = "completed"
+            self._end_time = time.time()
+            if mode != "full_spectrum" and not self._abort_flag.is_set():
+                if self._state == "completed":
+                    title, body = oc._build_scan_complete_report(mode.replace('_', ' ').title())
+                    oc.notify_scan_event(
+                        'scan_complete', title, body,
+                        priority='default', tags='white_check_mark',
+                        dedupe_key=f"web_scan_complete:{mode}:{domain}",
+                    )
 
         except Exception as e:
             self._log_queue.put(f"[FATAL] Scan engine error: {e}")
             self._state = "failed"
+            self._end_time = time.time()
         finally:
             if self._oculus:
                 if hasattr(self._oculus, "completed_modules"):

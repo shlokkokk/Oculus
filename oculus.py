@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
         'threads': 50,
     },
     'wordlists': {
-        'dns': '/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt',
+        'dns': '/usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt',
         'dirs': '/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt',
         'dirs_fallback': '/usr/share/wordlists/dirb/common.txt',
         'resolvers': '/opt/recontools/massdns/resolvers.txt',
@@ -120,11 +120,11 @@ DEFAULT_CONFIG = {
         'tags': 'rocket',
         'send_scan_start': True,
         'send_scan_complete': True,
-        'send_module_start': False,
+        'send_module_start': True,
         'send_module_complete': True,
         'send_findings': True,
         'send_errors': True,
-        'send_skips': False,
+        'send_skips': True,
         'timeout': 8,
         'dedupe_window': 20,
     },
@@ -239,6 +239,7 @@ class Oculus:
         self._ntfy_lock = threading.Lock()
         self._ntfy_sent = {}
         self._last_notified_results = {}
+        self._module_tool_stats = {}  # module_name -> [{name, status, count}]
         self._thread_local = threading.local()
         self.skipped_modules = []       # Modules that bailed (missing key/tool)
         self._skip_reasons = {}         # module_name -> reason string
@@ -605,6 +606,60 @@ class Oculus:
         """Return the default configuration timeout, fallback to 300 seconds"""
         return self.config.get('timeout') or self.config.get('default_timeout') or 300
 
+    def _get_scaled_timeout(self, tool_name, target_count, default_base=600, default_per_target=120, default_max=7200):
+        """Scale the timeout by target count dynamically to prevent early aborts on large target lists."""
+        cfg = self.config.get(tool_name, {}) or {}
+        base = int(cfg.get('timeout_base', default_base))
+        per_target = int(cfg.get('timeout_per_target', default_per_target))
+        max_timeout = int(cfg.get('timeout_max', default_max))
+        target_count = max(1, int(target_count or 1))
+        return min(max_timeout, max(base, target_count * per_target))
+
+    def _prepare_nomore403_payloads(self):
+        """Ensure nomore403 payloads directory exists, or clone it if missing."""
+        opt_dir = "/opt/recontools/nomore403"
+        payloads_dir = os.path.join(opt_dir, "payloads")
+        if os.path.isdir(payloads_dir):
+            return payloads_dir
+
+        other_paths = [
+            "/opt/nomore403/payloads",
+            os.path.expanduser("~/go/src/github.com/devploit/nomore403/payloads"),
+        ]
+        for p in other_paths:
+            if os.path.isdir(p):
+                return p
+
+        print(f"{Colors.CYAN}[*] nomore403 payloads folder missing. Cloning devploit/nomore403...{Colors.RESET}")
+        try:
+            os.makedirs(opt_dir, exist_ok=True)
+            import subprocess
+            r = subprocess.run(
+                ["git", "clone", "--depth=1", "https://github.com/devploit/nomore403", opt_dir],
+                capture_output=True, text=True, timeout=60
+            )
+            if r.returncode == 0 and os.path.isdir(payloads_dir):
+                print(f"{Colors.GREEN}[✔] nomore403 payloads cloned successfully{Colors.RESET}")
+                return payloads_dir
+        except Exception as e:
+            self.logger.error(f"Failed to clone nomore403 payloads: {e}")
+
+        return None
+
+    def _nomore403_command(self, nomore403_bin, url, out_path, payloads_dir=None):
+        """Build nomore403 command; run from repo root so relative payloads/ resolves."""
+        folder_flag = ''
+        if payloads_dir and os.path.isdir(payloads_dir):
+            parent = os.path.dirname(os.path.abspath(payloads_dir))
+            folder_name = os.path.basename(payloads_dir.rstrip('/\\'))
+            folder_flag = f" -f {shlex.quote(folder_name)}"
+            workdir = shlex.quote(parent)
+            return (
+                f"cd {workdir} && {nomore403_bin} -u {shlex.quote(url)}"
+                f"{folder_flag} -o {shlex.quote(os.path.abspath(out_path))}"
+            )
+        return f"{nomore403_bin} -u {shlex.quote(url)} -o {shlex.quote(out_path)}"
+
     def run_command(self, command, output_file=None, timeout=None, stream=True, label=None, get_code=False):
         """Execute a shell command with optional real-time streaming and output redirection"""
         if getattr(self, 'abort_requested', False):
@@ -840,6 +895,519 @@ class Oculus:
         text = str(value).strip()
         return (1 if text else 0, text)
 
+    @staticmethod
+    def _ntfy_format_count(value):
+        try:
+            return f"{int(value):,}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    # Per-module ntfy profiles: phase, tags, primary metrics, optional per-tool artifact counts.
+    _MODULE_NTFY_PROFILES = {
+        'subdomain enumeration': {
+            'phase': 'Discovery', 'tags': 'mag,microscope',
+            'metrics': [('subdomains', 'Total unique subdomains')],
+            'tools': [
+                ('subfinder_raw.txt', 'Subfinder', 'subfinder'),
+                ('amass_raw.txt', 'Amass', 'amass'),
+                ('assetfinder_raw.txt', 'Assetfinder', 'assetfinder'),
+                ('crtsh_subs.txt', 'crt.sh', None),
+            ],
+        },
+        'dns bruteforce': {
+            'phase': 'Discovery', 'tags': 'mag,hammer',
+            'metrics': [('dns_brute', 'Total new hosts from bruteforce')],
+            'tools': [
+                ('massdns_out.txt', 'massdns', 'massdns'),
+                ('puredns_resolved.txt', 'puredns', 'puredns'),
+            ],
+        },
+        'dns resolution': {
+            'phase': 'Discovery', 'tags': 'mag,globe_with_meridians',
+            'metrics': [('dns_resolved', 'DNS records resolved')],
+            'artifacts': [('dns_resolved.txt', 'Resolved hosts')],
+        },
+        'alive hosts check': {
+            'phase': 'Discovery', 'tags': 'mag,white_check_mark',
+            'metrics': [('alive_hosts', 'Total live HTTP(S) hosts')],
+            'tools': [
+                ('httpx_raw.json', 'HTTPx', 'httpx'),
+                ('httprobe_raw.txt', 'httprobe', 'httprobe'),
+            ],
+        },
+        'tls certificate scan': {
+            'phase': 'Discovery', 'tags': 'mag,lock',
+            'metrics': [('tlsx_sans', 'New SAN subdomains')],
+            'artifacts': [('subdomains.txt', 'Subdomain list')],
+        },
+        'asn discovery': {
+            'phase': 'Discovery', 'tags': 'mag,world_map',
+            'metrics': [('asn_ranges', 'ASN ranges')],
+            'artifacts': [('asn/asn_ranges.txt', 'ASN output')],
+        },
+        'cloud asset discovery': {
+            'phase': 'Discovery', 'tags': 'mag,cloud',
+            'metrics': [
+                ('cloud_assets', 'Open cloud buckets'),
+                ('cloud_assets_private', 'Private / blocked buckets'),
+            ],
+            'artifacts': [('cloud/s3_buckets.txt', 'S3 candidates')],
+        },
+        'osint harvesting': {
+            'phase': 'Discovery', 'tags': 'mag,brain',
+            'metrics': [('osint_findings', 'OSINT report generated')],
+            'artifacts': [('osint/theharvester.html', 'theHarvester')],
+        },
+        'shodan recon': {
+            'phase': 'Discovery', 'tags': 'mag,satellite',
+            'metrics': [('shodan_results', 'Shodan matches')],
+            'artifacts': [('shodan/shodan_results.txt', 'Shodan')],
+        },
+        'github dorking': {
+            'phase': 'Discovery', 'tags': 'mag,computer',
+            'metrics': [('github_secrets', 'GitHub findings')],
+            'artifacts': [('github/github_secrets.txt', 'GitHub')],
+        },
+        'fast port scan': {
+            'phase': 'Infrastructure', 'tags': 'gear,chart_with_upwards_trend',
+            'metrics': [('fast_ports', 'Open ports (top 1000)')],
+            'artifacts': [('ports_fast.txt', 'naabu')],
+        },
+        'full port scan': {
+            'phase': 'Infrastructure', 'tags': 'gear,chart_with_upwards_trend',
+            'metrics': [('full_ports', 'Open ports (full)')],
+            'artifacts': [('ports_full.txt', 'nmap')],
+        },
+        'tech scan': {
+            'phase': 'Infrastructure', 'tags': 'gear,magnifying_glass_tilted_left',
+            'metrics': [('tech_scan', 'Fingerprints')],
+            'artifacts': [('tech_scan/whatweb_results.json', 'WhatWeb')],
+        },
+        'waf detection': {
+            'phase': 'Infrastructure', 'tags': 'gear,shield',
+            'metrics': [
+                ('waf_detected', 'Hosts behind WAF'),
+                ('waf_total', 'Hosts scanned'),
+                ('whatwaf_findings', 'whatwaf signals'),
+            ],
+        },
+        'screenshot capture': {
+            'phase': 'Infrastructure', 'tags': 'gear,camera_flash',
+            'metrics': [('screenshots', 'Screenshots captured')],
+        },
+        'internetdb lookup': {
+            'phase': 'Infrastructure', 'tags': 'gear,satellite',
+            'metrics': [('internetdb_hosts', 'Hosts with InternetDB data')],
+            'artifacts': [('internetdb/internetdb_results.json', 'InternetDB')],
+        },
+        'nikto scanner': {
+            'phase': 'Infrastructure', 'tags': 'gear,warning',
+            'metrics': [('nikto_scanned', 'Hosts scanned')],
+            'artifacts': [('nikto/', 'Nikto reports')],
+        },
+        'url collection': {
+            'phase': 'Content', 'tags': 'page_facing_up,link',
+            'metrics': [('urls', 'Total unique URLs')],
+            'tools': [
+                ('katana_raw.txt', 'Katana', 'katana'),
+                ('gau_raw.txt', 'Gau', 'gau'),
+                ('waybackurls_raw.txt', 'Waybackurls', 'waybackurls'),
+            ],
+        },
+        'advanced url enum': {
+            'phase': 'Content', 'tags': 'page_facing_up,link',
+            'metrics': [('urls_final', 'Total URLs after merge')],
+            'tools': [
+                ('hakrawler.txt', 'Hakrawler', 'hakrawler'),
+                ('urls_final.txt', 'Merged list', None),
+            ],
+        },
+        'cariddi scan': {
+            'phase': 'Content', 'tags': 'page_facing_up,spider',
+            'metrics': [('cariddi_findings', 'Cariddi findings')],
+            'artifacts': [('cariddi/cariddi_results.txt', 'Cariddi')],
+        },
+        'parameter discovery': {
+            'phase': 'Content', 'tags': 'page_facing_up,memo',
+            'metrics': [('parameters', 'Total parameters discovered')],
+            'tools': [
+                ('parameters/paramspider.txt', 'ParamSpider', 'paramspider'),
+                ('parameters/arjun.json', 'Arjun', 'arjun'),
+            ],
+        },
+        'js endpoint extraction': {
+            'phase': 'Content', 'tags': 'page_facing_up,bracket',
+            'metrics': [('js_endpoints', 'JS endpoints'), ('js_secrets', 'JS secrets')],
+        },
+        'subdomain takeover check': {
+            'phase': 'Content', 'tags': 'page_facing_up,rotating_light',
+            'metrics': [('takeover', 'Takeover candidates')],
+            'artifacts': [('takeover/takeovers.txt', 'subzy'), ('takeover/cname_fallback.txt', 'CNAME check')],
+        },
+        'vulnerability scan': {
+            'phase': 'Vulnerability', 'tags': 'rotating_light,boom',
+            'metrics': [
+                ('vulnerabilities', 'Total findings'),
+                ('critical_vulns', 'Critical'),
+                ('high_vulns', 'High'),
+            ],
+            'tools': [
+                ('nuclei_output.txt', 'Nuclei', 'nuclei'),
+                ('nuclei.jsonl', 'Nuclei JSONL', 'nuclei'),
+            ],
+        },
+        'vulnerability scan (nuclei)': {
+            'phase': 'Vulnerability', 'tags': 'rotating_light,boom',
+            'metrics': [
+                ('vulnerabilities', 'Total findings'),
+                ('critical_vulns', 'Critical'),
+                ('high_vulns', 'High'),
+            ],
+            'tools': [
+                ('nuclei_output.txt', 'Nuclei', 'nuclei'),
+                ('nuclei.jsonl', 'Nuclei JSONL', 'nuclei'),
+            ],
+        },
+        'gf filters': {
+            'phase': 'Vulnerability', 'tags': 'rotating_light,scissors',
+            'metrics': [('gf_filters', 'GF pattern matches')],
+        },
+        'jaeles scan': {
+            'phase': 'Vulnerability', 'tags': 'rotating_light,microscope',
+            'metrics': [('jaeles_findings', 'Jaeles findings')],
+            'artifacts': [('jaeles/', 'Jaeles output')],
+        },
+        'directory fuzzing': {
+            'phase': 'Vulnerability', 'tags': 'rotating_light,folder',
+            'metrics': [
+                ('fuzz_findings', 'Total ffuf hits'),
+                ('bypass_403', 'Total 403 bypasses'),
+            ],
+            'tools': [
+                ('fuzzing/', 'ffuf', 'ffuf'),
+                ('nomore403/bypass_results.txt', 'nomore403 auto-feed', 'nomore403'),
+            ],
+        },
+        'api fuzzing': {
+            'phase': 'Vulnerability', 'tags': 'rotating_light,package',
+            'metrics': [('api_fuzz', 'Total API routes')],
+            'tools': [('api_fuzzing/kr_results.txt', 'Kiterunner', 'kr')],
+        },
+        'sqli scan': {
+            'phase': 'Exploitation', 'tags': 'skull,database',
+            'metrics': [('sqlmap', 'SQLi findings')],
+            'artifacts': [('sqlmap/', 'sqlmap')],
+        },
+        'xss scan (dalfox)': {
+            'phase': 'Exploitation', 'tags': 'skull,bug',
+            'metrics': [('xss_findings', 'XSS findings')],
+            'artifacts': [('xss/dalfox_results.txt', 'Dalfox')],
+        },
+        'open redirect scan': {
+            'phase': 'Exploitation', 'tags': 'skull,arrow_right_hook',
+            'metrics': [('open_redirects', 'Open redirects')],
+            'artifacts': [('redirects/open_redirects.txt', 'Redirects')],
+        },
+        'crlf injection (crlfuzz)': {
+            'phase': 'Exploitation', 'tags': 'skull,arrow_heading_up',
+            'metrics': [('crlf_findings', 'CRLF issues')],
+            'artifacts': [('crlfuzz/crlfuzz_results.txt', 'CRLFuzz')],
+        },
+        'ssti scan (tplmap)': {
+            'phase': 'Exploitation', 'tags': 'skull,page_with_curl',
+            'metrics': [('ssti_findings', 'SSTI findings')],
+            'artifacts': [('tplmap/tplmap_results.txt', 'Tplmap')],
+        },
+        '403 bypass (nomore403)': {
+            'phase': 'Exploitation', 'tags': 'skull,unlock',
+            'metrics': [('bypass_403', 'Potential bypasses')],
+            'artifacts': [('nomore403/bypass_results.txt', 'nomore403')],
+        },
+        'cors scanner': {
+            'phase': 'Exploitation', 'tags': 'skull,globe_with_meridians',
+            'metrics': [('cors_findings', 'CORS misconfigs')],
+        },
+        'http smuggling': {
+            'phase': 'Exploitation', 'tags': 'skull,package',
+            'metrics': [('smuggler', 'Smuggling findings')],
+            'artifacts': [('smuggling/', 'smuggler')],
+        },
+    }
+
+    _RESULT_KEY_ALIASES = {
+        'subdomain enumeration': 'subdomains',
+        'dns bruteforce': 'dns_brute',
+        'dns resolution': 'dns_resolved',
+        'alive hosts check': 'alive_hosts',
+        'url collection': 'urls',
+        'advanced url enum': 'urls_final',
+        'vulnerability scan (nuclei)': 'vulnerabilities',
+        'directory fuzzing': 'fuzz_findings',
+        'api fuzzing': 'api_fuzz',
+        'xss scan (dalfox)': 'xss_findings',
+        '403 bypass (nomore403)': 'bypass_403',
+    }
+
+    _MODULE_NAME_ALIASES = {
+        'vulnerability scan': 'vulnerability scan (nuclei)',
+        'subdomain takeover': 'subdomain takeover check',
+        'xss scan': 'xss scan (dalfox)',
+        'crlf injection': 'crlf injection (crlfuzz)',
+        'ssti scan': 'ssti scan (tplmap)',
+        '403 bypass': '403 bypass (nomore403)',
+    }
+
+    def _ntfy_profile_for(self, module_name, result_key=None):
+        name_key = (module_name or '').strip().lower()
+        name_key = self._MODULE_NAME_ALIASES.get(name_key, name_key)
+        profile = self._MODULE_NTFY_PROFILES.get(name_key)
+        if profile:
+            return profile
+        if result_key:
+            for prof in self._MODULE_NTFY_PROFILES.values():
+                for key, _ in prof.get('metrics', []):
+                    if key == result_key:
+                        return prof
+        return None
+
+    def _ntfy_artifact_count(self, rel_path):
+        if not self.output_dir:
+            return None
+        path = os.path.join(self.output_dir, rel_path)
+        if path.endswith('/') or path.endswith(os.sep):
+            if not os.path.isdir(path.rstrip('/\\')):
+                return None
+            total = 0
+            for root, _, files in os.walk(path.rstrip('/\\')):
+                for name in files:
+                    fp = os.path.join(root, name)
+                    try:
+                        if os.path.getsize(fp) > 0:
+                            total += 1
+                    except OSError:
+                        continue
+            return total
+        if os.path.isfile(path):
+            return self.count_file_lines(path)
+        if Oculus._path_has_output(path):
+            return self.count_file_lines(path)
+        return None
+
+    def _record_module_tool(self, module_name, tool_name, status, count=None):
+        """Remember per-tool outcome for the consolidated module ntfy body."""
+        if not module_name or not tool_name:
+            return
+        entry = {'name': tool_name, 'status': status, 'count': count}
+        bucket = self._module_tool_stats.setdefault(module_name, [])
+        for idx, existing in enumerate(bucket):
+            if existing.get('name') == tool_name:
+                bucket[idx] = entry
+                return
+        bucket.append(entry)
+
+    def _format_module_tool_line(self, tool_name, status, count=None):
+        if status == 'ok':
+            return f"• {tool_name}: {self._ntfy_format_count(count or 0)} found"
+        if status == 'empty':
+            return f"• {tool_name}: no results"
+        if status == 'failed':
+            return f"• {tool_name}: failed"
+        if status == 'not_installed':
+            return f"• {tool_name}: not installed"
+        if status == 'skipped':
+            return f"• {tool_name}: skipped"
+        return f"• {tool_name}: {status}"
+
+    def _iter_profile_tools(self, profile):
+        if not profile:
+            return
+        for item in profile.get('tools') or []:
+            if len(item) == 2:
+                yield item[0], item[1], None
+            else:
+                yield item[0], item[1], item[2]
+        for item in profile.get('artifacts') or []:
+            if len(item) == 2:
+                yield item[0], item[1], None
+
+    def _ntfy_inspect_tool(self, rel_path, label, tool_key=None):
+        """Infer tool status from output artifacts and tools_status."""
+        if tool_key and not self.tools_status.get(tool_key, {}).get('installed'):
+            return 'not_installed', None
+        if not self.output_dir:
+            return 'missing', None
+        path = os.path.join(self.output_dir, rel_path)
+        if rel_path.endswith('/') or rel_path.endswith(os.sep):
+            dir_path = path.rstrip('/\\')
+            if not os.path.isdir(dir_path):
+                return ('failed', None) if tool_key else ('missing', None)
+            total = 0
+            for root, _, files in os.walk(dir_path):
+                for name in files:
+                    fp = os.path.join(root, name)
+                    try:
+                        if os.path.getsize(fp) > 0:
+                            total += 1
+                    except OSError:
+                        continue
+            if total > 0:
+                return 'ok', total
+            return 'empty', 0
+        if os.path.isfile(path):
+            count = self.count_file_lines(path)
+            if count > 0:
+                return 'ok', count
+            return 'empty', 0
+        if tool_key:
+            return 'failed', None
+        return 'missing', None
+
+    def _build_module_tools_section(self, module_name, profile):
+        """Per-tool lines: name, count or failed/not installed."""
+        recorded = {r['name']: r for r in self._module_tool_stats.get(module_name, [])}
+        lines = []
+        seen = set()
+
+        for rel, label, tool_key in self._iter_profile_tools(profile):
+            seen.add(label)
+            if label in recorded:
+                r = recorded[label]
+                lines.append(self._format_module_tool_line(r['name'], r['status'], r.get('count')))
+                continue
+            status, count = self._ntfy_inspect_tool(rel, label, tool_key)
+            lines.append(self._format_module_tool_line(label, status, count))
+
+        for name, r in recorded.items():
+            if name not in seen:
+                lines.append(self._format_module_tool_line(r['name'], r['status'], r.get('count')))
+
+        return lines
+
+    def _build_module_ntfy_report(self, module_name, result_key=None, marker_files=None, status=None):
+        """One notification: module title + per-tool breakdown + total."""
+        target = self.domain or 'target'
+        profile = self._ntfy_profile_for(module_name, result_key=result_key)
+        phase = (profile or {}).get('phase', 'Scan')
+        tags = (profile or {}).get('tags', 'rocket')
+
+        status_labels = {
+            self.MODULE_OK: ('Complete', 'default'),
+            self.MODULE_PARTIAL: ('Partial', 'default'),
+            self.MODULE_SKIPPED: ('Skipped', 'min'),
+            self.MODULE_FAILED: ('Failed', 'high'),
+        }
+        status_word, priority = status_labels.get(status, ('Complete', 'default'))
+        if status == self.MODULE_PARTIAL:
+            tags = 'warning'
+        elif status == self.MODULE_FAILED:
+            tags = 'rotating_light'
+        elif status == self.MODULE_SKIPPED:
+            tags = 'fast_forward'
+
+        title = f"Oculus · {module_name} · {status_word}"
+        lines = [
+            f"Target: {target}",
+            f"Phase: {phase}",
+            f"Status: {status_word}",
+            '',
+        ]
+
+        if status == self.MODULE_SKIPPED:
+            reason = self._skip_reasons.get(module_name, 'precondition not met')
+            tool_lines = self._build_module_tools_section(module_name, profile)
+            if tool_lines:
+                lines.extend(['Tools', *tool_lines, ''])
+            lines.extend(['Reason', f"• {reason}"])
+            return title, '\n'.join(lines).strip(), tags, priority
+
+        if status == self.MODULE_FAILED:
+            tool_lines = self._build_module_tools_section(module_name, profile)
+            if tool_lines:
+                lines.extend(['Tools', *tool_lines, ''])
+            lines.extend(['Result', '• Module reported failure or produced no output'])
+            return title, '\n'.join(lines).strip(), tags, priority
+
+        tool_lines = self._build_module_tools_section(module_name, profile)
+        if tool_lines:
+            lines.extend(['Tools', *tool_lines, ''])
+
+        total_lines = []
+        seen_keys = set()
+        if profile:
+            for key, label in profile.get('metrics', []):
+                if key in self.results:
+                    seen_keys.add(key)
+                    total_lines.append(
+                        f"• {label}: {self._ntfy_format_count(self.results[key])}"
+                    )
+        rk = result_key or self._RESULT_KEY_ALIASES.get((module_name or '').strip().lower())
+        if rk and rk in self.results and rk not in seen_keys:
+            label = rk.replace('_', ' ').title()
+            total_lines.append(
+                f"• {label}: {self._ntfy_format_count(self.results[rk])}"
+            )
+
+        if total_lines:
+            lines.extend(['Total', *total_lines])
+        elif tool_lines:
+            lines.extend(['Total', '• See tool breakdown above'])
+        else:
+            lines.extend(['Total', '• Completed (no metrics recorded)'])
+
+        if status == self.MODULE_PARTIAL:
+            lines.extend(['', 'Note: Some tools timed out or returned partial output.'])
+
+        return title, '\n'.join(lines).strip(), tags, priority
+
+    def _build_scan_complete_report(self, pipeline_name, duration_str=None):
+        """Aggregate scan metrics into one scan-complete notification."""
+        target = self.domain or 'target'
+        lines = [f"Target: {target}", f"Pipeline: {pipeline_name}", '']
+        if duration_str:
+            lines.append(f"Duration: {duration_str}")
+            lines.append('')
+
+        highlights = [
+            ('subdomains', 'Subdomains'),
+            ('alive_hosts', 'Alive hosts'),
+            ('urls', 'URLs'),
+            ('urls_final', 'URLs (final)'),
+            ('vulnerabilities', 'Vulnerabilities'),
+            ('critical_vulns', 'Critical'),
+            ('high_vulns', 'High'),
+            ('xss_findings', 'XSS'),
+            ('bypass_403', '403 bypasses'),
+            ('takeover', 'Takeovers'),
+        ]
+        found = []
+        for key, label in highlights:
+            if key in self.results and self.results[key]:
+                found.append(f"• {label}: {self._ntfy_format_count(self.results[key])}")
+        if found:
+            lines.append('Summary')
+            lines.extend(found)
+        else:
+            lines.append('Summary')
+            lines.append('• Scan finished — see reports in output directory')
+
+        failed = getattr(self, 'failed_modules', None) or []
+        if failed:
+            lines.extend(['', 'Failed steps'])
+            for name, err in failed[:8]:
+                lines.append(f"• {name}: {str(err)[:120]}")
+            if len(failed) > 8:
+                lines.append(f"• …and {len(failed) - 8} more")
+
+        skipped = getattr(self, 'skipped_modules', None) or []
+        if skipped:
+            lines.extend(['', f"Skipped modules: {len(skipped)}"])
+
+        if self.output_dir:
+            lines.extend(['', f"Output: {self.output_dir}"])
+
+        title = f"Oculus · Scan complete · {target}"
+        return title, '\n'.join(lines).strip()
+
     def _notify_ntfy(self, event_key, title, message, priority=None, tags=None, dedupe_key=None):
         cfg = self._ntfy_config()
         if not self._ntfy_enabled_for(event_key):
@@ -893,115 +1461,91 @@ class Oculus:
         return self._notify_ntfy(event_key, title, message, priority=priority, tags=tags, dedupe_key=dedupe_key)
 
     def _notify_result_changes(self, module_name=None):
-        current = dict(self.results)
-        previous = self._last_notified_results
+        """Track result deltas; per-tool detail is included in module_complete."""
+        previous = dict(self._last_notified_results)
+        self._last_notified_results = dict(self.results)
+        cfg = self._ntfy_config()
+        if not cfg.get('send_findings', True):
+            return
+        if cfg.get('send_module_complete', True):
+            return
         changes = []
-        for key, value in current.items():
+        for key, value in self.results.items():
             if previous.get(key) == value:
                 continue
-            metric, summary = self._ntfy_metric(value)
+            metric, _ = self._ntfy_metric(value)
             if metric > 0:
-                changes.append((key, metric, summary))
-
-        if changes:
-            scope = module_name or self._current_module or self.domain or 'Oculus'
-            top_key, top_metric, top_summary = changes[0]
-            detail_bits = [f"{key}={metric}" for key, metric, _ in changes[:5]]
-            detail = ', '.join(detail_bits)
-            if len(changes) > 5:
-                detail += f" (+{len(changes) - 5} more)"
-            message = f"{scope}: {detail}"
-            if top_summary and top_summary != str(top_metric):
-                message += f"\nTop result: {top_key} -> {top_summary}"
-            self._notify_ntfy(
-                'finding',
-                f"Oculus findings: {scope}",
-                message,
-                priority='high',
-                tags=['rotating_light'],
-                dedupe_key=f"finding:{scope}:{detail}",
-            )
-
-        self._last_notified_results = current
-
-    def _notify_module_done(self, module_name, result_key=None, marker_files=None, status=None):
-        """Send a detailed, status-aware completion notification.
-
-        status: 'ok' | 'partial' | 'skipped' | 'failed' | None (defaults to ok)
-        """
-        # --- Route skipped/failed to their own notifiers ---
-        if status == self.MODULE_SKIPPED:
-            reason = self._skip_reasons.get(module_name, 'not available')
-            self._notify_module_skipped(module_name, reason)
+                changes.append((key, metric))
+        if not changes:
             return
-        if status == self.MODULE_FAILED:
-            self._notify_module_error(module_name, 'module returned failure status')
-            return
-
-        # --- Build result detail from metrics ---
-        detail_parts = []
-        if result_key and result_key in self.results:
-            metric, summary = self._ntfy_metric(self.results[result_key])
-            detail_parts.append(f"{result_key}: {summary}")
-        if marker_files:
-            for rel in (marker_files or []):
-                if self.output_dir and Oculus._path_has_output(os.path.join(self.output_dir, rel)):
-                    detail_parts.append(f"output: {rel}")
-                    break
-        if not detail_parts:
-            detail_parts.append('completed (no new findings)')
-
-        detail = ' | '.join(detail_parts)
-        is_partial = (status == self.MODULE_PARTIAL)
-
-        if is_partial:
-            self._notify_ntfy(
-                'module_complete',
-                f"⚠️ Oculus partial: {module_name}",
-                f"[PARTIAL] {module_name} for {self.domain or 'target'}\n{detail}\nSome results may be incomplete.",
-                priority='default',
-                tags=['warning'],
-                dedupe_key=f"module_partial:{module_name}:{detail}",
-            )
-        else:
-            self._notify_ntfy(
-                'module_complete',
-                f"✅ Oculus done: {module_name}",
-                f"[DONE] {module_name} for {self.domain or 'target'}\n{detail}",
-                priority='default',
-                tags=['white_check_mark'],
-                dedupe_key=f"module_done:{module_name}:{detail}",
-            )
-
-    def _notify_module_skipped(self, module_name, reason='not available'):
-        """Send a skip notification — routed to 'skip' event (off by default)."""
+        scope = module_name or self._current_module or self.domain or 'Oculus'
+        detail = ', '.join(f"{k}={m}" for k, m in changes[:5])
         self._notify_ntfy(
-            'skip',
-            f"⏩ Oculus skipped: {module_name}",
-            f"[SKIPPED] {module_name} for {self.domain or 'target'}\nReason: {reason}\nNo scan was performed for this module.",
-            priority='min',
-            tags=['fast_forward'],
-            dedupe_key=f"module_skipped:{module_name}:{reason}",
+            'finding',
+            f"Oculus · Findings · {scope}",
+            f"Target: {self.domain or 'target'}\nUpdates: {detail}",
+            priority='default',
+            tags='chart_with_upwards_trend',
+            dedupe_key=f"finding:{scope}:{detail}",
         )
 
+    def _notify_module_done(self, module_name, result_key=None, marker_files=None, status=None):
+        """Send one consolidated notification: tools breakdown + total."""
+        effective_status = status or self.MODULE_OK
+        if effective_status == self.MODULE_SKIPPED and not self._ntfy_enabled_for('skip'):
+            return
+        if effective_status == self.MODULE_FAILED and not self._ntfy_enabled_for('error'):
+            return
+        title, message, tags, priority = self._build_module_ntfy_report(
+            module_name, result_key=result_key, marker_files=marker_files, status=effective_status,
+        )
+        if effective_status == self.MODULE_SKIPPED:
+            event_key = 'skip'
+        elif effective_status == self.MODULE_FAILED:
+            event_key = 'error'
+        else:
+            event_key = 'module_complete'
+        self._notify_ntfy(
+            event_key,
+            title,
+            message,
+            priority=priority,
+            tags=tags,
+            dedupe_key=f"module:{effective_status}:{module_name}:{result_key or ''}",
+        )
+
+    def _notify_module_skipped(self, module_name, reason='not available'):
+        self._skip_reasons.setdefault(module_name, reason)
+        self._notify_module_done(module_name, status=self.MODULE_SKIPPED)
+
     def _notify_module_start(self, module_name):
+        self._module_tool_stats.pop(module_name, None)
+        profile = self._ntfy_profile_for(module_name)
+        phase = (profile or {}).get('phase', 'Scan')
+        tags = (profile or {}).get('tags', 'rocket').split(',')[0] if profile else 'rocket'
         self._notify_ntfy(
             'module_start',
-            f"▶️ Oculus started: {module_name}",
-            f"[STARTED] {module_name} for {self.domain or 'target'}",
+            f"Oculus · {module_name} · Started",
+            f"Target: {self.domain or 'target'}\nPhase: {phase}\nStatus: Running",
             priority='low',
-            tags=['play_arrow'],
+            tags=tags,
             dedupe_key=f"module_start:{module_name}:{self.domain}",
         )
 
     def _notify_module_error(self, module_name, error_text):
+        title = f"Oculus · {module_name} · Error"
+        message = (
+            f"Target: {self.domain or 'target'}\n"
+            f"Status: Failed\n\n"
+            f"Error\n• {error_text}"
+        )
         self._notify_ntfy(
             'error',
-            f"❌ Oculus error: {module_name}",
-            f"[FAILED] {module_name} for {self.domain or 'target'}\nError: {error_text}",
+            title,
+            message,
             priority='high',
-            tags=['warning'],
-            dedupe_key=f"module_error:{module_name}:{error_text}",
+            tags='rotating_light',
+            dedupe_key=f"module_error:{module_name}:{error_text[:80]}",
         )
 
     def save_session(self):
@@ -1395,13 +1939,16 @@ class Oculus:
 
     def _run_single_subdomain_tool(self, tool_name, cmd, output_file):
         """Worker for concurrent subdomain enumeration"""
+        module = self._current_module or 'Subdomain Enumeration'
         print(f"{Colors.YELLOW}[*] Running {tool_name}...{Colors.RESET}")
         if self.run_command_with_retry(cmd, output_file=output_file, timeout=600, label=tool_name):
+            count = self.count_file_lines(output_file) if os.path.exists(output_file) else 0
+            self._record_module_tool(module, tool_name, 'ok', count)
             print(f"{Colors.GREEN}[✔] {tool_name} completed{Colors.RESET}")
             return output_file
-        else:
-            print(f"{Colors.RED}[!] {tool_name} failed{Colors.RESET}")
-            return None
+        self._record_module_tool(module, tool_name, 'failed', 0)
+        print(f"{Colors.RED}[!] {tool_name} failed{Colors.RESET}")
+        return None
 
     def run_subdomain_enumeration(self):
         """Run comprehensive subdomain enumeration with concurrent execution"""
@@ -1452,9 +1999,17 @@ class Oculus:
                 with open(crtsh_file, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(sorted(crtsh_subs)) + '\n')
                 raw_files.append(crtsh_file)
+                self._record_module_tool(
+                    self._current_module or 'Subdomain Enumeration',
+                    'crt.sh', 'ok', len(crtsh_subs),
+                )
                 print(f"{Colors.GREEN}[✔] crt.sh: {len(crtsh_subs)} subdomains{Colors.RESET}")
             except Exception as e:
                 self.logger.error(f"Failed to write crt.sh results: {e}")
+                self._record_module_tool(
+                    self._current_module or 'Subdomain Enumeration',
+                    'crt.sh', 'failed', 0,
+                )
 
         if not raw_files:
             print(f"{Colors.RED}[!] All subdomain tools failed!{Colors.RESET}")
@@ -1590,6 +2145,16 @@ class Oculus:
             for h in sorted(clean_hosts):
                 f.write(h + "\n")
                 
+        mod = self._current_module or 'Alive Hosts Check'
+        if has_httpx:
+            httpx_path = f"{self.output_dir}/httpx_raw.json"
+            httpx_n = self.count_file_lines(httpx_path) if os.path.exists(httpx_path) else 0
+            self._record_module_tool(mod, 'HTTPx', 'ok' if httpx_n else 'empty', httpx_n)
+        if has_httprobe:
+            probe_path = f"{self.output_dir}/httprobe_raw.txt"
+            probe_n = self.count_file_lines(probe_path) if os.path.exists(probe_path) else 0
+            self._record_module_tool(mod, 'httprobe', 'ok' if probe_n else 'empty', probe_n)
+
         count = len(clean_hosts)
         print(f"{Colors.GREEN}[✔] Found {count} alive hosts{Colors.RESET}")
         if count == 0:
@@ -1791,10 +2356,14 @@ class Oculus:
 
     def _run_single_url_tool(self, tool_name, cmd, output_file):
         """Worker for concurrent URL collection"""
+        module = self._current_module or 'URL Collection'
         print(f"{Colors.YELLOW}[*] Running {tool_name}...{Colors.RESET}")
         if self.run_command_with_retry(cmd, output_file=output_file, timeout=300, label=tool_name):
+            count = self.count_file_lines(output_file) if os.path.exists(output_file) else 0
+            self._record_module_tool(module, tool_name, 'ok', count)
             print(f"{Colors.GREEN}[✔] {tool_name} completed{Colors.RESET}")
             return output_file
+        self._record_module_tool(module, tool_name, 'failed', 0)
         print(f"{Colors.RED}[!] {tool_name} failed{Colors.RESET}")
         return None
 
@@ -2078,6 +2647,7 @@ class Oculus:
             # Ensure results directory exists in case ParamSpider outputs to results/ relative to cwd
             Path("results").mkdir(parents=True, exist_ok=True)
             
+            mod = self._current_module or 'Parameter Discovery'
             if self.run_command(cmd, timeout=500, label="paramspider"):
                 print(f"{Colors.GREEN}[✔] ParamSpider completed{Colors.RESET}")
                 
@@ -2095,6 +2665,8 @@ class Oculus:
                         break
                 if found_ps_file:
                     shutil.move(found_ps_file, f"{param_dir}/paramspider.txt")
+                    ps_n = self.count_file_lines(f"{param_dir}/paramspider.txt")
+                    self._record_module_tool(mod, 'ParamSpider', 'ok', ps_n)
                     # Clean up empty directory
                     res_dir = os.path.dirname(found_ps_file)
                     try:
@@ -2104,7 +2676,9 @@ class Oculus:
                         pass
                 else:
                     self.logger.warning("ParamSpider completed but no output file was detected in any path.")
+                    self._record_module_tool(mod, 'ParamSpider', 'empty', 0)
             else:
+                self._record_module_tool(mod, 'ParamSpider', 'failed', 0)
                 print(f"{Colors.RED}[!] ParamSpider failed{Colors.RESET}")
 
         if has_arjun:
@@ -2156,8 +2730,19 @@ class Oculus:
                         for t in targets_list:
                             tf.write(t + "\n")
                     
-                    cmd = f"{arjun_bin} -i {tmp_targets_file} -oJ {param_dir}/arjun.json --stable"
-                    self.run_command(cmd, timeout=900, label="arjun")
+                    arjun_threads = self.config.get('threads', 50)
+                    arjun_threads = min(arjun_threads, 20)
+                    cmd = f"{arjun_bin} -i {tmp_targets_file} -oJ {param_dir}/arjun.json -t {arjun_threads}"
+                    timeout = self._get_scaled_timeout('arjun', len(targets_list), default_base=600, default_per_target=45, default_max=3600)
+                    mod = self._current_module or 'Parameter Discovery'
+                    if self.run_command(cmd, timeout=timeout, label="arjun"):
+                        arjun_path = f"{param_dir}/arjun.json"
+                        self._record_module_tool(
+                            mod, 'Arjun', 'ok',
+                            1 if os.path.exists(arjun_path) and os.path.getsize(arjun_path) > 0 else 0,
+                        )
+                    else:
+                        self._record_module_tool(mod, 'Arjun', 'failed', 0)
                     try:
                         os.remove(tmp_targets_file)
                     except Exception:
@@ -2388,9 +2973,27 @@ class Oculus:
         if not wordlist or not os.path.exists(wordlist):
             wordlist = self.config.get('wordlists', {}).get('dirs_fallback') or ''
         if not wordlist or not os.path.exists(wordlist):
-            print(f"{Colors.RED}[!] Wordlist not found! Tried primary and fallback paths.{Colors.RESET}")
-            self._skip_reasons[self._current_module or 'Directory Fuzzing'] = 'Wordlist not found for directory fuzzing'
-            return self.MODULE_SKIPPED
+            # Generate a light fallback wordlist dynamically
+            fallback_dirs_file = os.path.join(self.output_dir, "auto_dirs_wordlist.txt")
+            print(f"{Colors.YELLOW}[*] Directory wordlist not found. Generating a high-performance light directory wordlist...{Colors.RESET}")
+            common_web_paths = [
+                "admin", "wp-admin", "administrator", "dashboard", "api", "api/v1", "api/v2", "config", "internal",
+                "management", "login", "logout", "signin", "register", "signup", "user", "users", "account",
+                "settings", "profile", "admin/login", "admin/config", "test", "dev", "staging", "prod", "backup",
+                "backups", "db", "database", "sql", "temp", "tmp", "logs", "log", "private", "secret", "secrets",
+                "status", "health", "info", "version", "metrics", "assets", "static", "images", "img", "js", "css",
+                "uploads", "files", "download", "downloads", "search", "faq", "help", "support", "contact", "about",
+                "index.php", "index.html", "home", "main", "robots.txt", "sitemap.xml", ".git", ".env", ".gitignore"
+            ]
+            try:
+                with open(fallback_dirs_file, 'w', encoding='utf-8') as df:
+                    df.write("\n".join(common_web_paths) + "\n")
+                wordlist = fallback_dirs_file
+                print(f"{Colors.GREEN}[✔] Light directory wordlist successfully created!{Colors.RESET}")
+            except Exception as e:
+                print(f"{Colors.RED}[!] Failed to generate fallback wordlist: {e}{Colors.RESET}")
+                self._skip_reasons[self._current_module or 'Directory Fuzzing'] = 'Wordlist not found for directory fuzzing'
+                return self.MODULE_SKIPPED
 
         fuzzed_json_files = []
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -2422,10 +3025,19 @@ class Oculus:
                 nomore403_out_dir = f"{self.output_dir}/nomore403"
                 Path(nomore403_out_dir).mkdir(parents=True, exist_ok=True)
                 out_file = f"{nomore403_out_dir}/bypass_results.txt"
-                # Keep track of bypass count
-                for url in forbidden_urls[:50]:
-                    cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {out_file}"
-                    self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}")
+                Path(out_file).write_text('', encoding='utf-8')
+                payloads_dir = self._prepare_nomore403_payloads()
+                for idx, url in enumerate(forbidden_urls[:50]):
+                    temp_out = f"{nomore403_out_dir}/temp_auto_{idx}.txt"
+                    cmd = self._nomore403_command(nomore403_bin, url, temp_out, payloads_dir)
+                    if self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}"):
+                        if os.path.exists(temp_out):
+                            try:
+                                with open(out_file, 'a', encoding='utf-8') as merged:
+                                    merged.write(Path(temp_out).read_text(encoding='utf-8'))
+                                os.remove(temp_out)
+                            except OSError:
+                                pass
                 count = self.count_file_lines(out_file)
                 self.results['bypass_403'] = count
                 print(f"{Colors.GREEN}[✔] nomore403 auto-feed: {count} potential bypasses found{Colors.RESET}")
@@ -2465,9 +3077,13 @@ class Oculus:
         if os.path.exists(kite_wordlist):
             cmd = f"{kr_bin} scan {alive_file} -w {kite_wordlist} -x 5 -j 50 --fail-status-codes 400,401,404,403,501,502,503"
         else:
-            # Fall back to Assetnote built-in alias
-            cmd = f"{kr_bin} scan {alive_file} -A=apiroutes-210228 -x 5 -j 50 --fail-status-codes 400,401,404,403,501,502,503"
-        if self.run_command(cmd, output_file=output, timeout=1200, label="kr"):
+            # Fall back to Assetnote built-in alias (using Go-compliant space instead of '=')
+            cmd = f"{kr_bin} scan {alive_file} -A apiroutes-210228 -x 5 -j 50 --fail-status-codes 400,401,404,403,501,502,503"
+        
+        target_count = len(self.read_file_lines(alive_file))
+        timeout = self._get_scaled_timeout('kr', target_count, default_base=600, default_per_target=30, default_max=1800)
+        
+        if self.run_command(cmd, output_file=output, timeout=timeout, label="kr"):
             print(f"{Colors.GREEN}[✔] API fuzzing completed{Colors.RESET}")
             self.results['api_fuzz'] = self.count_file_lines(output)
             self.save_session()
@@ -2476,6 +3092,7 @@ class Oculus:
             print(f"{Colors.RED}[!] kr scan failed or routes wordlist missing{Colors.RESET}")
             self.results['api_fuzz'] = 0
             self.save_session()
+            self._skip_reasons[self._current_module or 'API Fuzzing'] = 'kr scan failed or routes wordlist missing'
             return self.MODULE_FAILED
 
     # MODULE 14: SUBDOMAIN TAKEOVER CHECK
@@ -2888,6 +3505,7 @@ class Oculus:
             return self.MODULE_FAILED
         out = f"{self.output_dir}/massdns_out.txt"
         cmd = f"{self.get_tool('massdns')} -r {resolvers} -t A -o S -w {out} {fqdn_file}"
+        mod = self._current_module or 'DNS Bruteforce'
         massdns_success = self.run_command(cmd, timeout=1200, label="massdns")
         
         new_found_massdns = 0
@@ -2909,11 +3527,14 @@ class Oculus:
                         f.write(s + '\n')
                 self.results['dns_brute'] = new_found_massdns
                 print(f"{Colors.GREEN}[✔] DNS bruteforce (massdns) — {len(new_subs)} resolved, {new_found_massdns} new subdomains added{Colors.RESET}")
+                self._record_module_tool(mod, 'massdns', 'ok', len(new_subs))
             else:
                 self.results['dns_brute'] = 0
+                self._record_module_tool(mod, 'massdns', 'empty', 0)
                 print(f"{Colors.GREEN}[✔] DNS bruteforce (massdns) completed — no new subdomains found{Colors.RESET}")
         else:
             self.results['dns_brute'] = 0
+            self._record_module_tool(mod, 'massdns', 'failed', 0)
             print(f"{Colors.RED}[!] DNS bruteforce (massdns) failed{Colors.RESET}")
 
         # --- puredns validation ---
@@ -2944,8 +3565,14 @@ class Oculus:
                             for s in sorted(merged):
                                 f.write(s + '\n')
                         self.results['dns_brute'] = self.results.get('dns_brute', 0) + new_found_puredns
+                        self._record_module_tool(mod, 'puredns', 'ok', len(puredns_subs))
                         print(f"{Colors.GREEN}[✔] PureDNS resolved {len(puredns_subs)} subdomains, adding {new_found_puredns} new unique records{Colors.RESET}")
+                    else:
+                        self._record_module_tool(mod, 'puredns', 'empty', 0)
+                else:
+                    self._record_module_tool(mod, 'puredns', 'empty', 0)
             else:
+                self._record_module_tool(mod, 'puredns', 'failed', 0)
                 print(f"{Colors.RED}[!] PureDNS bruteforce failed{Colors.RESET}")
 
         self.save_session()
@@ -3106,19 +3733,30 @@ class Oculus:
         # SQLMap strictly enforces a maximum of 10 threads to avoid connection issues and startup crashes
         sqlmap_threads = min(sqlmap_threads, 10)
 
+        # Get target count
+        target_count = 0
+        if os.path.exists(filtered_sqli):
+            try:
+                target_count = len(self.read_file_lines(filtered_sqli))
+            except Exception:
+                target_count = 0
+
+        # Scale timeout dynamically
+        timeout = self._get_scaled_timeout('sqlmap', target_count, default_base=1800, default_per_target=120, default_max=28800)
+
         # Full-power SQLMap: configurable level, risk, threads, forms detection, crawl, tamper scripts
-        # Timeout 7200s (2hrs) — large target lists need time to run fully
         cmd = (
             f"{self.get_tool('sqlmap')} -m {filtered_sqli} --batch --random-agent "
             f"--level {level} --risk {risk} --forms --crawl=3 --threads={sqlmap_threads} "
             f"--tamper=space2comment,between,charunicodeencode "
             f"--output-dir={out_dir}"
         )
-        sqlmap_success = self.run_command(cmd, timeout=7200, label="sqlmap")
-        if sqlmap_success:
-            print(f"{Colors.GREEN}[✔] SQLMap scan completed{Colors.RESET}")
+        exit_code = self.run_command(cmd, timeout=timeout, label="sqlmap", get_code=True)
+        if exit_code in (0, 2):
+            print(f"{Colors.GREEN}[✔] SQLMap scan completed (exit code: {exit_code}){Colors.RESET}")
         else:
-            print(f"{Colors.RED}[!] SQLMap scan failed{Colors.RESET}")
+            print(f"{Colors.RED}[!] SQLMap scan completed with warnings/errors (exit code: {exit_code}){Colors.RESET}")
+
         sqlmap_vulns = 0
         if os.path.exists(out_dir):
             for log in Path(out_dir).rglob('log'):
@@ -3126,7 +3764,15 @@ class Oculus:
                     sqlmap_vulns += 1
         self.results['sqlmap'] = sqlmap_vulns
         self.save_session()
-        return self.MODULE_OK if sqlmap_success else self.MODULE_FAILED
+
+        if exit_code == -1:
+            return self.MODULE_FAILED
+        elif exit_code in (0, 2) or sqlmap_vulns > 0:
+            if exit_code not in (0, 2) and sqlmap_vulns > 0:
+                return self.MODULE_PARTIAL
+            return self.MODULE_OK
+        else:
+            return self.MODULE_PARTIAL
 
 
     # MODULE 21: XSS SCAN (Dalfox)
@@ -3165,6 +3811,17 @@ class Oculus:
         )
 
         dalfox_bin = self.get_tool('dalfox')
+        # Get target count
+        target_count = 0
+        if os.path.exists(filtered_xss):
+            try:
+                target_count = len(self.read_file_lines(filtered_xss))
+            except Exception:
+                target_count = 0
+
+        # Scale timeout dynamically
+        timeout = self._get_scaled_timeout('dalfox', target_count, default_base=900, default_per_target=30, default_max=14400)
+
         # Full-power Dalfox: 100 workers, DOM mining, blind XSS callback, 15s timeout per request
         cmd = (f"{dalfox_bin} file {filtered_xss} "
                f"-b hahwul.xss.ht "
@@ -3175,16 +3832,17 @@ class Oculus:
                f"--deep-domxss "
                f"--follow-redirects "
                f"-o {out_file}")
-        if self.run_command(cmd, timeout=3600, label="dalfox"):
-            count = self.count_file_lines(out_file)
+        dalfox_success = self.run_command(cmd, timeout=timeout, label="dalfox")
+        count = self.count_file_lines(out_file)
+        self.results['xss_findings'] = count
+        self.save_session()
+
+        if dalfox_success:
             print(f"{Colors.GREEN}[✔] Dalfox XSS scan completed — {count} potential findings{Colors.RESET}")
-            self.results['xss_findings'] = count
-            self.save_session()
             return self.MODULE_OK
         else:
-            print(f"{Colors.RED}[!] Dalfox scan failed{Colors.RESET}")
-            self.save_session()
-            return self.MODULE_FAILED
+            print(f"{Colors.RED}[!] Dalfox scan failed/partial (findings: {count}){Colors.RESET}")
+            return self.MODULE_PARTIAL
 
     # MODULE 22: CORS SCANNER
 
@@ -3544,6 +4202,17 @@ class Oculus:
                 "securitytrails": ("securityTrails", "key"),
                 "chaos": ("chaos", "key"),
                 "intelx": ("intelx", "key"),
+                "bevigil": ("bevigil", "key"),
+                "brave": ("brave", "key"),
+                "criminalip": ("criminalip", "key"),
+                "dehashed": ("dehashed", "key"),
+                "fofa": ("fofa", "key"),
+                "hunter": ("hunter", "key"),
+                "hunterhow": ("hunterhow", "key"),
+                "netlas": ("netlas", "key"),
+                "onyphe": ("onyphe", "key"),
+                "tomba": ("tomba", "key"),
+                "zoomeye": ("zoomeye", "key"),
             }
             
             updated = False
@@ -3584,7 +4253,7 @@ class Oculus:
     def run_osint_harvesting(self):
         """Gather emails and OSINT using theHarvester"""
         if not self._require_setup():
-            return
+            return self.MODULE_SKIPPED
         if not self._require_tool('theharvester'):
             self._skip_reasons[self._current_module or 'OSINT Harvesting'] = 'theHarvester not installed'
             return self.MODULE_SKIPPED
@@ -3601,42 +4270,52 @@ class Oculus:
         # Sync configured API keys into theHarvester's configuration
         self._sync_harvester_keys()
         
-        # Base keyless sources
+        # Peak top-tier keyless sources (broadly supported across versions)
         sources = [
-            "anubis", "baidu", "certspotter", "commoncrawl", "crtsh", 
-            "dnsdumpster", "duckduckgo", "dymo", "gitlab", "hackertarget", 
-            "hudsonrock", "mojeek", "otx", "rapiddns", "robtex", 
-            "shodanInternetDB", "subdomaincenter", "subdomainfinderc99", 
-            "thc", "threatcrowd", "waybackarchive", "yahoo"
+            "baidu", "bufferoverun", "commoncrawl", "crtsh", "dnsdumpster", 
+            "duckduckgo", "hackertarget", "mojeek", "otx", "rapiddns", 
+            "robtex", "shodanInternetDB", "subdomaincenter", 
+            "subdomainfinderc99", "threatcrowd", "waybackarchive", "yahoo"
         ]
         
         # Dynamically append key-dependent sources if keys are configured in Oculus
         api_keys = self.config.get("api_keys", {}) or {}
-        if api_keys.get("shodan"):
-            sources.append("shodan")
-        if api_keys.get("virustotal"):
-            sources.append("virustotal")
+        for k in ["shodan", "virustotal", "securitytrails", "chaos", "intelx", 
+                  "bevigil", "brave", "criminalip", "dehashed", "fofa", "hunter", 
+                  "hunterhow", "netlas", "onyphe", "tomba", "zoomeye"]:
+            if api_keys.get(k):
+                src_name = "securityTrails" if k == "securitytrails" else k
+                sources.append(src_name)
+        
         if api_keys.get("github"):
             sources.extend(["github-code", "github"])
-        if api_keys.get("securitytrails"):
-            sources.append("securityTrails")
-        if api_keys.get("chaos"):
-            sources.append("chaos")
-        if api_keys.get("intelx"):
-            sources.append("intelx")
         if api_keys.get("censys_id") or api_keys.get("censys_secret"):
             sources.append("censys")
             
         sources_str = ",".join(sources)
         prefix = "python3 " if isinstance(bin_path, str) and bin_path.endswith('.py') else ""
         cmd = f"{prefix}{bin_path} -d {self.safe_domain()} -b {sources_str} -f {out_file}"
+        
         if self.run_command(cmd, timeout=600, label="harvester"):
             print(f"{Colors.GREEN}[✔] OSINT Harvesting completed{Colors.RESET}")
             self.results['osint_findings'] = 1 if os.path.exists(out_file) else 0
+            self.save_session()
+            return self.MODULE_OK
         else:
-            print(f"{Colors.RED}[!] OSINT Harvesting failed{Colors.RESET}")
-            self.results['osint_findings'] = 0
-        self.save_session()
+            print(f"{Colors.YELLOW}[!] theHarvester failed with dynamic sources; trying safe fallback sources...{Colors.RESET}")
+            fallback_sources = ["baidu", "crtsh", "duckduckgo", "hackertarget", "otx", "yahoo"]
+            fallback_sources_str = ",".join(fallback_sources)
+            fallback_cmd = f"{prefix}{bin_path} -d {self.safe_domain()} -b {fallback_sources_str} -f {out_file}"
+            if self.run_command(fallback_cmd, timeout=300, label="harvester-fallback"):
+                print(f"{Colors.GREEN}[✔] OSINT Harvesting completed via fallback sources{Colors.RESET}")
+                self.results['osint_findings'] = 1 if os.path.exists(out_file) else 0
+                self.save_session()
+                return self.MODULE_PARTIAL
+            else:
+                print(f"{Colors.RED}[!] OSINT Harvesting failed completely{Colors.RESET}")
+                self.results['osint_findings'] = 0
+                self.save_session()
+                return self.MODULE_PARTIAL
 
     # MODULE 28: SHODAN INTEGRATION
 
@@ -3772,10 +4451,10 @@ class Oculus:
 
         self.notify_scan_event(
             'scan_start',
-            f"Oculus scan started: {self.domain}",
-            f"Full Auto Recon started for {self.domain}",
+            f"Oculus · Scan started · {self.domain}",
+            f"Target: {self.domain}\nPipeline: Full Auto Recon\nStatus: Running",
             priority='default',
-            tags=['rocket'],
+            tags='rocket',
             dedupe_key=f"scan_start:full_recon:{self.domain}",
         )
 
@@ -3796,29 +4475,23 @@ class Oculus:
         print(f"║          STARTING FULL AUTOMATED RECON (CORE)        ║")
         print(f"╚══════════════════════════════════════════════════════╝{Colors.RESET}\n")
         steps = [
-            self.run_subdomain_enumeration,
-            self.run_dns_resolution,
-            self.run_alive_hosts_check,
-            self.run_fast_port_scan,
-            self.run_url_collection,
-            self.run_waf_detection,
-            self.run_vulnerability_scan
+            ('Subdomain Enumeration', self.run_subdomain_enumeration, 'subdomains'),
+            ('DNS Resolution', self.run_dns_resolution, 'dns_resolved'),
+            ('Alive Hosts Check', self.run_alive_hosts_check, 'alive_hosts'),
+            ('Fast Port Scan', self.run_fast_port_scan, 'fast_ports'),
+            ('URL Collection', self.run_url_collection, 'urls'),
+            ('WAF Detection', self.run_waf_detection, 'waf_detected'),
+            ('Vulnerability Scan (Nuclei)', self.run_vulnerability_scan, 'vulnerabilities'),
         ]
-        for step in steps:
-            module_name = step.__name__.replace('run_', '').replace('_', ' ').title()
+        for module_name, step, result_key in steps:
             previous_module = self._current_module
             self._current_module = module_name
-            self.notify_scan_event(
-                'module_start',
-                f"Oculus module started: {module_name}",
-                f"{module_name} started for {self.domain}",
-                priority='low',
-                tags=['play_arrow'],
-                dedupe_key=f"full_recon_start:{module_name}:{self.domain}",
-            )
+            self._notify_module_start(module_name)
             try:
-                step()
-                self._notify_module_done(module_name)
+                status = step()
+                if status is None:
+                    status = self.MODULE_OK
+                self._notify_module_done(module_name, result_key=result_key, status=status)
             except Exception as e:
                 self._notify_module_error(module_name, str(e))
                 self.logger.error(f"Auto-recon step failed: {e}")
@@ -3828,12 +4501,10 @@ class Oculus:
         self.generate_summary()
         self.generate_html_report()
         self.generate_json_report()
+        title, body = self._build_scan_complete_report('Full Auto Recon')
         self.notify_scan_event(
-            'scan_complete',
-            f"Oculus scan complete: {self.domain}",
-            f"Full Auto Recon completed for {self.domain}",
-            priority='default',
-            tags=['check'],
+            'scan_complete', title, body,
+            priority='default', tags='white_check_mark',
             dedupe_key=f"scan_complete:full_recon:{self.domain}",
         )
         print(f"\n{Colors.GREEN}{Colors.BOLD}[+] FULL AUTOMATED RECON COMPLETED!{Colors.RESET}\n")
@@ -3845,10 +4516,10 @@ class Oculus:
 
         self.notify_scan_event(
             'scan_start',
-            f"Oculus scan started: {self.domain}",
-            f"Deep Recon started for {self.domain}",
+            f"Oculus · Scan started · {self.domain}",
+            f"Target: {self.domain}\nPipeline: Deep Recon\nStatus: Running",
             priority='default',
-            tags=['rocket'],
+            tags='rocket',
             dedupe_key=f"scan_start:deep_recon:{self.domain}",
         )
 
@@ -3880,36 +4551,30 @@ class Oculus:
         print(f"║               STARTING DEEP RECON MODE               ║")
         print(f"╚══════════════════════════════════════════════════════╝{Colors.RESET}\n")
         steps = [
-            self.run_asn_discovery,
-            self.run_parameter_discovery,
-            self.run_js_endpoint_extraction,
-            self.run_directory_fuzzing,
-            self.run_api_fuzzing,
-            self.run_subdomain_takeover_check,
-            self.run_advanced_url_enum,
-            self.run_screenshot_capture,
-            self.run_gf_filters,
-            self.run_tech_scan,
-            self.run_xss_scan,
-            self.run_cors_scan,
-            self.run_http_smuggling,
-            self.run_sqlmap_scan
+            ('ASN Discovery', self.run_asn_discovery, 'asn_ranges'),
+            ('Parameter Discovery', self.run_parameter_discovery, 'parameters'),
+            ('JS Endpoint Extraction', self.run_js_endpoint_extraction, 'js_endpoints'),
+            ('Directory Fuzzing', self.run_directory_fuzzing, 'fuzz_findings'),
+            ('API Fuzzing', self.run_api_fuzzing, 'api_fuzz'),
+            ('Subdomain Takeover Check', self.run_subdomain_takeover_check, 'takeover'),
+            ('Advanced URL Enum', self.run_advanced_url_enum, 'urls_final'),
+            ('Screenshot Capture', self.run_screenshot_capture, 'screenshots'),
+            ('GF Filters', self.run_gf_filters, 'gf_filters'),
+            ('Tech Scan', self.run_tech_scan, 'tech_scan'),
+            ('XSS Scan (Dalfox)', self.run_xss_scan, 'xss_findings'),
+            ('CORS Scanner', self.run_cors_scan, 'cors_findings'),
+            ('HTTP Smuggling', self.run_http_smuggling, 'smuggler'),
+            ('SQLi Scan', self.run_sqlmap_scan, 'sqlmap'),
         ]
-        for step in steps:
-            module_name = step.__name__.replace('run_', '').replace('_', ' ').title()
+        for module_name, step, result_key in steps:
             previous_module = self._current_module
             self._current_module = module_name
-            self.notify_scan_event(
-                'module_start',
-                f"Oculus module started: {module_name}",
-                f"{module_name} started for {self.domain}",
-                priority='low',
-                tags=['play_arrow'],
-                dedupe_key=f"deep_recon_start:{module_name}:{self.domain}",
-            )
+            self._notify_module_start(module_name)
             try:
-                step()
-                self._notify_module_done(module_name)
+                status = step()
+                if status is None:
+                    status = self.MODULE_OK
+                self._notify_module_done(module_name, result_key=result_key, status=status)
             except Exception as e:
                 self._notify_module_error(module_name, str(e))
                 self.logger.error(f"Deep recon step failed: {e}")
@@ -3917,12 +4582,10 @@ class Oculus:
                 self._current_module = previous_module
         self.show_diff()
         self.generate_summary()
+        title, body = self._build_scan_complete_report('Deep Recon')
         self.notify_scan_event(
-            'scan_complete',
-            f"Oculus scan complete: {self.domain}",
-            f"Deep Recon completed for {self.domain}",
-            priority='default',
-            tags=['check'],
+            'scan_complete', title, body,
+            priority='default', tags='white_check_mark',
             dedupe_key=f"scan_complete:deep_recon:{self.domain}",
         )
         print(f"\n{Colors.GREEN}{Colors.BOLD}[+] DEEP RECON COMPLETED!{Colors.RESET}\n")
@@ -3984,17 +4647,23 @@ class Oculus:
         max_hosts = self.config.get('jaeles', {}).get('max_hosts', 100)
         jaeles_success = True
         for host in hosts[:max_hosts]:
+            # Scale per-host timeout dynamically
+            per_host_timeout = self._get_scaled_timeout('jaeles', 1, default_base=600, default_per_target=0, default_max=1800)
             cmd = (f"{jaeles_bin} scan -u {shlex.quote(host)} "
                    f"{sig_flag} -c {conc} "
                    f"-o {out_dir} --no-output-url -v")
-            if not self.run_command(cmd, timeout=600, label=f"jaeles:{host[:40]}"):
+            if not self.run_command(cmd, timeout=per_host_timeout, label=f"jaeles:{host[:40]}"):
                 jaeles_success = False
         
         results_count = sum(1 for f in Path(out_dir).rglob('*.txt') if f.stat().st_size > 0)
         self.results['jaeles_findings'] = results_count
         self.save_session()
-        print(f"{Colors.GREEN}[✔] Jaeles: {results_count} findings{Colors.RESET}")
-        return self.MODULE_OK if jaeles_success else self.MODULE_FAILED
+        if jaeles_success:
+            print(f"{Colors.GREEN}[✔] Jaeles: {results_count} findings{Colors.RESET}")
+            return self.MODULE_OK
+        else:
+            print(f"{Colors.RED}[!] Jaeles scan finished with some failures/timeouts (findings: {results_count}){Colors.RESET}")
+            return self.MODULE_PARTIAL
 
     def run_tplmap_scan(self):
         """Module 32: Tplmap — Server-Side Template Injection scanner (safe detection)."""
@@ -4079,15 +4748,23 @@ class Oculus:
         conc = self.config.get('crlfuzz', {}).get('concurrency', 25)
         out_file = f"{out_dir}/crlfuzz_results.txt"
         
+        hosts = self.read_file_lines(alive_file)
+        target_count = len(hosts)
+        timeout = self._get_scaled_timeout('crlfuzz', target_count, default_base=600, default_per_target=30, default_max=3600)
+
         cmd = (f"{crlfuzz_bin} -l {alive_file} "
                f"-c {conc} -s -o {out_file}")
-        crlfuzz_success = self.run_command(cmd, timeout=1200, label="crlfuzz")
+        crlfuzz_success = self.run_command(cmd, timeout=timeout, label="crlfuzz")
         
         count = self.count_file_lines(out_file)
         self.results['crlf_findings'] = count
         self.save_session()
-        print(f"{Colors.GREEN}[✔] CRLFuzz: {count} CRLF injection findings{Colors.RESET}")
-        return self.MODULE_OK if crlfuzz_success else self.MODULE_FAILED
+        if crlfuzz_success:
+            print(f"{Colors.GREEN}[✔] CRLFuzz: {count} CRLF injection findings{Colors.RESET}")
+            return self.MODULE_OK
+        else:
+            print(f"{Colors.RED}[!] CRLFuzz scan failed/partial (findings: {count}){Colors.RESET}")
+            return self.MODULE_PARTIAL
 
     def run_internetdb_scan(self):
         """Module 34: InternetDB — zero-auth Shodan passive port/vuln lookup."""
@@ -4160,7 +4837,7 @@ class Oculus:
             return self.MODULE_SKIPPED
         
         tuning = self.config.get('nikto', {}).get('tuning', '1234')
-        timeout = self.config.get('nikto', {}).get('timeout', 600)
+        base_timeout = self.config.get('nikto', {}).get('timeout', 600)
         
         nikto_success = True
         for host in hosts:
@@ -4168,18 +4845,25 @@ class Oculus:
             # Use txt format as a safer fallback to avoid missing JSON plugin issues
             out_txt = f"{out_dir}/nikto_{safe_host}.txt"
             
+            # Scale per-host timeout dynamically
+            per_host_timeout = self._get_scaled_timeout('nikto', 1, default_base=base_timeout, default_per_target=0, default_max=3600)
+            
             cmd = (f"nikto -h {shlex.quote(host)} "
                    f"-Tuning {tuning} "
                    f"-Format txt -o {out_txt} "
                    f"-Display 1234VP -timeout 15 -nolookup")
-            if not self.run_command(cmd, timeout=timeout, label=f"nikto:{host[:40]}"):
+            if not self.run_command(cmd, timeout=per_host_timeout, label=f"nikto:{host[:40]}"):
                 nikto_success = False
         
         total = sum(1 for f in Path(out_dir).glob('*.txt') if f.stat().st_size > 0)
         self.results['nikto_scanned'] = total
         self.save_session()
-        print(f"{Colors.GREEN}[✔] Nikto scan completed — {total} hosts scanned{Colors.RESET}")
-        return self.MODULE_OK if nikto_success else self.MODULE_FAILED
+        if nikto_success:
+            print(f"{Colors.GREEN}[✔] Nikto scan completed — {total} hosts scanned{Colors.RESET}")
+            return self.MODULE_OK
+        else:
+            print(f"{Colors.RED}[!] Nikto scan finished with some failures/timeouts (hosts scanned: {total}){Colors.RESET}")
+            return self.MODULE_PARTIAL
 
     def run_tlsx_scan(self):
         """Module 36: TLSX — TLS certificate scanning + SAN subdomain discovery."""
@@ -4289,11 +4973,16 @@ class Oculus:
         
         main_out = f"{out_dir}/bypass_results.txt"
         open(main_out, 'w', encoding='utf-8').close()
-        nomore_success = True
+        payloads_dir = self._prepare_nomore403_payloads()
+        
+        attempted = 0
+        succeeded = 0
         for idx, url in enumerate(forbidden_urls):
             temp_out = f"{out_dir}/temp_nomore403_{idx}.txt"
-            cmd = f"{nomore403_bin} -u {shlex.quote(url)} -o {temp_out}"
+            cmd = self._nomore403_command(nomore403_bin, url, temp_out, payloads_dir)
+            attempted += 1
             if self.run_command(cmd, timeout=120, label=f"nomore403:{url[:40]}"):
+                succeeded += 1
                 if os.path.exists(temp_out):
                     try:
                         lines = self.read_file_lines(temp_out)
@@ -4309,8 +4998,6 @@ class Oculus:
                         os.remove(temp_out)
                     except OSError:
                         pass
-            else:
-                nomore_success = False
         
         count = 0
         if os.path.exists(main_out):
@@ -4321,7 +5008,12 @@ class Oculus:
         self.results['bypass_403'] = count
         self.save_session()
         print(f"{Colors.GREEN}[✔] nomore403: {count} potential bypasses found{Colors.RESET}")
-        return self.MODULE_OK if nomore_success else self.MODULE_FAILED
+        
+        if attempted > 0 and succeeded == 0:
+            return self.MODULE_FAILED
+        elif attempted > 0 and succeeded < attempted:
+            return self.MODULE_PARTIAL
+        return self.MODULE_OK
 
     def run_full_spectrum_scan(self, force_fresh=False):
         """Run every single Oculus module in perfect dependency order with concurrency where safe.
@@ -4389,10 +5081,10 @@ class Oculus:
 
         self.notify_scan_event(
             'scan_start',
-            f"Oculus scan started: {self.domain}",
-            f"Full Spectrum started for {self.domain}",
+            f"Oculus · Scan started · {self.domain}",
+            f"Target: {self.domain}\nPipeline: Full Spectrum (36 modules)\nStatus: Running",
             priority='default',
-            tags=['rocket'],
+            tags='rocket',
             dedupe_key=f"scan_start:full_spectrum:{self.domain}",
         )
 
@@ -4435,13 +5127,13 @@ class Oculus:
                 print(f"\n{Colors.BLUE}[SKIP] {name} -- already completed ({hint}){Colors.RESET}")
                 with _lock:
                     skipped_steps.append(name)
-                    self.completed_modules.append(name)
+                    self.skipped_modules.append(name)
                 self._notify_ntfy(
                     'skip',
-                    f"⏩ Oculus resumed: {name}",
-                    f"[RESUMED] {name} for {self.domain or 'target'}\nAlready completed in prior session ({hint}). Skipping re-run.",
+                    f"Oculus · {name} · Resumed",
+                    f"Target: {self.domain or 'target'}\nStatus: Skipped (resume)\nPrior result: {hint}",
                     priority='min',
-                    tags=['fast_forward'],
+                    tags='fast_forward',
                     dedupe_key=f"skip:{name}:{hint}",
                 )
                 return
@@ -4736,14 +5428,26 @@ class Oculus:
             self.generate_html_report()
             self.generate_json_report()
             self.generate_markdown_report()
-            self.notify_scan_event(
-                'scan_complete',
-                f"Oculus scan complete: {self.domain}",
-                f"Full Spectrum completed for {self.domain}",
-                priority='default',
-                tags=['check'],
-                dedupe_key=f"scan_complete:full_spectrum:{self.domain}",
-            )
+            if not aborted and not getattr(self, 'abort_requested', False):
+                title, body = self._build_scan_complete_report('Full Spectrum', duration_str=duration_str)
+                self.notify_scan_event(
+                    'scan_complete', title, body,
+                    priority='default', tags='white_check_mark',
+                    dedupe_key=f"scan_complete:full_spectrum:{self.domain}",
+                )
+            elif self._ntfy_enabled_for('scan_complete'):
+                title = f"Oculus · Scan aborted · {self.domain or 'target'}"
+                body = (
+                    f"Target: {self.domain or 'target'}\n"
+                    f"Pipeline: Full Spectrum\n"
+                    f"Duration: {duration_str}\n"
+                    f"Status: Aborted"
+                )
+                self.notify_scan_event(
+                    'scan_complete', title, body,
+                    priority='low', tags='warning',
+                    dedupe_key=f"scan_aborted:full_spectrum:{self.domain}",
+                )
         except Exception as e:
             self.logger.error(f"Report generation failed: {e}")
 
