@@ -1644,7 +1644,7 @@ class Oculus:
    ╚██████╔╝╚██████╗╚██████╔╝███████╗╚██████╔╝███████║
      ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝"""
             
-            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]36 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
+            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]37 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
             
             panel_content = Align.center(Text.from_markup(ascii_art + "\n" + desc), vertical="middle")
             
@@ -1666,7 +1666,7 @@ class Oculus:
     ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝
      
          {Colors.WHITE}Full-Spectrum Attack Surface Intelligence  v{VERSION}{Colors.CYAN}
-         {Colors.DIM}36 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
+         {Colors.DIM}37 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
 ================================================================================
 {Colors.RESET}"""
             print(banner)
@@ -1993,23 +1993,20 @@ class Oculus:
         # --- crt.sh passive (zero-install, pure Python) ---
         print(f"{Colors.CYAN}[*] Querying crt.sh certificate transparency...{Colors.RESET}")
         crtsh_subs = self._crtsh_passive()
+        mod = self._current_module or 'Subdomain Enumeration'
         if crtsh_subs:
             crtsh_file = f"{self.output_dir}/crtsh_subs.txt"
             try:
                 with open(crtsh_file, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(sorted(crtsh_subs)) + '\n')
                 raw_files.append(crtsh_file)
-                self._record_module_tool(
-                    self._current_module or 'Subdomain Enumeration',
-                    'crt.sh', 'ok', len(crtsh_subs),
-                )
+                self._record_module_tool(mod, 'crt.sh', 'ok', len(crtsh_subs))
                 print(f"{Colors.GREEN}[✔] crt.sh: {len(crtsh_subs)} subdomains{Colors.RESET}")
             except Exception as e:
                 self.logger.error(f"Failed to write crt.sh results: {e}")
-                self._record_module_tool(
-                    self._current_module or 'Subdomain Enumeration',
-                    'crt.sh', 'failed', 0,
-                )
+                self._record_module_tool(mod, 'crt.sh', 'failed', 0)
+        else:
+            self._record_module_tool(mod, 'crt.sh', 'empty', 0)
 
         if not raw_files:
             print(f"{Colors.RED}[!] All subdomain tools failed!{Colors.RESET}")
@@ -5020,8 +5017,8 @@ class Oculus:
         Supports smart resume: if previous data exists, user can skip completed steps.
         """
         if not self._require_setup():
-            return
-        
+            return "setup_failed"
+
         # Initialize abort_requested flag for Web API
         self.abort_requested = getattr(self, 'abort_requested', False)
 
@@ -5068,21 +5065,21 @@ class Oculus:
                     self._prev_results = {}
                     print(f"{Colors.YELLOW}[*] Fresh scan — previous data backed up to backup-{self.domain}/.{Colors.RESET}")
                 else:
-                    return
+                    return "cancelled"
         else:
             if not self.config.get('auto_confirm', False):
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
-                print(f"  FULL SPECTRUM SCAN will run ALL 36 modules across 5 phases.")
+                print(f"  FULL SPECTRUM SCAN will run ALL 37 modules across 5 phases.")
                 print(f"  Estimated runtime: 2-6 hours depending on target size.")
                 print(f"{Colors.RESET}")
                 yn = input(f"{Colors.YELLOW}[!] Launch Full Spectrum Scan on {self.domain}? (y/n): {Colors.RESET}")
                 if yn.lower().strip() != 'y':
-                    return
+                    return "cancelled"
 
         self.notify_scan_event(
             'scan_start',
             f"Oculus · Scan started · {self.domain}",
-            f"Target: {self.domain}\nPipeline: Full Spectrum (36 modules)\nStatus: Running",
+            f"Target: {self.domain}\nPipeline: Full Spectrum (37 modules)\nStatus: Running",
             priority='default',
             tags='rocket',
             dedupe_key=f"scan_start:full_spectrum:{self.domain}",
@@ -5469,6 +5466,7 @@ class Oculus:
         print(f"  {Colors.CYAN}Output Dir  : {self.output_dir}/{Colors.RESET}")
         print(f"  {Colors.CYAN}Reports     : HTML, JSON, Markdown{Colors.RESET}")
         print()
+        return "aborted" if aborted else "completed"
 
 
     # ═══════════════════════════════════════════════════════════════

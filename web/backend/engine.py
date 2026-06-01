@@ -828,16 +828,33 @@ class ScanEngine:
                     ("SQLi Scan", oc.run_sqlmap_scan),
                 ]
             elif mode == "full_spectrum":
-                self._total_modules = 36
+                self._total_modules = 37
                 self._current_module = "Full Spectrum Scan"
-                oc.run_full_spectrum_scan(force_fresh=not resume)
-                # State was already set to "aborted" by stop_scan() if the user
-                # aborted. Only override it here on a clean completion.
-                if not self._abort_flag.is_set() and self._state != "aborted":
-                    self._modules_completed.append("Full Spectrum Scan")
+                fs_result = oc.run_full_spectrum_scan(force_fresh=not resume)
+                # Mirror per-step lists from the orchestrator (full spectrum tracks internally).
+                if getattr(oc, "completed_modules", None):
+                    for name in oc.completed_modules:
+                        if name not in self._modules_completed:
+                            self._modules_completed.append(name)
+                if getattr(oc, "skipped_modules", None):
+                    for name in oc.skipped_modules:
+                        if name not in self._modules_skipped:
+                            self._modules_skipped.append(name)
+                if getattr(oc, "failed_modules", None):
+                    for entry in oc.failed_modules:
+                        name = entry[0] if isinstance(entry, (list, tuple)) else str(entry)
+                        if name not in self._modules_failed:
+                            self._modules_failed.append(name)
+                if self._abort_flag.is_set() or fs_result == "aborted":
+                    self._state = "aborted"
+                elif fs_result in ("setup_failed", "cancelled", None):
+                    self._state = "failed"
+                    self._log_queue.put(f"[ERROR] Full spectrum did not run: {fs_result or 'unknown'}")
+                elif fs_result == "completed" and self._state != "aborted":
+                    if "Full Spectrum Scan" not in self._modules_completed:
+                        self._modules_completed.append("Full Spectrum Scan")
                     self._state = "completed"
                 elif self._state != "aborted":
-                    # Scan exited for a non-abort reason (exception inside)
                     self._state = "failed"
                 self._end_time = time.time()
                 self._current_module = None
@@ -869,6 +886,7 @@ class ScanEngine:
                 for step_name, step_func in steps:
                     if self._abort_flag.is_set():
                         self._state = "aborted"
+                        self._end_time = time.time()
                         return
                     self._current_module = step_name
                     previous_module = oc._current_module
@@ -893,10 +911,20 @@ class ScanEngine:
                             self._modules_completed.append(step_name)
                             self._log_queue.put(f"[~] {step_name} completed with partial results")
                             self._web_notify_step(oc, step_name, oc.MODULE_PARTIAL, domain)
+                        elif ret_status is None:
+                            self._modules_failed.append(step_name)
+                            self._log_queue.put(
+                                f"[ERROR] {step_name} returned no status (internal bug) — treated as failed"
+                            )
+                            oc._notify_module_done(
+                                step_name,
+                                result_key=WEB_STEP_RESULT_KEYS.get(step_name),
+                                status=oc.MODULE_FAILED,
+                            )
                         else:
                             self._modules_completed.append(step_name)
                             self._log_queue.put(f"[✔] {step_name} completed")
-                            self._web_notify_step(oc, step_name, ret_status or oc.MODULE_OK, domain)
+                            self._web_notify_step(oc, step_name, ret_status, domain)
                     except KeyboardInterrupt:
                         self._state = "aborted"
                         self._end_time = time.time()
@@ -915,8 +943,8 @@ class ScanEngine:
                     oc.generate_html_report()
                     oc.generate_json_report()
                     oc.generate_markdown_report()
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._log_queue.put(f"[!] Report generation failed: {e}")
 
             self._current_module = None
             if self._abort_flag.is_set() and self._state == "running":

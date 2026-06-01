@@ -2,7 +2,7 @@
   <br>
   <samp><b>O C U L U S</b></samp>
   <br><br>
-  <sub><i>v4.2 · one lens. full surface.</i></sub>
+  <sub><i>v4.2.0 · one lens. full surface.</i></sub>
   <br><br>
   <a href="#quick-start"><img alt="Quick start" src="https://img.shields.io/badge/setup-install.sh-00d4aa?style=flat-square"></a>
   <a href="#expandable-guides"><img alt="Guides" src="https://img.shields.io/badge/docs-expandable-9333ea?style=flat-square"></a>
@@ -92,6 +92,65 @@ python3 oculus.py -d example.com --full-spectrum --no-confirm
 ```
 
 Put **Shodan** and **GitHub** tokens in `api_keys` for modules **28** and **26**. The sample YAML also lists **Chaos** for ProjectDiscovery-style workflows (Subfinder can use PD keys via your environment; the Python runner does not read `chaos` yet).
+
+---
+
+## Push notifications (ntfy)
+
+Oculus can push **one consolidated notification per module** to [ntfy](https://ntfy.sh) (or your self-hosted server). Each message includes:
+
+- **Target, phase, and status** (Complete / Partial / Failed / Skipped)
+- **Tools** — per-tool line counts, or `failed` / `not installed` / `no results`
+- **Total** — merged metrics (e.g. unique subdomains, alive hosts, vulns)
+
+There is **no separate “findings” ping** on every `save_session` when module-complete notifications are enabled (default), so your phone is not spammed.
+
+**Setup:**
+
+```bash
+python3 oculus.py --setup-ntfy
+# or enable during ./install.sh (interactive), then edit ~/.config/oculus/config.yaml
+```
+
+```yaml
+ntfy:
+  enabled: true
+  url: "https://ntfy.sh/your-topic"   # or server + topic
+  send_scan_start: true
+  send_scan_complete: true
+  send_module_start: true
+  send_module_complete: true
+  send_findings: true      # only used if module_complete is false
+  send_errors: true
+  send_skips: true
+```
+
+**Smoke test:** `curl -d "Oculus test" -H "Title: Oculus" https://ntfy.sh/your-topic`
+
+CLI **U** / **9** / **D** and the **web UI** all use the same notifier. Full Spectrum handles per-step ntfy internally; quick/deep/custom web modes route through the same `_notify_module_done` path as the CLI.
+
+---
+
+## Module outcomes & reliability
+
+Every module returns an explicit status so the pipeline, web UI, and ntfy stay honest:
+
+| Status | Meaning |
+|:---|:---|
+| **OK** | Finished with usable output |
+| **Skipped** | Missing tool, missing input file, or no API key — step did not run |
+| **Partial** | Ran but some tools timed out or degraded (e.g. Jaeles/Nikto/CRLFuzz) |
+| **Failed** | Critical failure (e.g. all subdomain tools failed, kr scan failed) |
+
+**Resilience built into the orchestrator (not tool nerfs):**
+
+- **Scaled timeouts** — long target lists get longer budgets (`_get_scaled_timeout`) instead of dying at a fixed 600s cap.
+- **Fallback wordlist** — directory fuzz generates a small in-output wordlist if SecLists paths are missing.
+- **Fallback DNS resolvers** — massdns can use a generated public resolver list if none configured.
+- **theHarvester fallback** — safe source list if the primary source bundle fails.
+- **nomore403** — auto-clones payloads when missing; runs from the correct working directory so `payloads/` resolves.
+- **Resume (Full Spectrum)** — skips steps with existing `session.json` metrics or non-empty marker files; resume skips count as **skipped**, not completed.
+- **Abort** — Ctrl+C or web Stop sets `abort_requested`, kills child processes; reports still generate; ntfy sends **aborted** (not “scan complete”) on full spectrum abort.
 
 ---
 
@@ -746,7 +805,7 @@ Non-interactive mode requires **`-d`**. More recipes live under **[CLI cookbook]
 
 **`--module` values** (copy exact tokens):
 
-`subdomain` · `dns` · `alive` · `ports` · `fullports` · `urls` · `waf` · `vuln` · `params` · `js` · `fuzz` · `api` · `takeover` · `hakrawler` · `screenshots` · `dnsbrute` · `gf` · `tech` · `sqli` · `xss` · `cors` · `smuggling` · `asn` · `cloud` · `github` · `osint` · `shodan` · `redirect`
+`subdomain` · `dns` · `alive` · `ports` · `fullports` · `urls` · `waf` · `vuln` · `params` · `js` · `fuzz` · `api` · `takeover` · `hakrawler` · `screenshots` · `dnsbrute` · `gf` · `tech` · `sqli` · `xss` · `cors` · `smuggling` · `asn` · `cloud` · `github` · `osint` · `shodan` · `redirect` · `cariddi` · `jaeles` · `tplmap` · `crlfuzz` · `internetdb` · `nikto` · `tlsx` · `nomore403`
 
 ```bash
 python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-confirm
@@ -864,7 +923,11 @@ flowchart LR
 | **Nuclei** no findings | Run template update when prompted (`-ut`) or run `nuclei -ut` manually; widen `nuclei.severity` |
 | **GitHub** / **Shodan** errors | Verify tokens in `api_keys`; watch GitHub rate limits (403) |
 | **Project `./config.yaml` ignored** | A file under **`~/.config/oculus/`** takes priority — see [load order](#expandable-guides) |
-| **kr** / Kiterunner fails | Ensure `routes-large.kite` exists where **kr** expects it (install / PATH issue) |
+| **kr** / Kiterunner fails | Re-run `./install.sh`; ensure `/opt/recontools/kiterunner/dist/kr` or `routes-large.kite` exists; API fuzz reports **Failed** (not Skipped) when kr dies |
+| **nomore403** payload errors | `git clone https://github.com/devploit/nomore403 /opt/recontools/nomore403` or re-run install; latest code `cd`s into repo before running |
+| **Directory fuzz skipped** | Install SecLists **or** rely on auto-generated `auto_dirs_wordlist.txt` in output (current code) |
+| **Duplicate ntfy messages** | Set `send_findings: false` if `send_module_complete: true` (default behavior already suppresses duplicate finding pings) |
+| **Web scan overlap** | Wait for prior scan to finish; engine blocks start while the background thread is alive |
 
 **Windows:** Use **WSL2**, a **Linux VM**, or **Docker** — native Windows paths are not supported for the full toolchain.
 
@@ -876,6 +939,6 @@ flowchart LR
 
 <p align="center">
   <br>
-  <sub>Oculus v4 — clarity over noise.</sub>
+  <sub>Oculus v4.2.0 — clarity over noise.</sub>
   <br><br>
 </p>
