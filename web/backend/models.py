@@ -115,3 +115,4 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
     scan_state: ScanState
+    scan_module_count: int = 0

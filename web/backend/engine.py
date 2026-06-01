@@ -19,7 +19,15 @@ _project_root = str(Path(__file__).resolve().parent.parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from oculus import Oculus, load_config, MODULE_MAP, VERSION
+from oculus import (
+    Oculus,
+    load_config,
+    MODULE_MAP,
+    VERSION,
+    SCAN_MODULE_COUNT,
+    QUICK_RECON_STEP_COUNT,
+    DEEP_RECON_STEP_COUNT,
+)
 
 
 # ANSI escape code stripper
@@ -799,7 +807,7 @@ class ScanEngine:
 
             # Determine what to run
             if mode == "quick":
-                self._total_modules = 7
+                self._total_modules = QUICK_RECON_STEP_COUNT
                 steps = [
                     ("Subdomain Enumeration", oc.run_subdomain_enumeration),
                     ("DNS Resolution", oc.run_dns_resolution),
@@ -828,7 +836,7 @@ class ScanEngine:
                     ("SQLi Scan", oc.run_sqlmap_scan),
                 ]
             elif mode == "full_spectrum":
-                self._total_modules = 37
+                self._total_modules = SCAN_MODULE_COUNT
                 self._current_module = "Full Spectrum Scan"
                 fs_result = oc.run_full_spectrum_scan(force_fresh=not resume)
                 # Mirror per-step lists from the orchestrator (full spectrum tracks internally).

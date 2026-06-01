@@ -56,7 +56,7 @@ npm run dev # Open http://localhost:5173
 *   🔄 **Zero-Latency Reset Core**: Instantly purges and re-syncs state configurations to pristine system baselines, eliminating static parameters via recursive async calls directly to the FastAPI config registry.
 *   🛡️ **Accidental Abort Interception Layer**: Replaced fragile, instantly destructive termination calls with a threat-crimson modal warning engine. Leverages SVG `<ShieldAlert />` vector isolation, preventing accidental process interrupts on parallel scanning threads.
 *   🎨 **Interactive Cyan Cyber-Glow Aesthetics**: The Jitter element has been elevated into a 100% clickable glassmorphic telemetry container. Uses fluid `0.3s` ease transitions, active micro-animations, glowing borders, active text shadows, and custom cyberpunk neon accents.
-*   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `37/37 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
+*   🏁 **Asynchronous Progress Fill Snapping**: Overrides raw mathematical state rendering, automatically force-snapping completed or resume-skipped processes (e.g. `36/36 modules`) straight to `100%` green visual completion bars the microsecond the daemon signals finalization.
 
 *   🖼️ **Domain-Wise Screenshot Review**: Results and Reports include a Screenshots tab that groups captures by inferred domain/subdomain, supports both screenshot engines, and opens screenshots in a near full-screen viewer for readable triage.
 
@@ -83,7 +83,7 @@ mkdir -p ~/.config/oculus && cp config.yaml.example ~/.config/oculus/config.yaml
 
 If you want push notifications, `./install.sh` will offer to configure ntfy during install when you run it interactively. You can also run `python3 oculus.py --setup-ntfy` later if you want to change the topic, server, or auth settings. The wizard only prompts in an interactive terminal, so the web backend and other background runs will skip it cleanly.
 
-**3.** Run—pick **C** to set a domain, then **9** for full automated recon, **U** for the full spectrum scan, or use headless CLI:
+**3.** Run—pick **C** to set a domain, then **A** for full automated recon, **F** for full spectrum, or use headless CLI:
 
 ```bash
 python3 oculus.py -d example.com --full-recon --no-confirm
@@ -127,7 +127,7 @@ ntfy:
 
 **Smoke test:** `curl -d "Oculus test" -H "Title: Oculus" https://ntfy.sh/your-topic`
 
-CLI **U** / **9** / **D** and the **web UI** all use the same notifier. Full Spectrum handles per-step ntfy internally; quick/deep/custom web modes route through the same `_notify_module_done` path as the CLI.
+CLI **F** / **A** / **D** and the **web UI** all use the same notifier. Full Spectrum handles per-step ntfy internally; quick/deep/custom web modes route through the same `_notify_module_done` path as the CLI.
 
 ---
 
@@ -156,7 +156,7 @@ Every module returns an explicit status so the pipeline, web UI, and ntfy stay h
 
 ## Module overview
 
-Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). **9** / **`--full-recon`** runs **only** the core chain **1→8**. **D** / **`--deep`** runs a **fixed 14-step advanced chain** (not 1–9). **U** / **`--full-spectrum`** runs **every single module** across 5 phases with intelligent concurrency. See the comparison table below.
+Use **menu #** (1–36) in the TUI for individual scanners, or **`--module <name>`** headless (comma-separated). **[A]** / **`--full-recon`** runs **only** the core chain **1→8**. **[D]** / **`--deep`** runs a **fixed 14-step advanced chain**. **[F]** / **`--full-spectrum`** runs **every scan module (1–36)** across 5 phases with intelligent concurrency. See the comparison table below.
 
 | # | CLI | Primary tools | What happens |
 |:---:|:---|:---|:---|
@@ -168,37 +168,37 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 | **6** | `urls` | Katana, gau, waybackurls | Crawl + passive archives in parallel, strip noise, dedupe → **`urls.txt`** / **`urls_final.txt`** |
 | **7** | `waf` | wafw00f | One WAF probe per host (concurrent); normalize vendor names → **`waf_summary.txt`** |
 | **8** | `vuln` | nuclei | Run templates on **`alive.txt`**; optional template update; JSONL + grouped text findings |
-| **9** | `--full-recon` | *(steps 1→8)* | **Full auto recon:** runs the core pipeline then **summary + HTML + JSON** (not MD unless **R**) |
-| **10** | `params` | ParamSpider, Arjun | Crawl/archival param mining + HTTP param brute from URL list → **`parameters/`** |
-| **11** | `js` | LinkFinder, Python | Collect `.js` URLs; extract paths from JS; fetch + regex hunt for secrets → **`js_endpoints/`** |
-| **12** | `fuzz` | ffuf | Recursive directory fuzz on first **10** alive hosts using YAML wordlist + extensions → **`fuzzing/`** |
-| **13** | `api` | kr (Kiterunner) | API-style route discovery against alive hosts → **`api_fuzzing/`** |
-| **14** | `takeover` | subzy, dig | Subzy takeover scan + parallel **CNAME** audit for dangling third-party records → **`takeover/`** |
-| **15** | `hakrawler` | hakrawler | Crawl in-scope sites from **`alive.txt`**, merge new links into **`urls_final.txt`** |
-| **16** | `screenshots` | gowitness + EyeWitness | Render every alive URL/domain/subdomain through both screenshot engines where available → **`screenshots/gowitness/`**, **`screenshots/eyewitness/`** |
-| **17** | `dnsbrute` | massdns | Build `word.target` from DNS wordlist + resolvers; merge hits back into **`subdomains.txt`** |
-| **18** | `gf` | gf | Classify **`urls_final.txt`** into buckets (xss, sqli, ssrf, lfi, redirect, rce) → **`gf/*.txt`** |
-| **19** | `tech` | whatweb | Fingerprint stacks from **`alive.txt`** → **`tech_scan/`** JSON |
-| **20** | `sqli` | sqlmap | Batch **sqlmap** over **`gf/sqli.txt`** (run **18** first if empty) → **`sqlmap/`** |
-| **21** | `xss` | Dalfox | Feed **`gf/xss.txt`** to Dalfox; auto-runs **gf** if missing → **`xss_findings/`** |
-| **22** | `cors` | Python | Send crafted **`Origin`** headers per host (concurrent); flag reflected / wildcard CORS → **`cors_findings/`** |
-| **23** | `smuggling` | smuggler | Run smuggler per alive URL; merge anomalies → **`smuggling/`** |
-| **24** | `asn` | asnmap | Map domain to ASN CIDR ranges for wider surface planning → **`asn/`** |
-| **25** | `cloud` | Python | Probe guessed **S3 / GCS / Azure** style names from domain label → **`cloud/`** |
-| **26** | `github` | GitHub API | Search indexed code for domain + secret-ish keywords (**token** in YAML) → **`github/`** |
-| **27** | `osint` | theHarvester | Broad OSINT (`-b all`) → **`osint/`** HTML |
-| **28** | `shodan` | Shodan API | Passive **hostname:** hits for exposed services (**API key** in YAML) → **`shodan/`** |
-| **29** | `redirect` | Python | Fuzz redirect params from **`gf/redirect.txt`**; may auto-run **gf** first → **`redirects/`** |
-| **30** | `cariddi` | Cariddi | Crawl URLs from `alive.txt` for secrets, endpoints, juicy extensions → **`cariddi/`** |
-| **31** | `jaeles` | Jaeles | Signature-based vulnerability scanner targeting `alive.txt` → **`jaeles/`** |
-| **32** | `tplmap` | Tplmap | Server-Side Template Injection (SSTI) scanner in safe detection mode → **`tplmap/`** |
-| **33** | `crlfuzz` | CRLFuzz | CRLF injection scanner feeding hosts from `alive.txt` → **`crlfuzz/`** |
-| **34** | `internetdb` | Shodan InternetDB API | Zero-authentication passive port, vulnerability, and CPE lookup → **`internetdb/`** |
-| **35** | `nikto` | Nikto | Comprehensive web server security/configuration scanner → **`nikto/`** |
-| **36** | `tlsx` | TLSX | TLS certificate scanning with CN/SAN parsing to discover extra subdomains → **`tlsx/`** |
-| **37** | `nomore403` | nomore403 | Automated 403/401 Forbidden bypass techniques scanner → **`nomore403/`** |
-| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **24 → 10→11→12→13→14→15→16→18→19→21→22→23→20** (ASN first, **sqlmap** last). **Skips** menus **1–9**, **17**, **25–29**, **30–37**. Needs prior **`alive.txt`** / URLs from **9** or manual **1–8**+**6**. |
-| **U** | `--full-spectrum` | *(all 37 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
+| **9** | `params` | ParamSpider, Arjun | Crawl/archival param mining + HTTP param brute from URL list → **`parameters/`** |
+| **10** | `js` | LinkFinder, Python | Collect `.js` URLs; extract paths from JS; fetch + regex hunt for secrets → **`js_endpoints/`** |
+| **11** | `fuzz` | ffuf | Recursive directory fuzz on first **10** alive hosts using YAML wordlist + extensions → **`fuzzing/`** |
+| **12** | `api` | kr (Kiterunner) | API-style route discovery against alive hosts → **`api_fuzzing/`** |
+| **13** | `takeover` | subzy, dig | Subzy takeover scan + parallel **CNAME** audit for dangling third-party records → **`takeover/`** |
+| **14** | `hakrawler` | hakrawler | Crawl in-scope sites from **`alive.txt`**, merge new links into **`urls_final.txt`** |
+| **15** | `screenshots` | gowitness + EyeWitness | Render every alive URL/domain/subdomain through both screenshot engines where available → **`screenshots/gowitness/`**, **`screenshots/eyewitness/`** |
+| **16** | `dnsbrute` | massdns | Build `word.target` from DNS wordlist + resolvers; merge hits back into **`subdomains.txt`** |
+| **17** | `gf` | gf | Classify **`urls_final.txt`** into buckets (xss, sqli, ssrf, lfi, redirect, rce) → **`gf/*.txt`** |
+| **18** | `tech` | whatweb | Fingerprint stacks from **`alive.txt`** → **`tech_scan/`** JSON |
+| **19** | `sqli` | sqlmap | Batch **sqlmap** over **`gf/sqli.txt`** (run **17** first if empty) → **`sqlmap/`** |
+| **20** | `xss` | Dalfox | Feed **`gf/xss.txt`** to Dalfox; auto-runs **gf** if missing → **`xss_findings/`** |
+| **21** | `cors` | Python | Send crafted **`Origin`** headers per host (concurrent); flag reflected / wildcard CORS → **`cors_findings/`** |
+| **22** | `smuggling` | smuggler | Run smuggler per alive URL; merge anomalies → **`smuggling/`** |
+| **23** | `asn` | asnmap | Map domain to ASN CIDR ranges for wider surface planning → **`asn/`** |
+| **24** | `cloud` | Python | Probe guessed **S3 / GCS / Azure** style names from domain label → **`cloud/`** |
+| **25** | `github` | GitHub API | Search indexed code for domain + secret-ish keywords (**token** in YAML) → **`github/`** |
+| **26** | `osint` | theHarvester | Broad OSINT (`-b all`) → **`osint/`** HTML |
+| **27** | `shodan` | Shodan API | Passive **hostname:** hits for exposed services (**API key** in YAML) → **`shodan/`** |
+| **28** | `redirect` | Python | Fuzz redirect params from **`gf/redirect.txt`**; may auto-run **gf** first → **`redirects/`** |
+| **29** | `cariddi` | Cariddi | Crawl URLs from `alive.txt` for secrets, endpoints, juicy extensions → **`cariddi/`** |
+| **30** | `jaeles` | Jaeles | Signature-based vulnerability scanner targeting `alive.txt` → **`jaeles/`** |
+| **31** | `tplmap` | Tplmap | Server-Side Template Injection (SSTI) scanner in safe detection mode → **`tplmap/`** |
+| **32** | `crlfuzz` | CRLFuzz | CRLF injection scanner feeding hosts from `alive.txt` → **`crlfuzz/`** |
+| **33** | `internetdb` | Shodan InternetDB API | Zero-authentication passive port, vulnerability, and CPE lookup → **`internetdb/`** |
+| **34** | `nikto` | Nikto | Comprehensive web server security/configuration scanner → **`nikto/`** |
+| **35** | `tlsx` | TLSX | TLS certificate scanning with CN/SAN parsing to discover extra subdomains → **`tlsx/`** |
+| **36** | `nomore403` | nomore403 | Automated 403/401 Forbidden bypass techniques scanner → **`nomore403/`** |
+| **A** | `--full-recon` | *(steps 1→8)* | **Full auto recon:** runs the core pipeline then **summary + HTML + JSON** (not MD unless **R**) |
+| **D** | `--deep` | asnmap → ParamSpider/Arjun → … | **Fixed 14 steps only:** **23 → 9→10→11→12→13→14→15→17→18→20→21→22→19** (ASN first, **sqlmap** last). **Skips** menus **1–8**, **16**, **24–36**. Needs prior **`alive.txt`** / URLs from **A** or manual **1–8**+**6**. |
+| **F** | `--full-spectrum` | *(all 36 modules)* | **Full Spectrum Scan:** runs every module across 5 phases (Discovery → Infrastructure → Content → Vulnerability → Exploitation) with concurrency where safe. Thread-safe, Ctrl+C graceful abort, session saves between phases. Auto-generates all reports. See **[Automation modes compared](#automation-modes-compared)**. |
 | **R** | — | *(generators)* | Rebuild **`report.html`**, **`findings.json`**, **`report.md`** from disk artifacts |
 
 ---
@@ -207,14 +207,14 @@ Use **menu #** in the TUI, or **`--module <name>`** headless (comma-separated). 
 
 Oculus has three preset automation modes. Pick the one that matches your scope and time budget.
 
-| | **[9] Full Auto Recon** | **[D] Deep Recon** | **[U] Full Spectrum Scan** |
+| | **[A] Full Auto Recon** | **[D] Deep Recon** | **[F] Full Spectrum Scan** |
 |:---|:---|:---|:---|
 | **Scope** | Core recon pipeline | Advanced modules only | Everything — recon through exploitation |
-| **Modules run** | 7 (steps 1→8, skips 5) | 14 fixed advanced steps | All 37 modules |
-| **Prerequisite** | Just set a domain | Needs `alive.txt` + URLs (run 9 first) | Just set a domain |
+| **Modules run** | 7 (steps 1→8, skips 5) | 14 fixed advanced steps | All 36 scan modules |
+| **Prerequisite** | Just set a domain | Needs `alive.txt` + URLs (run **A** first) | Just set a domain |
 | **Concurrency** | Subdomain tools + URL tools in parallel | Sequential only | Full concurrent scheduling per phase |
 | **Estimated time** | 15–45 min | 1–3 hours | 2–6 hours |
-| **What it skips** | Advanced modules (10–29, 30–37) | Core (1–9), DNS brute (17), Cloud/OSINT/Shodan/GitHub/Redirect (25–29), 30–37 | Nothing — runs every module |
+| **What it skips** | Advanced modules (9–36) | Core (1–8), DNS brute (16), Cloud/OSINT/Shodan/GitHub/Redirect (24–28), Cariddi–nomore403 (29–36) | Nothing — runs every module |
 | **Reports** | HTML + JSON + summary | Summary only (run R for full) | HTML + JSON + Markdown + summary |
 | **Ctrl+C safe** | Stops at current step | Stops at current step | Graceful abort, saves progress, still generates reports |
 | **Thread safety** | Basic | Basic | Full `threading.Lock` protection |
@@ -546,7 +546,7 @@ python3 oculus.py -d example.com --full-recon --no-confirm
 # Deep mode = fixed 14 advanced steps (NOT menus 1–9). Run full recon first so alive.txt / URLs exist.
 python3 oculus.py -d example.com --deep --no-confirm
 
-# Full Spectrum Scan = ALL 37 modules in 5 phases with concurrency. Set it and forget it.
+# Full Spectrum Scan = all 36 modules in 5 phases with concurrency. Set it and forget it.
 python3 oculus.py -d example.com --full-spectrum --no-confirm
 
 # Pick modules à la carte (order runs left → right)
@@ -593,8 +593,8 @@ Subfolders (created as needed): `parameters/`, `js_endpoints/`, `fuzzing/`, `api
 
 **Session resume:** If `session.json` exists and you re-enter the same domain (**C**), Oculus restores prior `results`.
 - **Full Spectrum (`U`)** offers a smart **Resume** mode: it skips already-completed steps (printing `[SKIP]`) to safely pick up where a long scan dropped off.
-- **Full Auto (`9`)** and **Deep Recon (`D`)** will warn you about existing data and ask for confirmation before overwriting it.
-- If `--no-confirm` / `auto_confirm` is set, `[U]` automatically resumes, while `[9]` and `[D]` automatically overwrite.
+- **Full Auto (`A`)** and **Deep Recon (`D`)** will warn you about existing data and ask for confirmation before overwriting it.
+- If `--no-confirm` / `auto_confirm` is set, `[F]` automatically resumes, while `[A]` and `[D]` automatically overwrite.
 
 </details>
 
@@ -656,7 +656,7 @@ Everything below is implemented in [`oculus.py`](oculus.py) today. Open the sect
 
 ### Preset pipelines
 
-**Full automated recon** (`--full-recon` / menu **9**), in order:
+**Full automated recon** (`--full-recon` / menu **A**), in order:
 
 1. Subdomain enumeration → 2. DNS resolution (`dnsx`) → 3. Alive probe (`httpx` JSON) → 4. Fast port scan → 5. URL collection → 6. WAF detection → 7. Nuclei scan  
 
@@ -674,7 +674,7 @@ Then: **session diff** + **`summary.txt`** only — run **R** for HTML / JSON / 
 
 **Full Spectrum Scan** (`--full-spectrum` / menu **U**) — **every module, optimal order:**
 
-Runs all 37 modules across 5 phases with intelligent concurrency. See **[Automation modes compared](#automation-modes-compared)** for the full pipeline diagram. Thread-safe tracking, graceful Ctrl+C abort (saves progress and still generates reports), and session checkpoints between every phase.
+Runs all 36 modules across 5 phases with intelligent concurrency. See **[Automation modes compared](#automation-modes-compared)** for the full pipeline diagram. Thread-safe tracking, graceful Ctrl+C abort (saves progress and still generates reports), and session checkpoints between every phase.
 
 **No prerequisite:** Just set a domain. Full Spectrum handles the entire dependency chain from subdomain enumeration through targeted exploitation. Auto-generates HTML, JSON, and Markdown reports at completion.
 
@@ -731,7 +731,7 @@ Runs all 37 modules across 5 phases with intelligent concurrency. See **[Automat
 | `tlsx` | 36 | **TLSX** certificate scan and CN/SAN parser, merging new subdomains back into `subdomains.txt` |
 | `nomore403` | 37 | **nomore403** automated 403/401 Forbidden bypass techniques scanner over ffuf/general URLs |
 
-Menu **9** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–9, **not** 17 / 25–29 / 30–37. Menu **U** / **`--full-spectrum`** = **all 37 modules** in 5 concurrent phases — see **[Automation modes compared](#automation-modes-compared)**.
+Menu **A** / **`--full-recon`** = core **1→8** only (subdomain → nuclei) + auto reports. Menu **D** / **`--deep`** = **fixed 14 advanced steps** (see **Deep recon** above) — **not** 1–8, **not** 16 / 24–28 / 29–36. Menu **F** / **`--full-spectrum`** = **all 36 modules** in 5 concurrent phases — see **[Automation modes compared](#automation-modes-compared)**.
 
 </details>
 
@@ -794,7 +794,7 @@ Non-interactive mode requires **`-d`**. More recipes live under **[CLI cookbook]
 | `-d`, `--domain` | Target domain (required for non-interactive runs) |
 | `--full-recon` | Full automated pipeline (core 1→8) |
 | `--deep` | Fixed **14-step** advanced chain (**24→10…→20**); does **not** run **1–9**, **17 / 25–29**, or **30–37** |
-| `--full-spectrum` | **All 37 modules** in 5 phases with concurrency — see **[Automation modes compared](#automation-modes-compared)** |
+| `--full-spectrum` | **All 36 modules** in 5 phases with concurrency — see **[Automation modes compared](#automation-modes-compared)** |
 | `--module` | Comma-separated modules (exact names below) |
 | `--no-confirm` | Skip prompts (CI / automation); sets `auto_confirm` |
 | `--threads N` | Overrides `threads` (httpx) |
@@ -860,7 +860,7 @@ python3 oculus.py -d target.com --module subdomain,dns,alive,ports,vuln --no-con
 | **36** | TLSX cert scanner & SAN subdomain extractor |
 | **37** | nomore403 bypass scanner |
 | **D** | **Deep recon** — fixed **14** steps (**24→10→…→20**); not full **1–37** ([details](#feature-catalog)) |
-| **U** | **Full Spectrum Scan** — all **37 modules** in 5 phases with concurrency ([details](#automation-modes-compared)) |
+| **F** | **Full Spectrum Scan** — all **36 modules** in 5 phases with concurrency ([details](#automation-modes-compared)) |
 | **R** | Regenerate **HTML + JSON + Markdown** reports |
 | **C** | Set / change target domain + `output-<domain>/` |
 | **I** | Tool installation check |

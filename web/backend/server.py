@@ -76,6 +76,7 @@ logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
 logging.getLogger("uvicorn").setLevel(logging.WARNING)
 
 from engine import engine, VERSION
+from oculus import SCAN_MODULE_COUNT
 from models import (
     ScanRequest,
     ScanStatusResponse,
@@ -113,6 +114,7 @@ async def health():
         status="ok",
         version=VERSION,
         scan_state=ScanState(engine.state),
+        scan_module_count=SCAN_MODULE_COUNT,
     )
 
 

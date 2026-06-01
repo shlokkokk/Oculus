@@ -189,6 +189,72 @@ def load_config():
     return config
 
 
+# ─── Menu registry (single source of truth for TUI numbers + CLI module names) ───
+SCAN_MODULES = [
+    {"num": 1, "cli": "subdomain", "method": "run_subdomain_enumeration", "label": "Subdomain Enumeration", "result_key": "subdomains"},
+    {"num": 2, "cli": "dns", "method": "run_dns_resolution", "label": "DNS Resolution", "result_key": "dns_resolved"},
+    {"num": 3, "cli": "alive", "method": "run_alive_hosts_check", "label": "Alive Hosts Check", "result_key": "alive_hosts"},
+    {"num": 4, "cli": "ports", "method": "run_fast_port_scan", "label": "Fast Port Scan", "result_key": "fast_ports"},
+    {"num": 5, "cli": "fullports", "method": "run_full_port_scan", "label": "Full Port Scan", "result_key": "full_ports"},
+    {"num": 6, "cli": "urls", "method": "run_url_collection", "label": "URL Collection", "result_key": "urls"},
+    {"num": 7, "cli": "waf", "method": "run_waf_detection", "label": "WAF Detection", "result_key": "waf_detected"},
+    {"num": 8, "cli": "vuln", "method": "run_vulnerability_scan", "label": "Vulnerability Scan", "result_key": "vulnerabilities"},
+    {"num": 9, "cli": "params", "method": "run_parameter_discovery", "label": "Parameter Discovery", "result_key": "parameters"},
+    {"num": 10, "cli": "js", "method": "run_js_endpoint_extraction", "label": "JS Endpoint Extraction", "result_key": "js_endpoints"},
+    {"num": 11, "cli": "fuzz", "method": "run_directory_fuzzing", "label": "Directory Fuzzing", "result_key": None},
+    {"num": 12, "cli": "api", "method": "run_api_fuzzing", "label": "API Fuzzing", "result_key": None},
+    {"num": 13, "cli": "takeover", "method": "run_subdomain_takeover_check", "label": "Subdomain Takeover", "result_key": None},
+    {"num": 14, "cli": "hakrawler", "method": "run_advanced_url_enum", "label": "Advanced URL Enum", "result_key": "urls_final"},
+    {"num": 15, "cli": "screenshots", "method": "run_screenshot_capture", "label": "Screenshot Capture", "result_key": None},
+    {"num": 16, "cli": "dnsbrute", "method": "run_dns_bruteforce", "label": "DNS Bruteforce", "result_key": None},
+    {"num": 17, "cli": "gf", "method": "run_gf_filters", "label": "GF Filters", "result_key": "gf_filters"},
+    {"num": 18, "cli": "tech", "method": "run_tech_scan", "label": "Tech Scan", "result_key": None},
+    {"num": 19, "cli": "sqli", "method": "run_sqlmap_scan", "label": "SQLi Scan", "result_key": None},
+    {"num": 20, "cli": "xss", "method": "run_xss_scan", "label": "XSS Scan (Dalfox)", "result_key": "xss_findings"},
+    {"num": 21, "cli": "cors", "method": "run_cors_scan", "label": "CORS Scanner", "result_key": "cors_findings"},
+    {"num": 22, "cli": "smuggling", "method": "run_http_smuggling", "label": "HTTP Smuggling", "result_key": None},
+    {"num": 23, "cli": "asn", "method": "run_asn_discovery", "label": "ASN Discovery", "result_key": None},
+    {"num": 24, "cli": "cloud", "method": "run_cloud_asset_discovery", "label": "Cloud Assets", "result_key": None},
+    {"num": 25, "cli": "github", "method": "run_github_dorking", "label": "GitHub Dorking", "result_key": None},
+    {"num": 26, "cli": "osint", "method": "run_osint_harvesting", "label": "OSINT Harvesting", "result_key": None},
+    {"num": 27, "cli": "shodan", "method": "run_shodan_integration", "label": "Shodan Recon", "result_key": None},
+    {"num": 28, "cli": "redirect", "method": "run_open_redirect_scan", "label": "Open Redirect Scan", "result_key": None},
+    {"num": 29, "cli": "cariddi", "method": "run_cariddi_scan", "label": "Cariddi Scan", "result_key": "cariddi_findings"},
+    {"num": 30, "cli": "jaeles", "method": "run_jaeles_scan", "label": "Jaeles Scan", "result_key": "jaeles_findings"},
+    {"num": 31, "cli": "tplmap", "method": "run_tplmap_scan", "label": "Tplmap SSTI Scan", "result_key": "ssti_findings"},
+    {"num": 32, "cli": "crlfuzz", "method": "run_crlfuzz_scan", "label": "CRLFuzz CRLF Scan", "result_key": "crlf_findings"},
+    {"num": 33, "cli": "internetdb", "method": "run_internetdb_scan", "label": "InternetDB Lookup", "result_key": "internetdb_hosts"},
+    {"num": 34, "cli": "nikto", "method": "run_nikto_scan", "label": "Nikto Scanner", "result_key": "nikto_scanned"},
+    {"num": 35, "cli": "tlsx", "method": "run_tlsx_scan", "label": "TLSX Cert Scan", "result_key": "tlsx_sans"},
+    {"num": 36, "cli": "nomore403", "method": "run_nomore403_scan", "label": "Nomore403 Bypass", "result_key": "bypass_403"},
+]
+
+AUTOMATION_ACTIONS = [
+    {"key": "A", "method": "run_full_automated_recon", "label": "Full Auto Recon", "subtitle": "Core 1–8"},
+    {"key": "D", "method": "run_deep_recon_mode", "label": "Deep Recon", "subtitle": "14 advanced steps"},
+    {"key": "F", "method": "run_full_spectrum_scan", "label": "Full Spectrum Scan", "subtitle": None},
+]
+
+AUTOMATION_KEYS = frozenset(a["key"] for a in AUTOMATION_ACTIONS)
+SYSTEM_MENU_KEYS = frozenset("RCIHQ")
+
+SCAN_MODULE_COUNT = len(SCAN_MODULES)
+MENU_NUM_BY_CLI = {m["cli"]: m["num"] for m in SCAN_MODULES}
+CLI_BY_MENU_NUM = {m["num"]: m["cli"] for m in SCAN_MODULES}
+MODULE_MAP = {m["cli"]: m["method"] for m in SCAN_MODULES}
+QUICK_RECON_STEP_COUNT = 7
+DEEP_RECON_STEP_COUNT = 14
+
+# Deep recon order (menu numbers for docs / suggestions)
+DEEP_RECON_MENU_NUMS = [
+    MENU_NUM_BY_CLI[c]
+    for c in (
+        "asn", "params", "js", "fuzz", "api", "takeover", "hakrawler", "screenshots",
+        "gf", "tech", "xss", "cors", "smuggling", "sqli",
+    )
+]
+
+
 class Colors:
     """Professional color scheme for beautiful terminal output"""
     CYAN = '\033[96m'
@@ -1644,7 +1710,11 @@ class Oculus:
    ╚██████╔╝╚██████╗╚██████╔╝███████╗╚██████╔╝███████║
      ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝"""
             
-            desc = f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n[dim cyan]37 modules  |  5-phase pipeline  |  concurrent execution  |  Kali Linux[/]\n"
+            desc = (
+                f"\n[bold white]Full-Spectrum Attack Surface Intelligence  v{VERSION}[/]\n"
+                f"[dim cyan]{SCAN_MODULE_COUNT} modules  |  5-phase pipeline  |  "
+                f"concurrent execution  |  Kali Linux[/]\n"
+            )
             
             panel_content = Align.center(Text.from_markup(ascii_art + "\n" + desc), vertical="middle")
             
@@ -1666,7 +1736,7 @@ class Oculus:
     ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝
      
          {Colors.WHITE}Full-Spectrum Attack Surface Intelligence  v{VERSION}{Colors.CYAN}
-         {Colors.DIM}37 modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
+         {Colors.DIM}{SCAN_MODULE_COUNT} modules  |  5-phase pipeline  |  Kali Linux{Colors.CYAN}
 ================================================================================
 {Colors.RESET}"""
             print(banner)
@@ -1921,11 +1991,11 @@ class Oculus:
     def suggest_next_steps(self, completed_task):
         """Intelligently suggest next steps based on completed task"""
         suggestions = {
-            'subdomains': [('DNS Resolution', '2'), ('Alive Hosts Check', '3'), ('Full Automated Recon', '9')],
+            'subdomains': [('DNS Resolution', '2'), ('Alive Hosts Check', '3'), ('Full Auto Recon', 'A')],
             'dns_resolution': [('Alive Hosts Check', '3'), ('Fast Port Scan', '4')],
             'alive_hosts': [('Fast Port Scan', '4'), ('URL Collection', '6'), ('WAF Detection', '7')],
             'port_scan': [('URL Collection', '6'), ('WAF Detection', '7'), ('Vulnerability Scan', '8')],
-            'urls': [('WAF Detection', '7'), ('Vulnerability Scan', '8'), ('GF Filters', '18')],
+            'urls': [('WAF Detection', '7'), ('Vulnerability Scan', '8'), ('GF Filters', '17')],
             'waf_detection': [('Vulnerability Scan', '8'), ('Deep Recon Mode', 'D')],
         }
         if completed_task in suggestions:
@@ -5069,7 +5139,7 @@ class Oculus:
         else:
             if not self.config.get('auto_confirm', False):
                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}")
-                print(f"  FULL SPECTRUM SCAN will run ALL 37 modules across 5 phases.")
+                print(f"  FULL SPECTRUM SCAN will run ALL {SCAN_MODULE_COUNT} modules across 5 phases.")
                 print(f"  Estimated runtime: 2-6 hours depending on target size.")
                 print(f"{Colors.RESET}")
                 yn = input(f"{Colors.YELLOW}[!] Launch Full Spectrum Scan on {self.domain}? (y/n): {Colors.RESET}")
@@ -5079,7 +5149,7 @@ class Oculus:
         self.notify_scan_event(
             'scan_start',
             f"Oculus · Scan started · {self.domain}",
-            f"Target: {self.domain}\nPipeline: Full Spectrum (37 modules)\nStatus: Running",
+            f"Target: {self.domain}\nPipeline: Full Spectrum ({SCAN_MODULE_COUNT} modules)\nStatus: Running",
             priority='default',
             tags='rocket',
             dedupe_key=f"scan_start:full_spectrum:{self.domain}",
@@ -6335,8 +6405,71 @@ function sortTable(n) {
     #  MENU / HELP / MAIN LOOP
     # ═══════════════════════════════════════════════════════════════
 
+    def _menu_entry_label(self, entry):
+        """Rich/plain label for one scan module row."""
+        name = entry["label"]
+        rk = entry.get("result_key")
+        if rk and rk in self.results:
+            val = self.results[rk]
+            if isinstance(val, int) and val == 0:
+                if RICH_AVAILABLE:
+                    return f"[bold dim]✔[/] {name} [dim]({val})[/]"
+                return f"✔ {name} ({val})"
+            if RICH_AVAILABLE:
+                return f"[bold green]✔[/] {name} [bold green]({val})[/]"
+            return f"✔ {name} ({val})"
+        return f"  {name}" if RICH_AVAILABLE else name
+
+    def _build_tui_dispatch(self):
+        """Map menu keys to bound methods."""
+        dispatch = {}
+        for m in SCAN_MODULES:
+            dispatch[str(m["num"])] = getattr(self, m["method"])
+        for a in AUTOMATION_ACTIONS:
+            dispatch[a["key"]] = getattr(self, a["method"])
+        dispatch["R"] = lambda: (
+            self.generate_html_report(),
+            self.generate_json_report(),
+            self.generate_markdown_report(),
+        )
+        dispatch["C"] = self.setup_domain
+        dispatch["I"] = self.initialize_tools
+        dispatch["H"] = self.show_help
+        return dispatch
+
+    def _menu_suggestion(self):
+        """Next-step hint using current menu numbering."""
+        n = MENU_NUM_BY_CLI
+        if "cors_findings" in self.results:
+            return "[R] Generate Reports — all scans complete!"
+        if "xss_findings" in self.results:
+            return f"[{n['cors']}] CORS Scanner OR [{n['smuggling']}] HTTP Smuggling"
+        if "gf_filters" in self.results:
+            return f"[{n['sqli']}] SQLi Scan OR [{n['xss']}] XSS Scan (Dalfox)"
+        if "urls_final" in self.results:
+            return f"[{n['screenshots']}] Screenshot Capture OR [{n['gf']}] GF Filters"
+        if "parameters" in self.results or "js_endpoints" in self.results:
+            return f"[{n['fuzz']}] Directory Fuzzing OR [{n['api']}] API Fuzzing"
+        if "vulnerabilities" in self.results:
+            return "[D] Deep Recon OR [F] Full Spectrum Scan"
+        if "waf_detected" in self.results:
+            return f"[{n['vuln']}] Vulnerability Scan"
+        if "urls" in self.results:
+            return f"[{n['waf']}] WAF Detection OR [{n['vuln']}] Vulnerability Scan"
+        if "fast_ports" in self.results or "full_ports" in self.results:
+            return f"[{n['urls']}] URL Collection"
+        if "alive_hosts" in self.results:
+            return f"[{n['ports']}] Fast Port Scan OR [{n['urls']}] URL Collection"
+        if "dns_resolved" in self.results:
+            return f"[{n['alive']}] Alive Hosts Check"
+        if "subdomains" in self.results:
+            return f"[{n['dns']}] DNS Resolution OR [{n['alive']}] Alive Hosts Check"
+        return "[1] Subdomain Enumeration OR [A] Full Auto Recon OR [F] Full Spectrum"
+
     def display_menu(self):
-        """Display main menu"""
+        """Display main menu (generated from SCAN_MODULES registry)."""
+        core = [m for m in SCAN_MODULES if m["num"] <= 8]
+        advanced = [m for m in SCAN_MODULES if m["num"] > 8]
         if RICH_AVAILABLE:
             from rich.table import Table
             from rich.panel import Panel
@@ -6344,208 +6477,94 @@ function sortTable(n) {
             from rich import print as rprint
             from rich.text import Text
 
-            def get_status(key, name):
-                if key in self.results:
-                    val = self.results[key]
-                    if isinstance(val, int) and val == 0:
-                        return f"[bold dim]✔[/] {name} [dim]({val})[/]"
-                    return f"[bold green]✔[/] {name} [bold green]({val})[/]"
-                return f"  {name}"
-
             table = Table(show_header=False, box=None, padding=(0, 2, 1, 2))
             table.add_column(justify="right", style="bold cyan")
             table.add_column(justify="left", ratio=1)
             table.add_column(justify="right", style="bold cyan")
             table.add_column(justify="left", ratio=1)
 
-            # Core Reconnaissance
-            table.add_row(
-                "", "[bold yellow]CORE RECONNAISSANCE WORKFLOW[/]",
-                "", ""
-            )
-            table.add_row(
-                "[1]", get_status("subdomains", "Subdomain Enumeration"),
-                "[2]", get_status("dns_resolved", "DNS Resolution")
-            )
-            table.add_row(
-                "[3]", get_status("alive_hosts", "Alive Hosts Check"),
-                "[4]", get_status("fast_ports", "Fast Port Scan")
-            )
-            table.add_row(
-                "[5]", get_status("full_ports", "Full Port Scan"),
-                "[6]", get_status("urls", "URL Collection")
-            )
-            table.add_row(
-                "[7]", get_status("waf_detected", "WAF Detection"),
-                "[8]", get_status("vulnerabilities", "Vulnerability Scan")
-            )
+            table.add_row("", f"[bold yellow]CORE RECONNAISSANCE (1–8)[/]", "", "")
+            for i in range(0, len(core), 2):
+                left = core[i]
+                if i + 1 < len(core):
+                    right = core[i + 1]
+                    table.add_row(
+                        f"[{left['num']}]", self._menu_entry_label(left),
+                        f"[{right['num']}]", self._menu_entry_label(right),
+                    )
+                else:
+                    table.add_row(f"[{left['num']}]", self._menu_entry_label(left), "", "")
 
             table.add_row("", "", "", "")
-
-            # Advanced Modules
-            table.add_row(
-                "", "[bold yellow]ADVANCED MODULES[/]",
-                "", ""
-            )
-            table.add_row(
-                "[10]", get_status("parameters", "Parameter Discovery"),
-                "[11]", get_status("js_endpoints", "JS Endpoint Extraction")
-            )
-            table.add_row(
-                "[12]", "Directory Fuzzing",
-                "[13]", "API Fuzzing"
-            )
-            table.add_row(
-                "[14]", "Subdomain Takeover",
-                "[15]", get_status("urls_final", "Advanced URL Enum")
-            )
-            table.add_row(
-                "[16]", "Screenshot Capture",
-                "[17]", "DNS Bruteforce"
-            )
-            table.add_row(
-                "[18]", get_status("gf_filters", "GF Filters"),
-                "[19]", "Tech Scan"
-            )
-            table.add_row(
-                "[20]", "SQLi Scan",
-                "[21]", get_status("xss_findings", "XSS Scan (Dalfox)")
-            )
-            table.add_row(
-                "[22]", get_status("cors_findings", "CORS Scanner"),
-                "[23]", "HTTP Smuggling"
-            )
-            table.add_row(
-                "[24]", "ASN Discovery",
-                "[25]", "Cloud Assets"
-            )
-            table.add_row(
-                "[26]", "GitHub Dorking",
-                "[27]", "OSINT Harvesting"
-            )
-            table.add_row(
-                "[28]", "Shodan Recon",
-                "[29]", "Open Redirect Scan"
-            )
-            table.add_row(
-                "[30]", get_status("cariddi_findings", "Cariddi Scan"),
-                "[31]", get_status("jaeles_findings", "Jaeles Scan")
-            )
-            table.add_row(
-                "[32]", get_status("ssti_findings", "Tplmap SSTI Scan"),
-                "[33]", get_status("crlf_findings", "CRLFuzz CRLF Scan")
-            )
-            table.add_row(
-                "[34]", get_status("internetdb_hosts", "InternetDB Lookup"),
-                "[35]", get_status("nikto_scanned", "Nikto Scanner")
-            )
-            table.add_row(
-                "[36]", get_status("tlsx_sans", "TLSX Cert Scan"),
-                "[37]", get_status("bypass_403", "Nomore403 Bypass")
-            )
+            table.add_row("", f"[bold yellow]ADVANCED MODULES (9–{SCAN_MODULE_COUNT})[/]", "", "")
+            for i in range(0, len(advanced), 2):
+                left = advanced[i]
+                if i + 1 < len(advanced):
+                    right = advanced[i + 1]
+                    table.add_row(
+                        f"[{left['num']}]", self._menu_entry_label(left),
+                        f"[{right['num']}]", self._menu_entry_label(right),
+                    )
+                else:
+                    table.add_row(f"[{left['num']}]", self._menu_entry_label(left), "", "")
 
             table.add_row("", "", "", "")
+            table.add_row("", "[bold yellow]AUTOMATION & SYSTEM[/]", "", "")
+            aa, ad, af = AUTOMATION_ACTIONS
+            table.add_row(
+                f"[{aa['key']}]", f"[bold bright_green]{aa['label']} ({aa['subtitle']})[/]",
+                f"[{ad['key']}]", f"[bold bright_magenta]{ad['label']} ({ad['subtitle']})[/]",
+            )
+            table.add_row(
+                f"[{af['key']}]", f"[bold bright_red]{af['label']} (all {SCAN_MODULE_COUNT})[/]",
+                "[R]", "Generate Reports",
+            )
+            table.add_row("[I]", "Initialize Tools", "[C]", "Change Domain")
+            table.add_row("[H]", "Help", "[Q]", "Quit")
 
-            # Core Automation
-            table.add_row(
-                "", "[bold yellow]CORE AUTOMATION & SYSTEM[/]",
-                "", ""
-            )
-            table.add_row(
-                "[9]", "[bold bright_green]Full Auto Recon    (Core 1-8)[/]",
-                "[D]", "[bold bright_magenta]Deep Recon         (Advanced)[/]"
-            )
-            table.add_row(
-                "[U]", "[bold bright_red]Full Spectrum Scan (All 36)[/]",
-                "[R]", "Generate Reports"
-            )
-            table.add_row(
-                "[I]", "Initialize Tools",
-                "[C]", "Change Domain"
-            )
-            table.add_row(
-                "[H]", "Help",
-                "[Q]", "Quit"
-            )
-
-            # Stats Header inside panel
             stats_text = Text()
             if self.domain:
                 stats_text.append(f"TARGET: {self.domain} ", style="bold green")
                 stats_text.append(f"| OUT: {self.output_dir}/ ", style="dim")
-                
-                # Active Metrics
                 metrics = []
-                if "subdomains" in self.results: metrics.append(f"Subs: {self.results['subdomains']}")
-                if "alive_hosts" in self.results: metrics.append(f"Alive: {self.results['alive_hosts']}")
-                if "urls" in self.results: metrics.append(f"URLs: {self.results['urls']}")
-                if "vulnerabilities" in self.results: metrics.append(f"Vulns: {self.results['vulnerabilities']}")
-                
+                if "subdomains" in self.results:
+                    metrics.append(f"Subs: {self.results['subdomains']}")
+                if "alive_hosts" in self.results:
+                    metrics.append(f"Alive: {self.results['alive_hosts']}")
+                if "urls" in self.results:
+                    metrics.append(f"URLs: {self.results['urls']}")
+                if "vulnerabilities" in self.results:
+                    metrics.append(f"Vulns: {self.results['vulnerabilities']}")
                 if metrics:
                     stats_text.append(" | STATS: " + " - ".join(metrics), style="bold cyan")
-                
-                # Suggest Next Step logic — cascaded so advanced overrides only fire if core is done
-                if "cors_findings" in self.results:
-                    suggestion = "[R] Generate Reports -- All scans complete!"
-                elif "xss_findings" in self.results:
-                    suggestion = "[22] CORS Scanner OR [23] HTTP Smuggling"
-                elif "gf_filters" in self.results:
-                    suggestion = "[20] SQLi Scan OR [21] XSS Scan (Dalfox)"
-                elif "urls_final" in self.results:
-                    suggestion = "[16] Screenshot Capture OR [18] GF Filters"
-                elif "parameters" in self.results or "js_endpoints" in self.results:
-                    suggestion = "[12] Directory Fuzzing OR [13] API Fuzzing"
-                elif "vulnerabilities" in self.results:
-                    suggestion = "[D] Deep Recon OR [U] Full Spectrum Scan"
-                elif "waf_detected" in self.results:
-                    suggestion = "[8] Vulnerability Scan"
-                elif "urls" in self.results:
-                    suggestion = "[7] WAF Detection OR [8] Vulnerability Scan"
-                elif "fast_ports" in self.results or "full_ports" in self.results:
-                    suggestion = "[6] URL Collection"
-                elif "alive_hosts" in self.results:
-                    suggestion = "[4] Fast Port Scan OR [6] URL Collection"
-                elif "dns_resolved" in self.results:
-                    suggestion = "[3] Alive Hosts Check"
-                elif "subdomains" in self.results:
-                    suggestion = "[2] DNS Resolution OR [3] Alive Hosts Check"
-                else:
-                    suggestion = "[1] Subdomain Enumeration OR [9] Full Auto Recon OR [U] Full Spectrum"
-                
                 stats_text.append("\nSUGGESTED NEXT STEP: ", style="bold yellow")
-                stats_text.append(suggestion, style="bold white")
+                stats_text.append(self._menu_suggestion(), style="bold white")
             else:
-                stats_text.append("NO DOMAIN SELECTED. CHOOSE OPTION C FIRST.", style="bold yellow")
-                
+                stats_text.append("NO DOMAIN SET. PRESS [C] TO SET DOMAIN FIRST.", style="bold yellow")
+
             panel = Panel(
                 Group(stats_text, Text(""), table),
                 title=f"[bold cyan]OCULUS v{VERSION} MAIN MENU[/]",
                 border_style="cyan",
-                padding=(1, 2)
+                padding=(1, 2),
             )
             rprint(panel)
             print("")
         else:
             print(f"\n{Colors.CYAN}--- OCULUS v{VERSION} ---{Colors.RESET}")
-            print(f"{Colors.YELLOW}[ CORE RECON ]{Colors.RESET}")
-            print("1. Subdomains  | 2. DNS Resolv  | 3. Alive Hosts | 4. Fast Ports  | 5. Full Ports")
-            print(f"{Colors.YELLOW}[ DISCOVERY ]{Colors.RESET}")
-            print("6. URLs        | 10. Parameters | 11. JS Endpoints| 12. Dir Fuzz  | 13. API Fuzz")
-            print(f"{Colors.YELLOW}[ VULNERABILITY ]{Colors.RESET}")
-            print("7. WAF Detect  | 8. Vuln Scan   | 20. SQLi Scan  | 21. XSS Scan   | 22. CORS")
-            print(f"{Colors.YELLOW}[ OSINT & MORE ]{Colors.RESET}")
-            print("14. Takeover   | 17. DNS Brute  | 24. ASN        | 25. Cloud      | 26-29. OSINT")
-            print(f"{Colors.YELLOW}[ ADVANCED SCAFFOLDING ]{Colors.RESET}")
-            print("30. Cariddi    | 31. Jaeles     | 32. Tplmap     | 33. CRLFuzz    | 34. InternetDB")
-            print("35. Nikto      | 36. TLSX       | 37. Nomore403")
-            print(f"{Colors.YELLOW}[ AUTOMATION & SYSTEM ]{Colors.RESET}")
-            print("9. Full Auto   | D. Deep Recon  | U. Full Spectrum (All 36)| C. Domain     | Q. Quit")
+            print(f"{Colors.YELLOW}[ CORE 1-8 ]{Colors.RESET}")
+            for m in core:
+                print(f"  {m['num']}. {m['label']}")
+            print(f"{Colors.YELLOW}[ ADVANCED 9-{SCAN_MODULE_COUNT} ]{Colors.RESET}")
+            for m in advanced:
+                print(f"  {m['num']}. {m['label']}")
+            print(f"{Colors.YELLOW}[ AUTOMATION ]{Colors.RESET}  A=Full Auto  D=Deep  F=Full Spectrum ({SCAN_MODULE_COUNT})")
+            print(f"{Colors.YELLOW}[ SYSTEM ]{Colors.RESET}  R=Reports  I=Tools  C=Domain  H=Help  Q=Quit")
             print(f"{Colors.CYAN}-------------------{Colors.RESET}\n")
-            
             if self.domain:
                 print(f"{Colors.GREEN}[+] Domain: {self.domain}  |  Output: {self.output_dir}/{Colors.RESET}\n")
             else:
-                print(f"{Colors.YELLOW}[!] No domain selected. Choose option C first.{Colors.RESET}\n")
+                print(f"{Colors.YELLOW}[!] No domain selected. Press C first.{Colors.RESET}\n")
 
     def show_help(self):
         """Display help"""
@@ -6556,14 +6575,11 @@ function sortTable(n) {
             
             t = Text()
             t.append("CORE WORKFLOW:\n", style="bold white")
-            t.append("  1->2->3->4->6->7->8  or  9 (Full Automated)\n\n")
-            
-            t.append("ADVANCED MODULES:\n", style="bold white")
-            t.append("  10-20: Parameter discovery, JS extraction, fuzzing, etc.\n")
-            t.append("  21-24: XSS scan, CORS scan, HTTP smuggling, ASN discovery\n\n")
-            
-            t.append("DEEP RECON (D):\n", style="bold white")
-            t.append("  Chains 13 advanced modules automatically.\n\n")
+            t.append("  1->2->3->4->6->7->8  or  [A] Full Auto Recon\n\n")
+            t.append("SCAN MODULES:\n", style="bold white")
+            t.append(f"  1–8 core  |  9–{SCAN_MODULE_COUNT} advanced  (see main menu)\n\n")
+            t.append("AUTOMATION:\n", style="bold white")
+            t.append("  [A] Full Auto (core 1–8)  |  [D] Deep Recon (14 steps)  |  [F] Full Spectrum (all modules)\n\n")
             
             t.append("REPORTS (R):\n", style="bold white")
             t.append("  Generates HTML, JSON, and Markdown reports.\n\n")
@@ -6583,7 +6599,7 @@ function sortTable(n) {
             input()
         else:
             print(f"\n{Colors.CYAN}--- OCULUS HELP ---{Colors.RESET}")
-            print("1-8: Core | 9: Full Auto | D: Deep Recon | CLI: oculus -d domain.com --deep")
+            print(f"1-{SCAN_MODULE_COUNT}: Scan modules | A: Full Auto | D: Deep | F: Full Spectrum")
             input(f"{Colors.CYAN}Press Enter to return...{Colors.RESET}")
 
     def run(self):
@@ -6593,51 +6609,7 @@ function sortTable(n) {
         while True:
             self.display_menu()
             choice = input(f"{Colors.CYAN}[+] Select option: {Colors.RESET}").strip().upper()
-            dispatch = {
-                '1': self.run_subdomain_enumeration,
-                '2': self.run_dns_resolution,
-                '3': self.run_alive_hosts_check,
-                '4': self.run_fast_port_scan,
-                '5': self.run_full_port_scan,
-                '6': self.run_url_collection,
-                '7': self.run_waf_detection,
-                '8': self.run_vulnerability_scan,
-                '9': self.run_full_automated_recon,
-                '10': self.run_parameter_discovery,
-                '11': self.run_js_endpoint_extraction,
-                '12': self.run_directory_fuzzing,
-                '13': self.run_api_fuzzing,
-                '14': self.run_subdomain_takeover_check,
-                '15': self.run_advanced_url_enum,
-                '16': self.run_screenshot_capture,
-                '17': self.run_dns_bruteforce,
-                '18': self.run_gf_filters,
-                '19': self.run_tech_scan,
-                '20': self.run_sqlmap_scan,
-                '21': self.run_xss_scan,
-                '22': self.run_cors_scan,
-                '23': self.run_http_smuggling,
-                '24': self.run_asn_discovery,
-                '25': self.run_cloud_asset_discovery,
-                '26': self.run_github_dorking,
-                '27': self.run_osint_harvesting,
-                '28': self.run_shodan_integration,
-                '29': self.run_open_redirect_scan,
-                '30': self.run_cariddi_scan,
-                '31': self.run_jaeles_scan,
-                '32': self.run_tplmap_scan,
-                '33': self.run_crlfuzz_scan,
-                '34': self.run_internetdb_scan,
-                '35': self.run_nikto_scan,
-                '36': self.run_tlsx_scan,
-                '37': self.run_nomore403_scan,
-                'D': self.run_deep_recon_mode,
-                'U': self.run_full_spectrum_scan,
-                'R': lambda: (self.generate_html_report(), self.generate_json_report(), self.generate_markdown_report()),
-                'C': self.setup_domain,
-                'I': self.initialize_tools,
-                'H': self.show_help,
-            }
+            dispatch = self._build_tui_dispatch()
             if choice == 'Q':
                 print(f"\n{Colors.GREEN}[✔] Thank you for using Oculus!{Colors.RESET}")
                 print(f"{Colors.CYAN}    Happy hunting! 🎯{Colors.RESET}\n")
@@ -6645,8 +6617,9 @@ function sortTable(n) {
             elif choice in dispatch:
                 try:
                     func = dispatch[choice]
-                    if choice.isdigit() and choice not in {'9'}:
-                        module_name = func.__name__.replace('run_', '').replace('_', ' ').title()
+                    if choice.isdigit():
+                        entry = next((m for m in SCAN_MODULES if str(m["num"]) == choice), None)
+                        module_name = entry["label"] if entry else func.__name__.replace('run_', '').replace('_', ' ').title()
                         previous_module = self._current_module
                         self._current_module = module_name
                         self.notify_scan_event(
@@ -6697,46 +6670,6 @@ def build_parser():
     parser.add_argument('--jitter', action='store_true', help='Enable random delays between tool calls')
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     return parser
-
-
-MODULE_MAP = {
-    'subdomain': 'run_subdomain_enumeration',
-    'dns': 'run_dns_resolution',
-    'alive': 'run_alive_hosts_check',
-    'ports': 'run_fast_port_scan',
-    'fullports': 'run_full_port_scan',
-    'urls': 'run_url_collection',
-    'waf': 'run_waf_detection',
-    'vuln': 'run_vulnerability_scan',
-    'params': 'run_parameter_discovery',
-    'js': 'run_js_endpoint_extraction',
-    'fuzz': 'run_directory_fuzzing',
-    'api': 'run_api_fuzzing',
-    'takeover': 'run_subdomain_takeover_check',
-    'hakrawler': 'run_advanced_url_enum',
-    'screenshots': 'run_screenshot_capture',
-    'dnsbrute': 'run_dns_bruteforce',
-    'gf': 'run_gf_filters',
-    'tech': 'run_tech_scan',
-    'sqli': 'run_sqlmap_scan',
-    'xss': 'run_xss_scan',
-    'cors': 'run_cors_scan',
-    'smuggling': 'run_http_smuggling',
-    'asn': 'run_asn_discovery',
-    'cloud': 'run_cloud_asset_discovery',
-    'github': 'run_github_dorking',
-    'osint': 'run_osint_harvesting',
-    'shodan': 'run_shodan_integration',
-    'redirect': 'run_open_redirect_scan',
-    'cariddi': 'run_cariddi_scan',
-    'jaeles': 'run_jaeles_scan',
-    'tplmap': 'run_tplmap_scan',
-    'crlfuzz': 'run_crlfuzz_scan',
-    'internetdb': 'run_internetdb_scan',
-    'nikto': 'run_nikto_scan',
-    'tlsx': 'run_tlsx_scan',
-    'nomore403': 'run_nomore403_scan',
-}
 
 
 def main():

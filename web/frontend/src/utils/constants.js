@@ -176,9 +176,9 @@ export const PHASES = {
 };
 
 export const SCAN_MODES = [
-  { id: 'quick', name: 'Quick Recon', desc: 'Core pipeline (modules 1-8)', icon: 'Zap' },
-  { id: 'deep', name: 'Deep Recon', desc: '14 advanced modules', icon: 'Layers' },
-  { id: 'full_spectrum', name: 'Full Spectrum', desc: 'All 36 modules, 5 phases', icon: 'Globe' },
+  { id: 'quick', name: 'Quick Recon', desc: 'Core pipeline (menu 1–8)', icon: 'Zap' },
+  { id: 'deep', name: 'Deep Recon', desc: '14 advanced steps (menu D)', icon: 'Layers' },
+  { id: 'full_spectrum', name: 'Full Spectrum', desc: 'All scan modules, 5 phases (menu F)', icon: 'Globe' },
   { id: 'custom', name: 'Custom', desc: 'Pick individual modules', icon: 'Settings' },
 ];
 
