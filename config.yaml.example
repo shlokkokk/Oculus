@@ -15,6 +15,18 @@ sqlmap:
   level: 5       # SQLMap "level" (1-5) — aggression of tests
   risk: 3        # SQLMap "risk" (1-3) — riskier payloads at higher values
   threads: 10    # SQLMap internal worker threads (maximum allowed by SQLMap is 10)
+
+# Ghauri — second SQLi engine (runs parallel with SQLMap during SQLi Scan module)
+ghauri:
+  enabled: true
+  level: 3
+  risk: 2
+  threads: 5
+  max_targets: 150   # Cap bulk list (Ghauri can be slow per URL on high level/risk)
+  delay: 0
+  timeout: 30
+  techniques: ""     # Optional e.g. BEUSTQ; empty = Ghauri default
+
 parallel: true        # Run independent tools concurrently
 auto_confirm: false   # Skip confirmation prompts (useful for automation)
 jitter: false         # Add random delays between tool calls for stealth

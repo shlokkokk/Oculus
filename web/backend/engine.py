@@ -44,7 +44,7 @@ def kill_zombie_scanners():
         import subprocess
         # Terminate any stray processes of tools wrapped by Oculus
         tools = [
-            "dalfox", "sqlmap", "theHarvester", "nuclei", "naabu",
+            "dalfox", "sqlmap", "ghauri", "theHarvester", "nuclei", "naabu",
             "gowitness", "EyeWitness.py", "eyewitness.py",
             "ffuf", "subfinder", "massdns", "dnsx", "amass",
             "assetfinder", "katana", "gau", "waybackurls", "whatweb", "chromium",
@@ -81,12 +81,11 @@ MODULE_SUBTOOLS = {
     "JS Endpoint Extraction": ["LinkFinder"],
     "Subdomain Takeover": ["Subzy check"],
     "Subdomain Takeover Check": ["Subzy check"],
-    "Vulnerability Scan (Nuclei)": ["Vulnerability scan"],
-    "Vulnerability Scan": ["Vulnerability scan"],
+    "Vulnerability Scan": ["Vulnerability scan", "Nuclei"],
     "GF Filters": ["GF filters"],
     "Directory Fuzzing": ["FFUF"],
     "API Fuzzing": ["API fuzzing"],
-    "SQLi Scan": ["SQLMap scan"],
+    "SQLi Scan": ["SQLMap", "Ghauri"],
     "XSS Scan (Dalfox)": ["Dalfox XSS scan"],
     "XSS Scan": ["Dalfox XSS scan"],
     "Open Redirect Scan": ["Open Redirect Scan"],
@@ -130,7 +129,7 @@ WEB_MODULE_DISPLAY = {
     'params': 'Parameter Discovery',
     'js': 'JS Endpoint Extraction',
     'takeover': 'Subdomain Takeover Check',
-    'vuln': 'Vulnerability Scan (Nuclei)',
+    'vuln': 'Vulnerability Scan',
     'jaeles': 'Jaeles Scan',
     'gf': 'GF Filters',
     'fuzz': 'Directory Fuzzing',
@@ -155,7 +154,6 @@ WEB_STEP_RESULT_KEYS = {
     'URL Collection': 'urls',
     'WAF Detection': 'waf_detected',
     'Vulnerability Scan': 'vulnerabilities',
-    'Vulnerability Scan (Nuclei)': 'vulnerabilities',
     'Parameter Discovery': 'parameters',
     'JS Endpoint Extraction': 'js_endpoints',
     'Directory Fuzzing': 'fuzz_findings',
@@ -613,6 +611,11 @@ class ScanEngine:
         sqlmap_level: int | None = None,
         sqlmap_risk: int | None = None,
         sqlmap_threads: int | None = None,
+        ghauri_enabled: bool | None = None,
+        ghauri_level: int | None = None,
+        ghauri_risk: int | None = None,
+        ghauri_threads: int | None = None,
+        ghauri_max_targets: int | None = None,
         jitter: bool = False,
         severity: str | None = None,
         resume: bool = True,
@@ -649,8 +652,12 @@ class ScanEngine:
 
         self._thread = threading.Thread(
             target=self._run_scan,
-            args=(domain, mode, modules or [], threads, rate_limit, timeout, sqlmap_level, sqlmap_risk, sqlmap_threads, jitter, severity, resume,
-                  arjun_max_hosts, ffuf_max_hosts, nikto_max_hosts, whatwaf_max_hosts, tplmap_max_urls, nomore403_max_urls),
+            args=(domain, mode, modules or [], threads, rate_limit, timeout,
+                  sqlmap_level, sqlmap_risk, sqlmap_threads,
+                  ghauri_enabled, ghauri_level, ghauri_risk, ghauri_threads, ghauri_max_targets,
+                  jitter, severity, resume,
+                  arjun_max_hosts, ffuf_max_hosts, nikto_max_hosts, whatwaf_max_hosts,
+                  tplmap_max_urls, nomore403_max_urls),
             daemon=True,
         )
         self._thread.start()
@@ -672,14 +679,8 @@ class ScanEngine:
     def _web_notify_step(self, oc: Oculus, step_name: str, ret_status, domain: str):
         """Use oculus consolidated module notifications (tools + total in one message)."""
         result_key = WEB_STEP_RESULT_KEYS.get(step_name)
-        if ret_status == oc.MODULE_SKIPPED:
-            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_SKIPPED)
-        elif ret_status == oc.MODULE_FAILED:
-            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_FAILED)
-        elif ret_status == oc.MODULE_PARTIAL:
-            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_PARTIAL)
-        else:
-            oc._notify_module_done(step_name, result_key=result_key, status=oc.MODULE_OK)
+        status = oc._coerce_module_status(ret_status, module_name=step_name)
+        oc._notify_module_done(step_name, result_key=result_key, status=status)
 
     def _run_scan(
         self,
@@ -692,6 +693,11 @@ class ScanEngine:
         sqlmap_level: int | None,
         sqlmap_risk: int | None,
         sqlmap_threads: int | None,
+        ghauri_enabled: bool | None,
+        ghauri_level: int | None,
+        ghauri_risk: int | None,
+        ghauri_threads: int | None,
+        ghauri_max_targets: int | None,
         jitter: bool,
         severity: str | None,
         resume: bool,
@@ -723,6 +729,19 @@ class ScanEngine:
             sqlmap_config["risk"] = sqlmap_risk
         if sqlmap_threads is not None:
             sqlmap_config["threads"] = sqlmap_threads
+        if config.get("ghauri") is None:
+            config["ghauri"] = {}
+        ghauri_config = config["ghauri"]
+        if ghauri_enabled is not None:
+            ghauri_config["enabled"] = ghauri_enabled
+        if ghauri_level is not None:
+            ghauri_config["level"] = ghauri_level
+        if ghauri_risk is not None:
+            ghauri_config["risk"] = ghauri_risk
+        if ghauri_threads is not None:
+            ghauri_config["threads"] = ghauri_threads
+        if ghauri_max_targets is not None:
+            ghauri_config["max_targets"] = ghauri_max_targets
         config["jitter"] = jitter
         if severity:
             if config.get("nuclei") is None:
@@ -833,7 +852,7 @@ class ScanEngine:
                     ("XSS Scan", oc.run_xss_scan),
                     ("CORS Scanner", oc.run_cors_scan),
                     ("HTTP Smuggling", oc.run_http_smuggling),
-                    ("SQLi Scan", oc.run_sqlmap_scan),
+                    ("SQLi Scan", oc.run_sqli_scan),
                 ]
             elif mode == "full_spectrum":
                 self._total_modules = SCAN_MODULE_COUNT
@@ -903,6 +922,7 @@ class ScanEngine:
                     try:
                         oc._notify_module_start(step_name)
                         ret_status = step_func()
+                        ret_status = oc._coerce_module_status(ret_status, module_name=step_name)
                         if require_file_failed["value"] and ret_status != oc.MODULE_SKIPPED:
                             ret_status = oc.MODULE_SKIPPED
                         if ret_status == oc.MODULE_SKIPPED:
@@ -919,16 +939,6 @@ class ScanEngine:
                             self._modules_completed.append(step_name)
                             self._log_queue.put(f"[~] {step_name} completed with partial results")
                             self._web_notify_step(oc, step_name, oc.MODULE_PARTIAL, domain)
-                        elif ret_status is None:
-                            self._modules_failed.append(step_name)
-                            self._log_queue.put(
-                                f"[ERROR] {step_name} returned no status (internal bug) — treated as failed"
-                            )
-                            oc._notify_module_done(
-                                step_name,
-                                result_key=WEB_STEP_RESULT_KEYS.get(step_name),
-                                status=oc.MODULE_FAILED,
-                            )
                         else:
                             self._modules_completed.append(step_name)
                             self._log_queue.put(f"[✔] {step_name} completed")
@@ -941,6 +951,11 @@ class ScanEngine:
                         self._modules_failed.append(step_name)
                         self._log_queue.put(f"[ERROR] {step_name} failed: {e}")
                         oc._notify_module_error(step_name, str(e))
+                        oc._notify_module_done(
+                            step_name,
+                            result_key=WEB_STEP_RESULT_KEYS.get(step_name),
+                            status=oc.MODULE_FAILED,
+                        )
                     finally:
                         oc._current_module = previous_module
 

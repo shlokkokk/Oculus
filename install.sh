@@ -590,6 +590,7 @@ RECON_TOOLS = [
     ("EyeWitness",   "https://github.com/RedSiege/EyeWitness"),
     ("tplmap",       "https://github.com/epinna/tplmap"),
     ("WhatWaf",      "https://github.com/Ekultek/WhatWaf"),
+    ("Ghauri",       "https://github.com/r0oth3x49/ghauri"),
 ]
 
 results = {}  # name -> (status, detail)
@@ -990,6 +991,20 @@ if ! command -v kr &>/dev/null; then
     fi
 fi
 link_cli_to_system kr || true
+link_cli_to_system ghauri || true
+
+# Kiterunner wordlist (required for `kr scan -w`; Oculus can also use built-in -A alias)
+KR_WL_DIR="/opt/recontools/kiterunner/wordlists"
+KR_WL="$KR_WL_DIR/routes-large.kite"
+if [ ! -s "$KR_WL" ]; then
+    mkdir -p "$KR_WL_DIR"
+  if wget -q "https://raw.githubusercontent.com/assetnote/kiterunner/master/wordlists/routes-large.kite" \
+      -O "$KR_WL" 2>/dev/null && [ -s "$KR_WL" ]; then
+        log_success "  kiterunner routes-large.kite wordlist installed"
+    else
+        log_warn "  routes-large.kite not downloaded (API fuzz will use kr -A apiroutes-210228)"
+    fi
+fi
 
 log_info "CLI verification:"
 for t in arjun paramspider kr; do

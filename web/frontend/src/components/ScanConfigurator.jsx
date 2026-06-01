@@ -29,11 +29,16 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
   const [jitter,         setJitter]         = useState(false);
   const [severity,       setSeverity]       = useState('low,medium,high,critical');
 
-  /* ── SQLMap (collapsible) ── */
+  /* ── SQLi: SQLMap + Ghauri (collapsible) ── */
   const [sqlOpen,        setSqlOpen]        = useState(false);
   const [sqlmapLevel,    setSqlmapLevel]    = useState(5);
   const [sqlmapRisk,     setSqlmapRisk]     = useState(3);
   const [sqlmapThreads,  setSqlmapThreads]  = useState(10);
+  const [ghauriEnabled,  setGhauriEnabled]  = useState(true);
+  const [ghauriLevel,    setGhauriLevel]    = useState(3);
+  const [ghauriRisk,     setGhauriRisk]     = useState(2);
+  const [ghauriThreads,  setGhauriThreads]  = useState(5);
+  const [ghauriMaxTargets, setGhauriMaxTargets] = useState(150);
 
   /* ── Tool Limits ── */
   const [arjunMaxHosts,  setArjunMaxHosts]  = useState(999999);
@@ -69,6 +74,11 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       setSqlmapLevel(cfg.sqlmap_level   ?? 5);
       setSqlmapRisk(cfg.sqlmap_risk     ?? 3);
       setSqlmapThreads(Math.min(cfg.sqlmap_threads ?? cfg.threads ?? 10, 10));
+      setGhauriEnabled(cfg.ghauri_enabled ?? true);
+      setGhauriLevel(cfg.ghauri_level ?? 3);
+      setGhauriRisk(cfg.ghauri_risk ?? 2);
+      setGhauriThreads(Math.min(cfg.ghauri_threads ?? 5, 10));
+      setGhauriMaxTargets(cfg.ghauri_max_targets ?? 150);
       setArjunMaxHosts(cfg.arjun_max_hosts ?? 999999);
       setFfufMaxHosts(cfg.ffuf_max_hosts ?? 999999);
       setNiktoMaxHosts(cfg.nikto_max_hosts ?? 999999);
@@ -126,6 +136,11 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       sqlmap_level:  sqlmapLevel   === '' ? null : Number(sqlmapLevel),
       sqlmap_risk:   sqlmapRisk    === '' ? null : Number(sqlmapRisk),
       sqlmap_threads: sqlmapThreads === '' ? null : Number(sqlmapThreads),
+      ghauri_enabled: ghauriEnabled,
+      ghauri_level: ghauriLevel === '' ? null : Number(ghauriLevel),
+      ghauri_risk: ghauriRisk === '' ? null : Number(ghauriRisk),
+      ghauri_threads: ghauriThreads === '' ? null : Number(ghauriThreads),
+      ghauri_max_targets: ghauriMaxTargets === '' ? null : Number(ghauriMaxTargets),
       jitter,
       severity,
       resume: false,
@@ -167,6 +182,11 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
       setSeverity(cfg.nuclei_severity || 'low,medium,high,critical');
       setSqlmapLevel(cfg.sqlmap_level || 5); setSqlmapRisk(cfg.sqlmap_risk || 3);
       setSqlmapThreads(cfg.sqlmap_threads || 10);
+      setGhauriEnabled(cfg.ghauri_enabled ?? true);
+      setGhauriLevel(cfg.ghauri_level ?? 3);
+      setGhauriRisk(cfg.ghauri_risk ?? 2);
+      setGhauriThreads(cfg.ghauri_threads ?? 5);
+      setGhauriMaxTargets(cfg.ghauri_max_targets ?? 150);
       setArjunMaxHosts(cfg.arjun_max_hosts || 999999);
       setFfufMaxHosts(cfg.ffuf_max_hosts || 999999);
       setNiktoMaxHosts(cfg.nikto_max_hosts || 999999);
@@ -394,7 +414,7 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
         {/* Divider */}
         <div style={{ height: 1, background: 'var(--border)', margin: '18px 0' }} />
 
-        {/* Row 3: SQLMap — collapsible */}
+        {/* Row 3: SQLi (SQLMap + Ghauri) — collapsible */}
         <div>
           <button
             type="button"
@@ -411,36 +431,86 @@ export default function ScanConfigurator({ onStartScan, scanState, defaultDomain
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
               {sqlOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-              SQLMap Injection Parameters
+              SQLi Scan (SQLMap + Ghauri)
             </div>
             {!sqlOpen && (
               <span style={{
                 fontSize: 10, color: 'var(--text-dim)', marginLeft: 4,
                 background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 4,
               }}>
-                Level {sqlmapLevel} · Risk {sqlmapRisk} · {sqlmapThreads}T
+                SQLMap L{sqlmapLevel}/R{sqlmapRisk} · Ghauri {ghauriEnabled ? 'on' : 'off'}
               </span>
             )}
           </button>
 
           {sqlOpen && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-              <div className="input-group" style={{ marginBottom: 0 }}>
-                <label>Level <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(1–5)</span></label>
-                <input className="input" type="number" min="1" max="5" value={sqlmapLevel}
-                  onChange={inputNum(setSqlmapLevel, 1, 5)} disabled={scanState === 'running'} />
+            <>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-dim)', marginBottom: 8, textTransform: 'uppercase' }}>
+                SQLMap
               </div>
-              <div className="input-group" style={{ marginBottom: 0 }}>
-                <label>Risk <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(1–3)</span></label>
-                <input className="input" type="number" min="1" max="3" value={sqlmapRisk}
-                  onChange={inputNum(setSqlmapRisk, 1, 3)} disabled={scanState === 'running'} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Level <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(1–5)</span></label>
+                  <input className="input" type="number" min="1" max="5" value={sqlmapLevel}
+                    onChange={inputNum(setSqlmapLevel, 1, 5)} disabled={scanState === 'running'} />
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Risk <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(1–3)</span></label>
+                  <input className="input" type="number" min="1" max="3" value={sqlmapRisk}
+                    onChange={inputNum(setSqlmapRisk, 1, 3)} disabled={scanState === 'running'} />
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Threads <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(max 10)</span></label>
+                  <input className="input" type="number" min="1" max="10" value={sqlmapThreads}
+                    onChange={inputNum(setSqlmapThreads, 1, 10)} disabled={scanState === 'running'} />
+                </div>
               </div>
-              <div className="input-group" style={{ marginBottom: 0 }}>
-                <label>Threads <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(max 10)</span></label>
-                <input className="input" type="number" min="1" max="10" value={sqlmapThreads}
-                  onChange={inputNum(setSqlmapThreads, 1, 10)} disabled={scanState === 'running'} />
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-dim)', marginBottom: 8, textTransform: 'uppercase' }}>
+                Ghauri (parallel)
               </div>
-            </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Enabled</label>
+                  <div
+                    className="toggle-row"
+                    onClick={() => { if (scanState !== 'running') { setGhauriEnabled(!ghauriEnabled); setActivePreset(null); } }}
+                    style={{
+                      height: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0 14px', cursor: scanState === 'running' ? 'not-allowed' : 'pointer',
+                      border: ghauriEnabled ? '1px solid rgba(0,212,170,0.35)' : '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 600, color: ghauriEnabled ? 'var(--accent)' : 'var(--text-dim)' }}>
+                      {ghauriEnabled ? 'ON' : 'OFF'}
+                    </span>
+                    <div className={`toggle ${ghauriEnabled ? 'on' : ''}`} style={{ margin: 0 }}>
+                      <div className="toggle-knob" />
+                    </div>
+                  </div>
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Level <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(1–5)</span></label>
+                  <input className="input" type="number" min="1" max="5" value={ghauriLevel}
+                    onChange={inputNum(setGhauriLevel, 1, 5)} disabled={scanState === 'running' || !ghauriEnabled} />
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Risk <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(1–3)</span></label>
+                  <input className="input" type="number" min="1" max="3" value={ghauriRisk}
+                    onChange={inputNum(setGhauriRisk, 1, 3)} disabled={scanState === 'running' || !ghauriEnabled} />
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Threads <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(max 10)</span></label>
+                  <input className="input" type="number" min="1" max="10" value={ghauriThreads}
+                    onChange={inputNum(setGhauriThreads, 1, 10)} disabled={scanState === 'running' || !ghauriEnabled} />
+                </div>
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                  <label>Max targets</label>
+                  <input className="input" type="number" min="1" max="10000" value={ghauriMaxTargets}
+                    onChange={inputNum(setGhauriMaxTargets, 1, 10000)} disabled={scanState === 'running' || !ghauriEnabled} />
+                </div>
+              </div>
+            </>
           )}
         </div>
 

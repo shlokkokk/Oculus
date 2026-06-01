@@ -1,88 +1,173 @@
 # Changelog
 
-All notable changes to the **Oculus** project will be documented in this file.
+All notable changes to **Oculus** are documented in this file.
 
-## [Unreleased]
-### Added
-- 
-
-## [4.2.0] - 2026-05-31
-### Added
-- **8 New Reconnaissance Modules:** Expanded the orchestrator to run **37 modules** (up from 29) by adding Cariddi URL crawl secrets finder, Jaeles signature vulnerability scan, Tplmap SSTI scan (safe detection), CRLFuzz CRLF injection checks, InternetDB passive port/vulnerability lookup, Nikto web server scanner, TLSX cert scan with CN/SAN subdomain extraction, and nomore403 bypass scanner.
-- **ntfy Push Notifications & Setup Wizard:** Added interactive `ntfy_setup.py` wizard and core push notification engine supporting status-tailored alerts (start, completion, findings, errors, skips) over public or authentication-secured private ntfy instances.
-- **Deep WAF Fingerprinting:** Integrated `WhatWaf` into the WAF Detection module (Module 7) for secondary deep inspection and bypass suggestions.
-- **Smart DNS Bruteforcing Permutations:** Added `AlterX` smart permutation generation and `PureDNS` wildcard-aware resolution to the DNS Bruteforce pipeline (Module 17).
-- **Customizable Scan Limits:** Added a collapsible "Target Scope & Limits" panel in the browser configurator to customize max host/URL limit thresholds for Arjun, FFUF, Nikto, WhatWaf, Tplmap, and Nomore403, defaulting to maximum (`999999` / unlimited) for full-spectrum capabilities.
-- **Module Return Status Protocol:** Added strict return status validation (`MODULE_OK`, `MODULE_SKIPPED`, `MODULE_PARTIAL`, `MODULE_FAILED`) across CLI tasks and web daemons.
-- **Skipped Step UI Indicators:** Integrated skipped module state telemetry with the frontend progress panel, rendering amber fast-forward (`⏩`) indicators and adjusting progress calculations accordingly.
-- **Status-Specific Notifications:** Refactored `ntfy` integrations to dispatch status-tailored event headers (like skipped alerts) with appropriate priority tags.
-- **Isolated Cloud Asset Findings:** Differentiated accessible `[OPEN]` cloud storage buckets from inaccessible `[EXISTS/PRIVATE]` ones, logging them separately to preserve output purity.
-- **ParamSpider Directory Fallback:** Integrated directory search/move logic to automatically resolve ParamSpider v2+ outputs inside the local results folder relative to the runtime path.
-- **Dual Screenshot Capture:** Screenshot module now attempts both `gowitness` and `EyeWitness` for every alive URL/domain/subdomain, storing output under engine-specific screenshot folders.
-- **Domain-Grouped Screenshot UI:** Web Reports and Results views now display screenshots grouped by inferred host/domain, with larger previews and a near full-screen lightbox viewer.
-- **Dynamic Full-Port Timeout:** Full Nmap scans now scale their outer timeout by alive-target count via `nmap.full_port_timeout_base`, `nmap.full_port_timeout_per_host`, and `nmap.full_port_timeout_max`.
-
-### Fixed
-- **Null Config Parse Security:** Wrapped nested dictionary reads in API and engine files with safe get fallbacks (`(config.get("section") or {})`) to prevent server crashes on null/empty YAML headers.
-- **Robust Directory Creation:** Standardized all directory creation calls in the core CLI to use `parents=True, exist_ok=True` to guarantee flawless standalone execution.
-- **Screenshot Telemetry:** Screenshot capture now logs resolved tool paths, output directories, per-engine counts, total counts, and writes screenshot metrics into `session.json`.
-- **Recursive Screenshot Reporting:** HTML and web artifact viewers now include nested screenshot outputs instead of only top-level PNGs.
-- **EyeWitness Installation Wiring:** Installer now clones and validates `EyeWitness` instead of the unrelated `aquatone` path.
-
-## [4.1.0] - 2026-05-17
-### 🚀 Added
-- **Dual-Engine Probing:** Configured `httprobe` as a secondary, concurrent alive-checking engine alongside `httpx` to guarantee zero dropped targets.
-- **Zero-Block Background Nmap:** Decoupled slow Full Port Scans from the Phase 2 execution pool to run in a background daemon thread, eliminating UI lag.
-- **Smart Web Resume Selector:** Integrated session endpoints to detect previous scans and offer dynamic "Resume" vs "Start Fresh" toggle options directly in the configuration and abort screens.
-- **Force Dependency Refresh:** Added a cache-bypassing Refresh button to the Tool Status UI to force re-evaluation of installed systems.
-
-### 🐛 Fixed
-- **Active Targeting Suffix-Matching:** Fixed the strict filtering bug in Arjun/SQLMap where valid endpoints were dropped; replaced with dynamic suffix-matching.
-- **Resilient Report Generation:** Wrapped HTML report blocks in try/except boundaries to ensure aborted scans still write complete, clean partial reports.
-
-## [4.0.0] - 2026-05-17
-### 🚀 Added
-- **Web Cockpit:** A complete, real-time web interface built with FastAPI and React.
-- **Operator Dashboard:** Configure scans, select modules, and monitor live streaming output directly from the browser.
-- **Results Viewer:** Browse artifacts, view HTML/JSON/Markdown reports, and inspect tool health status visually.
-- **Zero-Modification CLI:** The web interface wraps the existing `Oculus` engine without modifying the trusted CLI source of truth.
-
-## [3.1.0] - 2026-05-15
-### 🚀 Added
-- **Full Spectrum Scan (`[U]`):** A new 5-phase orchestration pipeline running all modules concurrently with intelligent dependency gating.
-- **Smart Resume Logic:** Deep session integration allowing Full Spectrum Scan to instantly skip previously completed tasks on resume.
-- **Graceful Abort Handling:** Safe `Ctrl+C` interrupt handling that halts pipelines, saves progress, and generates partial reports without losing data.
-- **Data Protection:** Added pre-scan warnings to Full Auto (`[9]`) and Deep Recon (`[D]`) to prevent accidental overwrites of existing session data.
-- **Suggested Next Steps:** Intelligent dashboard prompts that analyze the current scan state and recommend the optimal next action.
-
-### ✨ Improved
-- **Premium TUI Experience:** Redesigned the main menu using `rich` with aligned columns, dynamic real-time scan statistics, and color-coded progress indicators.
-- **Visual Branding:** Updated the ASCII banner tagline to accurately reflect the tool's capabilities ("Full-Spectrum Attack Surface Intelligence").
-- **Graceful Fallbacks:** Enhanced the standard plain-text menu to ensure 100% feature parity for terminals lacking `rich` support.
-
-### 🐛 Fixed
-- **Suggestion Engine Bug:** Fixed an issue where advanced module results would incorrectly override core phase suggestions in the dashboard logic.
-
-## [3.0.0] - 2026-05-14
-### 🚀 Added
-- **Initial Release:** Complete rewrite of the framework architecture.
-- **Concurrency Engine:** Integrated `ThreadPoolExecutor` for high-performance scanning.
-- **Streaming Output:** Real-time terminal feedback for all major scanning modules.
-- **State Management:** Added `session.json` for persistent scan state and auto-resume.
-- **Enhanced Modules:**
-    - Deep CNAME takeover analysis.
-    - Multi-vector CORS misconfiguration scanner.
-    - SSL-resilient JS secret extraction.
-    - Automated WAF detection and bypass hinting.
-- **Reporting:** 
-    - Interactive dark-themed HTML dashboards.
-    - Machine-readable JSON output.
-    - HackerOne-ready Markdown reports.
-
-### 🛠️ Changed
-- **Branding:** Transitioned project identity from ReconMaster to Oculus.
-- **Command Runner:** Refactored execution core to support granular exit codes and robust timeouts.
-- **I/O Logic:** Standardized file redirection to prevent shell injection and race conditions.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
-*Generated by the Oculus Development Team.*
+
+## [4.2.0] - 2026-06-01
+
+### Added
+
+#### Scan modules (8 new — **36** total scan modules, menu **1–36**)
+
+| Menu | CLI | Module |
+|:---:|:---|:---|
+| 29 | `cariddi` | URL crawl for secrets, endpoints, extensions |
+| 30 | `jaeles` | Signature-based vulnerability scan |
+| 31 | `tplmap` | SSTI detection (safe mode) |
+| 32 | `crlfuzz` | CRLF injection checks |
+| 33 | `internetdb` | Passive port/vuln lookup (no API key) |
+| 34 | `nikto` | Web server configuration scan |
+| 35 | `tlsx` | TLS cert SAN/CN subdomain discovery |
+| 36 | `nomore403` | Automated 403/401 bypass testing |
+
+#### Menu & orchestration
+
+- **`SCAN_MODULES` registry** — single source of truth for TUI numbers, `MODULE_MAP`, and `SCAN_MODULE_COUNT` (no more manual “36 vs 37” drift).
+- **Automation keys (letters only):** **A** Full Auto (core 1–8), **D** Deep Recon, **F** Full Spectrum, plus **R** / **C** / **I** / **H** / **Q** for system actions.
+- **Module status protocol** — every step returns `MODULE_OK`, `MODULE_SKIPPED`, `MODULE_PARTIAL`, or `MODULE_FAILED` (CLI, web API, and ntfy).
+- **Scaled timeouts** — `_get_scaled_timeout()` for large target lists (arjun, kr, nikto, jaeles, sqlmap, nomore403, nmap full ports, etc.).
+- **Full Spectrum resume** — resume-skipped steps land in `skipped_modules` (not falsely marked completed).
+
+#### Notifications (ntfy)
+
+- Interactive **`python3 oculus.py --setup-ntfy`** wizard and `ntfy_setup.py`.
+- **One consolidated notification per module** — Tools breakdown + Total metrics (no per-finding phone spam when `send_module_complete` is on).
+- **`_MODULE_NTFY_PROFILES`** — per-module phases, tags, artifact paths, and live tool stats (`_record_module_tool`).
+- Distinct **scan complete** vs **scan aborted** messages on Full Spectrum abort.
+- All ntfy toggles default **on** in `DEFAULT_CONFIG` and `config.yaml.example`.
+
+#### Tooling & installer
+
+- **WhatWaf** integrated into WAF detection (module 7).
+- **AlterX + PureDNS** in DNS bruteforce (menu 16).
+- **Dual screenshots** — gowitness + EyeWitness under `screenshots/gowitness/` and `screenshots/eyewitness/`.
+- **Dynamic Nmap full-port timeout** via `nmap.full_port_timeout_*` config keys.
+- **Web UI:** target scope limits (Arjun, FFUF, Nikto, WhatWaf, Tplmap, nomore403), skipped-module indicators, `scan_module_count` on `/api/health`.
+- **`install.sh`** — downloads `routes-large.kite` for Kiterunner when missing.
+
+#### Resilience fallbacks
+
+- Auto **`auto_dirs_wordlist.txt`** if SecLists dir wordlist missing.
+- Auto **`auto_resolvers.txt`** for massdns.
+- **theHarvester** keyless-source bundle + fallback source list on failure.
+- **nomore403** — auto-clone payloads; `_nomore403_command()` runs from repo with `-f payloads`.
+- **Directory fuzz** — auto-feed 403/401 responses into nomore403 (per-URL merge into `bypass_results.txt`).
+
+---
+
+### Changed
+
+- **TUI menu renumbering:** advanced modules are **9–36** (was 10–37); automation is **not** a number slot anymore.
+- **Full Spectrum** returns explicit status (`completed` / `aborted` / `setup_failed` / `cancelled`); web engine maps orchestrator lists into API progress.
+- **Web engine** uses `SCAN_MODULE_COUNT`, `QUICK_RECON_STEP_COUNT`, and `DEEP_RECON_STEP_COUNT` instead of hardcoded totals.
+- **API fuzzing** builds `host:port` target file, resolves/downloads `routes-large.kite`, treats non-zero kr exit with output as partial success.
+- **Amass** subdomain pass uses longer scaled timeout (up to 30 min) to reduce false timeouts on passive enum.
+- **theHarvester** primary source list is keyless-only (no bufferoverun/dnsdumpster noise without API keys).
+- **Jaeles** uses `config init` + per-host output dirs; removed deprecated `--no-output-url` flag (Jaeles v0.17+).
+- **Nikto** uses `-h host` + `-ssl` for HTTPS URLs; removed `-nolookup` that caused “given name” errors on URL targets.
+- **Cariddi** runs under `/tmp` (tool rejects dots in `output-<domain>/` paths) then copies artifacts back.
+- **Cloud / Shodan** modules return proper `MODULE_*` constants instead of bare `return` / implicit `None`.
+
+---
+
+### Fixed
+
+- **`out_file` NameError** in directory fuzz → nomore403 auto-feed.
+- **nomore403** `payloads/` path — run from correct working directory.
+- **Kiterunner** `-A apiroutes-210228` (space, not `=`) and **MODULE_FAILED** when kr dies (was wrongly `SKIPPED`).
+- **Full Spectrum web UI** marking scan “completed” on setup cancel; **`_end_time`** preserved after abort.
+- **Duplicate ntfy** finding pings when module-complete notifications enabled.
+- **Resume skips** counted as completed in Full Spectrum.
+- **Web:** `None` module return treated as failure; overlapping scans blocked while thread alive.
+- **Null-safe config** in web API (`(config.get("section") or {})`).
+- **Report generation** errors logged instead of silent `pass` on abort path.
+- **ParamSpider** v2+ output path discovery under `results/`.
+- **EyeWitness** install path (was incorrectly tied to aquatone).
+- **Shodan module** missing return status on success/failure (silent pipeline gap).
+
+---
+
+### Documentation
+
+- **README.md** — ntfy section, module status table, menu **A/D/F**, modules **1–36**, troubleshooting (kr, nomore403, web overlap).
+- **`_internal_docs/INTERNAL.md`** — registry model, 36-module catalog, audit checklist, phase pipeline.
+
+---
+
+### Notes for operators
+
+| Item | Action |
+|:---|:---|
+| Shodan / GitHub modules | Add keys under `api_keys` in `~/.config/oculus/config.yaml` |
+| Shodan / GitHub skipped | Expected without keys — not a bug |
+| Nuclei timeouts on dead hosts | Tool behavior on slow/unresponsive hosts |
+| ParamSpider archive errors | External web.archive.org rate limits |
+| Full Spectrum runtime | ~2–6 h depending on target size; use **F** + resume |
+
+---
+
+## [4.1.0] - 2026-05-17
+
+### Added
+
+- **Dual-engine probing** — `httprobe` runs alongside `httpx` for alive checks.
+- **Background Nmap** — full port scan decoupled from Phase 2 pool to avoid UI stalls.
+- **Smart web resume** — Resume vs Start Fresh in configurator and abort flows.
+- **Force tool refresh** — bypass cache in Tool Status UI.
+
+### Fixed
+
+- **Arjun/SQLMap targeting** — suffix-matching instead of strict filter drops.
+- **Report generation on abort** — try/except wrappers so partial HTML/JSON/MD still write.
+
+---
+
+## [4.0.0] - 2026-05-17
+
+### Added
+
+- **Web cockpit** — FastAPI + React: live logs, scan config, artifacts, reports.
+- **Zero-modification CLI** — web wraps the same `Oculus` class as the terminal.
+
+---
+
+## [3.1.0] - 2026-05-15
+
+### Added
+
+- **Full Spectrum Scan** — five-phase pipeline with concurrency and dependency gating.
+- **Smart resume** — skip completed steps from `session.json` and marker files.
+- **Graceful abort** — Ctrl+C / web Stop saves progress and still generates reports.
+- **Data protection** — overwrite warnings for Full Auto and Deep Recon.
+- **Suggested next steps** in TUI dashboard.
+
+### Improved
+
+- **Rich TUI** — aligned columns, live stats, color-coded progress.
+- **Branding** — “Full-Spectrum Attack Surface Intelligence” tagline.
+
+### Fixed
+
+- **Suggestion engine** — advanced results no longer override core-phase hints incorrectly.
+
+---
+
+## [3.0.0] - 2026-05-14
+
+### Added
+
+- Initial **Oculus** release (rebrand from ReconMaster).
+- **Concurrency** via `ThreadPoolExecutor`, streaming command output, `session.json` resume.
+- **Reporting** — HTML dashboard, JSON, Markdown.
+- Modules: subdomain through exploitation baseline, GF, CORS, smuggling, ASN, cloud, OSINT, and more.
+
+### Changed
+
+- Unified **command runner** with timeouts, retries, and exit-code handling.
+
+---
+
+*Maintained with the Oculus codebase — `VERSION` in `oculus.py`.*

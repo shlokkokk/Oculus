@@ -27,7 +27,7 @@ export const MODULES = [
   { id: 'gf', name: 'GF Pattern Filters', num: 18, phase: 4, tool: 'gf' },
   { id: 'fuzz', name: 'Directory Fuzzing', num: 12, phase: 4, tool: 'ffuf' },
   { id: 'api', name: 'API Fuzzing', num: 13, phase: 4, tool: 'Kiterunner' },
-  { id: 'sqli', name: 'SQLi Scan', num: 20, phase: 5, tool: 'sqlmap' },
+  { id: 'sqli', name: 'SQLi Scan', num: 20, phase: 5, tool: 'SQLMap + Ghauri' },
   { id: 'xss', name: 'XSS Scan', num: 21, phase: 5, tool: 'Dalfox' },
   { id: 'cors', name: 'CORS Scanner', num: 22, phase: 5, tool: 'Python' },
   { id: 'redirect', name: 'Open Redirect Scan', num: 29, phase: 5, tool: 'Python' },

@@ -32,6 +32,11 @@ class ScanRequest(BaseModel):
     sqlmap_level: Optional[int] = Field(None, ge=1, le=5)
     sqlmap_risk: Optional[int] = Field(None, ge=1, le=3)
     sqlmap_threads: Optional[int] = Field(None, ge=1, le=500)
+    ghauri_enabled: Optional[bool] = None
+    ghauri_level: Optional[int] = Field(None, ge=1, le=5)
+    ghauri_risk: Optional[int] = Field(None, ge=1, le=3)
+    ghauri_threads: Optional[int] = Field(None, ge=1, le=10)
+    ghauri_max_targets: Optional[int] = Field(None, ge=1, le=10000)
     jitter: bool = False
     severity: Optional[str] = None
     resume: bool = True
@@ -87,6 +92,11 @@ class ConfigResponse(BaseModel):
     sqlmap_level: int = 5
     sqlmap_risk: int = 3
     sqlmap_threads: int = 50
+    ghauri_enabled: bool = True
+    ghauri_level: int = 3
+    ghauri_risk: int = 2
+    ghauri_threads: int = 5
+    ghauri_max_targets: int = 150
     parallel: bool = True
     jitter: bool = False
     nuclei_severity: str = "low,medium,high,critical"

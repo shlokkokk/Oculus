@@ -12,6 +12,11 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
   const [sqlmapLevel, setSqlmapLevel] = useState(5);
   const [sqlmapRisk, setSqlmapRisk] = useState(3);
   const [sqlmapThreads, setSqlmapThreads] = useState(10);
+  const [ghauriEnabled, setGhauriEnabled] = useState(true);
+  const [ghauriLevel, setGhauriLevel] = useState(3);
+  const [ghauriRisk, setGhauriRisk] = useState(2);
+  const [ghauriThreads, setGhauriThreads] = useState(5);
+  const [ghauriMaxTargets, setGhauriMaxTargets] = useState(150);
   const [sessionData, setSessionData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,6 +34,11 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
       setSqlmapLevel(cfg.sqlmap_level ?? 5);
       setSqlmapRisk(cfg.sqlmap_risk ?? 3);
       setSqlmapThreads(Math.min(cfg.sqlmap_threads ?? cfg.threads ?? 10, 10));
+      setGhauriEnabled(cfg.ghauri_enabled ?? true);
+      setGhauriLevel(cfg.ghauri_level ?? 3);
+      setGhauriRisk(cfg.ghauri_risk ?? 2);
+      setGhauriThreads(Math.min(cfg.ghauri_threads ?? 5, 10));
+      setGhauriMaxTargets(cfg.ghauri_max_targets ?? 150);
       setSessionData(sess);
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -44,6 +54,11 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
       sqlmap_level: sqlmapLevel === '' ? null : Number(sqlmapLevel),
       sqlmap_risk: sqlmapRisk === '' ? null : Number(sqlmapRisk),
       sqlmap_threads: sqlmapThreads === '' ? null : Number(sqlmapThreads),
+      ghauri_enabled: ghauriEnabled,
+      ghauri_level: ghauriLevel === '' ? null : Number(ghauriLevel),
+      ghauri_risk: ghauriRisk === '' ? null : Number(ghauriRisk),
+      ghauri_threads: ghauriThreads === '' ? null : Number(ghauriThreads),
+      ghauri_max_targets: ghauriMaxTargets === '' ? null : Number(ghauriMaxTargets),
       jitter,
       severity,
       resume: true,
@@ -81,7 +96,7 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
           marginTop: '2px',
           marginBottom: '4px'
         }}>
-          ⚠️ <strong>Operational Notice:</strong> Completed modules are locked and will be skipped. Changing parameters (like Nuclei severity or SQLMap risk) for already completed modules will not re-run them. To apply new parameters to completed phases, cancel this and select <strong>Start Fresh</strong> instead.
+          ⚠️ <strong>Operational Notice:</strong> Completed modules are locked and will be skipped. Changing parameters (like Nuclei severity, SQLMap risk, or Ghauri settings) for already completed modules will not re-run them. To apply new parameters to completed phases, cancel this and select <strong>Start Fresh</strong> instead.
         </div>
 
         {/* Completed Modules List */}
@@ -186,11 +201,10 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
 
             {/* Sub-Header Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px', marginBottom: '2px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>SQLMap Advanced Injection Parameters</span>
+              <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>SQLi Scan (SQLMap + Ghauri)</span>
               <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
             </div>
 
-            {/* Row 3: SQLMap Parameters */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
               <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>SQLMap Level</label>
@@ -203,6 +217,32 @@ function ResumeModal({ domain, mode, onClose, onLaunch }) {
               <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>SQLMap Threads</label>
                 <input className="input" type="number" min="1" max="10" value={sqlmapThreads} onChange={e => { const val = e.target.value; setSqlmapThreads(val === '' ? '' : Math.min(Number(val), 10)); }} style={{ padding: '10px 14px', fontSize: '13px', height: '38px' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '16px', marginTop: '4px' }}>
+              <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>Ghauri</label>
+                <div className="toggle-row" style={{ height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => setGhauriEnabled(!ghauriEnabled)}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: ghauriEnabled ? 'var(--accent)' : 'var(--text-dim)' }}>{ghauriEnabled ? 'ON' : 'OFF'}</span>
+                  <div className={`toggle ${ghauriEnabled ? 'on' : ''}`} style={{ margin: 0 }}><div className="toggle-knob" /></div>
+                </div>
+              </div>
+              <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>Ghauri Level</label>
+                <input className="input" type="number" min="1" max="5" value={ghauriLevel} disabled={!ghauriEnabled} onChange={e => setGhauriLevel(e.target.value)} style={{ padding: '10px 14px', fontSize: '13px', height: '38px' }} />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>Ghauri Risk</label>
+                <input className="input" type="number" min="1" max="3" value={ghauriRisk} disabled={!ghauriEnabled} onChange={e => setGhauriRisk(e.target.value)} style={{ padding: '10px 14px', fontSize: '13px', height: '38px' }} />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>Ghauri Threads</label>
+                <input className="input" type="number" min="1" max="10" value={ghauriThreads} disabled={!ghauriEnabled} onChange={e => { const val = e.target.value; setGhauriThreads(val === '' ? '' : Math.min(Number(val), 10)); }} style={{ padding: '10px 14px', fontSize: '13px', height: '38px' }} />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-dim)', fontWeight: 600 }}>Ghauri Max Targets</label>
+                <input className="input" type="number" min="1" max="10000" value={ghauriMaxTargets} disabled={!ghauriEnabled} onChange={e => setGhauriMaxTargets(e.target.value)} style={{ padding: '10px 14px', fontSize: '13px', height: '38px' }} />
               </div>
             </div>
           </div>
